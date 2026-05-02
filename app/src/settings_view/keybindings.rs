@@ -200,7 +200,7 @@ struct RowMouseStates {
 }
 
 /// Wrapper around the CommandBinding structure that includes the styling/render-specific
-/// attribtues (such as MouseStateHandles)
+/// attributes (such as MouseStateHandles)
 #[derive(Clone)]
 pub struct KeybindingRow {
     pub binding: CommandBinding,
