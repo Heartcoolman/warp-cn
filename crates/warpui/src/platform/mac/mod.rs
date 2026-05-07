@@ -39,6 +39,26 @@ where
     unsafe { NSString::alloc(nil).init_str(s.as_ref()).autorelease() }
 }
 
+unsafe extern "C" {
+    fn warp_install_uncaught_exception_handler();
+}
+
+/// Install an Objective-C uncaught exception handler that captures NSException
+/// `name` / `reason` / `userInfo` / `callStackSymbols` to
+/// `~/Library/Logs/<CFBundleName>/uncaught_exception.log` before the runtime
+/// aborts the process. Strictly additive — does not change AppKit's
+/// fatality semantics (no flip of `NSApplicationCrashOnExceptions`).
+///
+/// Should be called as the first statement of the binary's `main()` so it
+/// covers exceptions thrown from any subsequent Cocoa call (including the
+/// bundle reads inside `ChannelState::new`).
+///
+/// Idempotent: subsequent calls are no-ops.
+pub fn install_uncaught_exception_handler() {
+    // SAFETY: ObjC entry point takes no arguments and is itself dispatch_once-guarded.
+    unsafe { warp_install_uncaught_exception_handler() };
+}
+
 /// Holds a Cocoa autorelease pool and drains it when the guard is dropped.
 ///
 /// Many Cocoa APIs temporarily hold on to objects that only get freed when an

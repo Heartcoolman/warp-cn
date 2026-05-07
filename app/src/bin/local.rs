@@ -8,6 +8,10 @@ use warp_core::{
 };
 
 fn main() -> Result<()> {
+    // Install before any Cocoa call (ChannelState::new reads the bundle).
+    #[cfg(target_os = "macos")]
+    warp::install_uncaught_exception_handler();
+
     let config = channel_config::load_config!("local");
 
     let mut state = ChannelState::new(Channel::Local, config)

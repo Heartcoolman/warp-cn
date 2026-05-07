@@ -134,6 +134,8 @@ fn compile_objc_lib() {
     println!("cargo:rerun-if-changed=src/platform/mac/objc/alert.h");
     println!("cargo:rerun-if-changed=src/platform/mac/objc/fullscreen_queue.h");
     println!("cargo:rerun-if-changed=src/platform/mac/objc/fullscreen_queue.m");
+    println!("cargo:rerun-if-changed=src/platform/mac/objc/exception_handler.h");
+    println!("cargo:rerun-if-changed=src/platform/mac/objc/exception_handler.m");
 
     // Link against the clang_rt library so that the @available keyword
     // doesn't produce linker errors.
@@ -156,6 +158,7 @@ fn compile_objc_lib() {
         .file("src/platform/mac/objc/fullscreen_queue.m")
         .file("src/platform/mac/objc/window_blur.m")
         .file("src/platform/mac/objc/alert.m")
+        .file("src/platform/mac/objc/exception_handler.m")
         .compile("warp_objc");
 }
 

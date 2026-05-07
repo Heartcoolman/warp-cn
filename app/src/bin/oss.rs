@@ -10,6 +10,10 @@ use warp_core::{
 
 // Simple wrapper around warp::run() for Warp OSS builds.
 fn main() -> Result<()> {
+    // Install before any Cocoa call (ChannelState::new reads the bundle).
+    #[cfg(target_os = "macos")]
+    warp::install_uncaught_exception_handler();
+
     let mut state = ChannelState::new(
         Channel::Oss,
         ChannelConfig {

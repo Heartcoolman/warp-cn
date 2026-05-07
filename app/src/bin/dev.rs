@@ -13,6 +13,10 @@ use warp_core::{
 
 // Simple wrapper around warp::run() for dev channel builds.
 fn main() -> Result<()> {
+    // Install before any Cocoa call (ChannelState::new reads the bundle).
+    #[cfg(target_os = "macos")]
+    warp::install_uncaught_exception_handler();
+
     ChannelState::set(
         ChannelState::new(Channel::Dev, channel_config::load_config!("dev"))
             .with_additional_features(features::DEBUG_FLAGS)

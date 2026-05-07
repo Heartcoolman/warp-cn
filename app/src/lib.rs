@@ -585,8 +585,27 @@ fn apply_scroll_multiplier(event: &mut Event, app: &AppContext) {
     }
 }
 
+/// Installs the macOS Objective-C uncaught exception logger.
+///
+/// Re-exported here so each channel binary can call
+/// `warp::install_uncaught_exception_handler()` as the first statement of its
+/// `main()`, before `ChannelState::new` reads the bundle (which on macOS
+/// touches Foundation and could throw). Calling it from inside `warp::run()`
+/// would be too late.
+#[cfg(target_os = "macos")]
+pub fn install_uncaught_exception_handler() {
+    warpui::platform::mac::install_uncaught_exception_handler();
+}
+
 /// Runs the app. If a subcommand was requested, it'll be run instead of the main application.
 pub fn run() -> Result<()> {
+    // Fallback: also install the handler here for callers that enter through
+    // `warp::run()` without going through one of the channel binaries (e.g.
+    // integration tests). Each channel binary should still install it earlier
+    // in its own `main()` to cover the bundle reads inside `ChannelState::new`.
+    #[cfg(target_os = "macos")]
+    install_uncaught_exception_handler();
+
     // Perform any necessary platform-specific initialization.
     platform::init();
 

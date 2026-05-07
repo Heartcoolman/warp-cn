@@ -10,6 +10,10 @@ use warp_core::channel::{Channel, ChannelState};
 
 // Simple wrapper around warp::run() for stable channel builds.
 fn main() -> Result<()> {
+    // Install before any Cocoa call (ChannelState::new reads the bundle).
+    #[cfg(target_os = "macos")]
+    warp::install_uncaught_exception_handler();
+
     ChannelState::set(ChannelState::new(
         Channel::Stable,
         channel_config::load_config!("stable"),
