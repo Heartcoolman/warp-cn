@@ -9,7 +9,7 @@ use super::{
 };
 use crate::auth::{AuthStateProvider, UserUid};
 use crate::autoupdate::{self, AutoupdateStage, AutoupdateState};
-use crate::github_update::{GithubUpdateState, InstallableRelease};
+use crate::github_update::{self, GithubUpdateState, InstallableRelease};
 use crate::send_telemetry_from_ctx;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::{
@@ -206,7 +206,7 @@ impl TypedActionView for MainSettingsPageView {
                 ctx.notify();
             }
             MainPageAction::CheckGithubUpdate => {
-                GithubUpdateState::trigger_check(ctx);
+                GithubUpdateState::trigger_check(ctx, true);
             }
             MainPageAction::InstallGithubUpdate(target) => {
                 GithubUpdateState::trigger_install(ctx, target.clone());
@@ -1277,8 +1277,18 @@ impl GithubVersionInfoWidget {
                 )
                 .finish(),
             );
+        // Group status text + last-checked timestamp into a single right-
+        // hand column so they share the same Shrinkable constraint as the
+        // version row above. Putting last-checked outside this column
+        // would strand it on the far left when status_content wraps.
+        // `CrossAxisAlignment::End` keeps the shorter of the two rows flush
+        // against the right edge of the panel; default Start would left-align
+        // last-checked under a wider status_content.
+        let mut right_column =
+            Flex::column().with_cross_axis_alignment(CrossAxisAlignment::End);
+        let mut right_has_content = false;
         if let Some(status_content) = status_content {
-            second_row.add_child(
+            right_column.add_child(
                 Text::new_inline(
                     status_content.text.to_string(),
                     appearance.ui_font_family(),
@@ -1287,6 +1297,37 @@ impl GithubVersionInfoWidget {
                 .with_color(status_content.color)
                 .finish(),
             );
+            right_has_content = true;
+        }
+        if let Some(at_secs) = github_update::last_check_at_secs(app) {
+            // chrono::Local renders in the user's wall-clock zone. Skip
+            // the row on out-of-range timestamps (only reachable from a
+            // corrupt cache); `i64::try_from` rather than `as` so a
+            // wrap-around can't yield a valid-looking past timestamp.
+            use chrono::TimeZone as _;
+            if let Some(dt) = i64::try_from(at_secs)
+                .ok()
+                .and_then(|secs| chrono::Local.timestamp_opt(secs, 0).single())
+            {
+                let formatted = dt.format("%Y-%m-%d %H:%M").to_string();
+                let line = warp_i18n::t!(
+                    "settings-account-update-last-checked",
+                    time = formatted,
+                );
+                let mut container = Container::new(
+                    Text::new_inline(line, appearance.ui_font_family(), REGULAR_TEXT_FONT_SIZE)
+                        .with_color(faded_text_color)
+                        .finish(),
+                );
+                if right_has_content {
+                    container = container.with_margin_top(3.);
+                }
+                right_column.add_child(container.finish());
+                right_has_content = true;
+            }
+        }
+        if right_has_content {
+            second_row.add_child(right_column.finish());
         }
 
         let mut version_info = Flex::column();

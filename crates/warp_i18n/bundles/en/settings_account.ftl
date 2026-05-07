@@ -31,3 +31,4 @@ settings-account-update-toast-available = warp-cn <tag> is available — open Se
 settings-account-update-cannot-launch = A new version of Warp is installed but can't be launched.
 settings-account-version = Version
 settings-account-checking-for-update = checking for update...
+settings-account-update-last-checked = Last checked { $time }

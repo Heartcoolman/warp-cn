@@ -8410,10 +8410,19 @@ impl Workspace {
                 whats_new_field.with_override_text_color(appearance.theme().ansi_fg_red());
         }
         items.push(whats_new_field.into_item());
+        // warp-cn: highlight Settings in red when GitHub release check has
+        // an unacknowledged update — same convention as the upstream
+        // "Update and relaunch" item, since clicking Settings → About is
+        // the path to actually install. Persists across the toast being
+        // dismissed so the reminder doesn't disappear after one click.
+        let mut settings_field = MenuItemFields::new(warp_i18n::t!("menu-user-settings"))
+            .with_on_select_action(WorkspaceAction::ShowSettings);
+        if crate::github_update::pending_update_visible(app) {
+            settings_field =
+                settings_field.with_override_text_color(appearance.theme().ansi_fg_red());
+        }
         items.extend([
-            MenuItemFields::new(warp_i18n::t!("menu-user-settings"))
-                .with_on_select_action(WorkspaceAction::ShowSettings)
-                .into_item(),
+            settings_field.into_item(),
             MenuItemFields::new(warp_i18n::t!("menu-user-keyboard-shortcuts"))
                 .with_on_select_action(WorkspaceAction::ToggleKeybindingsPage)
                 .into_item(),
