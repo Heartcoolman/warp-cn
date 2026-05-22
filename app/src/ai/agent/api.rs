@@ -240,7 +240,7 @@ impl RequestParams {
             user_workspaces.is_aws_bedrock_credentials_enabled(app),
         );
         let allow_use_of_warp_credits_with_byok =
-            *AISettings::as_ref(app).can_use_warp_credits_with_byok;
+            *AISettings::as_ref(app).can_use_warp_credits_for_fallback;
 
         let app_execution_mode = AppExecutionMode::as_ref(app);
         let autonomy_level = if app_execution_mode.is_autonomous() {

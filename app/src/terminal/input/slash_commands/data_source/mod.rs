@@ -118,11 +118,7 @@ impl SlashCommandDataSource {
             _ => (),
         });
         ctx.subscribe_to_model(&AISettings::handle(ctx), |me, event, ctx| {
-            if matches!(
-                event,
-                AISettingsChangedEvent::IsAnyAIEnabled { .. }
-                    | AISettingsChangedEvent::OrchestrationEnabled { .. }
-            ) {
+            if matches!(event, AISettingsChangedEvent::IsAnyAIEnabled { .. }) {
                 me.recompute_active_commands(ctx);
             }
         });
