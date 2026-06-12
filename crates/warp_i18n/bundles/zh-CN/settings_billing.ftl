@@ -128,5 +128,4 @@ settings-billing-upgrade-enterprise = 升级到 Enterprise
 settings-billing-enterprise-suffix = " 以获取定制限额与专属支持。"
 settings-billing-contact-support-suffix = " 以获取更多 AI 用量。"
 settings-billing-build-byok-credits-suffix = " 以获得更多额度和更多模型。"
-settings-billing-no-usage-history = 暂无用量历史
 settings-billing-usage-history-empty-hint = 启动一个智能体任务后，即可在此查看用量历史。
