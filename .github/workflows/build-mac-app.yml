@@ -61,7 +61,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v6.0.2
         with:
           # app/build.rs 用 `git describe --tags` 把 GIT_RELEASE_TAG 烧进二进制；
           # 默认 shallow clone 不拉 tag，会让产物显示 0.1.0-dev fallback。

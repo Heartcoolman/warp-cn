@@ -18,7 +18,7 @@ jobs:
   i18n-lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6.0.2
 
       - name: Install Rust toolchain
         # Reads the channel from rust-toolchain.toml so this workflow does not
