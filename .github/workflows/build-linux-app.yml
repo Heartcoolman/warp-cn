@@ -105,6 +105,12 @@ jobs:
           # bundle_appimage 通过 PATH 调用 linuxdeploy；脚本把它装到 ~/.local/bin。
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
+      - name: Install cargo-about (license generation)
+        # bundle_appimage → script/prepare_bundled_resources 会跑 `cargo about generate`
+        # 生成 THIRD_PARTY_LICENSES.txt，缺该子命令则打包步骤必失败
+        # （error: no such command: `about`）。版本与 windows/mac workflow 保持一致。
+        run: cargo install --locked cargo-about@0.8.4
+
       - name: Build & bundle
         id: bundle
         run: |
