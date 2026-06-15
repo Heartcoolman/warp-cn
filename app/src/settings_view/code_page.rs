@@ -367,6 +367,7 @@ impl CodeSettingsPageView {
                 Box::new(CodeReviewDiffStatsToggleWidget::default()),
                 Box::new(ProjectExplorerToggleWidget::default()),
                 Box::new(GlobalSearchToggleWidget::default()),
+                Box::new(FormatOnSaveToggleWidget::default()),
             ]);
             let categories = vec![
                 Category::new(
@@ -459,6 +460,7 @@ impl CodeSettingsPageView {
                             Box::new(CodeReviewDiffStatsToggleWidget::default()),
                             Box::new(ProjectExplorerToggleWidget::default()),
                             Box::new(GlobalSearchToggleWidget::default()),
+                            Box::new(FormatOnSaveToggleWidget::default()),
                         ]);
                     }
                 }
@@ -511,6 +513,7 @@ impl CodeSettingsPageView {
                 Box::new(CodeReviewDiffStatsToggleWidget::default()),
                 Box::new(ProjectExplorerToggleWidget::default()),
                 Box::new(GlobalSearchToggleWidget::default()),
+                Box::new(FormatOnSaveToggleWidget::default()),
             ]);
             let categories = vec![
                 Category::new(
@@ -639,6 +642,7 @@ pub enum CodeSettingsPageAction {
     ToggleAutoOpenCodeReviewPane,
     ToggleProjectExplorer,
     ToggleGlobalSearch,
+    ToggleFormatOnSave,
     /// Install (if needed) and enable a suggested LSP server.
     InstallAndEnableLspServer {
         workspace_path: PathBuf,
@@ -842,6 +846,12 @@ impl TypedActionView for CodeSettingsPageView {
             CodeSettingsPageAction::ToggleGlobalSearch => {
                 CodeSettings::handle(ctx).update(ctx, |settings, ctx| {
                     report_if_error!(settings.show_global_search.toggle_and_save_value(ctx));
+                });
+                ctx.notify();
+            }
+            CodeSettingsPageAction::ToggleFormatOnSave => {
+                CodeSettings::handle(ctx).update(ctx, |settings, ctx| {
+                    report_if_error!(settings.format_on_save.toggle_and_save_value(ctx));
                 });
                 ctx.notify();
             }
@@ -3088,6 +3098,49 @@ impl SettingsWidget for GlobalSearchToggleWidget {
                 })
                 .finish(),
             Some(warp_i18n::t!("settings-code-global-search-desc").to_string()),
+        )
+    }
+}
+
+#[derive(Default)]
+struct FormatOnSaveToggleWidget {
+    switch_state: SwitchStateHandle,
+}
+
+impl SettingsWidget for FormatOnSaveToggleWidget {
+    type View = CodeSettingsPageView;
+
+    fn search_terms(&self) -> &str {
+        "format on save lsp language server formatting reformat editor"
+    }
+
+    fn render(
+        &self,
+        _view: &Self::View,
+        appearance: &Appearance,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        let code_settings = CodeSettings::as_ref(app);
+
+        render_body_item::<CodeSettingsPageAction>(
+            "Format on save (requires an active language server)".into(),
+            None,
+            LocalOnlyIconState::Hidden,
+            ToggleState::Enabled,
+            appearance,
+            appearance
+                .ui_builder()
+                .switch(self.switch_state.clone())
+                .check(*code_settings.format_on_save)
+                .build()
+                .on_click(move |ctx, _, _| {
+                    ctx.dispatch_typed_action(CodeSettingsPageAction::ToggleFormatOnSave);
+                })
+                .finish(),
+            Some(
+                "Only applies when a language server is active for the file. Automatically formats the file with the language server on save; other LSP features (hover, go-to-definition, references, diagnostics) are unaffected."
+                    .into(),
+            ),
         )
     }
 }

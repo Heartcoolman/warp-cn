@@ -190,11 +190,8 @@ pub(crate) struct Props<'a> {
     pub(super) thinking_display_mode: crate::settings::ThinkingDisplayMode,
     pub(super) conversation_has_imported_comments: bool,
     pub(super) ask_user_question_view: Option<&'a ViewHandle<AskUserQuestionView>>,
-    /// `true` when this block belongs to a cloud agent pane that is still in its setup
-    /// phase (running environment startup commands before the first agent turn). Used to
-    /// hide the response footer (thumbs up/down, credit usage, fork) until the agent has
-    /// produced real output — otherwise the footer renders awkwardly above the still-
-    /// pending optimistic user prompt.
+    /// `true` when this block belongs to a cloud agent pane that is still in its setup phase
+    /// (running environment startup commands before the first agent turn).
     pub(super) is_cloud_agent_pre_first_exchange: bool,
 }
 
@@ -782,7 +779,7 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                                 },
                             id,
                             ..
-                        }) if FeatureFlag::OrchestrationV2.is_enabled() => {
+                        }) => {
                             should_render_footer = false;
                             should_render_suggestions = false;
                             output_items.add_child(orchestration::render_start_agent(
@@ -799,7 +796,7 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                             action: AIAgentActionType::RunAgents(_req),
                             id,
                             ..
-                        }) if FeatureFlag::RunAgentsTool.is_enabled() => {
+                        }) => {
                             // Embed the per-action `RunAgentsCardView`
                             // via `ChildView`. The view renders a
                             // "Configuring agents..." placeholder while
@@ -820,7 +817,7 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                                 },
                             id,
                             ..
-                        }) if FeatureFlag::OrchestrationV2.is_enabled() => {
+                        }) => {
                             should_render_footer = false;
                             should_render_suggestions = false;
                             output_items.add_child(orchestration::render_send_message(
@@ -907,9 +904,7 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                                 );
                             }
                         }
-                        AIAgentOutputMessageType::MessagesReceivedFromAgents { messages }
-                            if FeatureFlag::OrchestrationV2.is_enabled() =>
-                        {
+                        AIAgentOutputMessageType::MessagesReceivedFromAgents { messages } => {
                             output_items.add_child(
                                 orchestration::render_messages_received_from_agents(
                                     messages, props, app,
@@ -1226,7 +1221,7 @@ fn should_render_stopped_output(props: Props, app: &AppContext) -> bool {
 
     let status = props.model.status(app);
     let cancellation_reason = status.cancellation_reason().cloned();
-    if cancellation_reason.is_some_and(|reason| reason.is_follow_up_for_same_conversation()) {
+    if cancellation_reason.is_some_and(|reason| reason.should_preserve_in_progress_status()) {
         return false;
     }
 
@@ -1755,27 +1750,29 @@ fn render_read_skill(
     // Renders the 'open skill' button for known, non-bundled skills.
     if let Some(skill) = skill {
         if !skill.is_bundled() {
-            let source = CodeSource::Skill {
-                reference: skill_reference.clone(),
-                location: skill.path.clone(),
-                origin: SkillOpenOrigin::ReadSkill,
-            };
+            if let Some(button_handle) = props.state_handles.skill_button_handles.get(id).cloned() {
+                let source = CodeSource::Skill {
+                    reference: skill_reference.clone(),
+                    location: skill.path.clone(),
+                    origin: SkillOpenOrigin::ReadSkill,
+                };
 
-            let skill_icon_override = icon_override_for_skill_name(&skill.name);
-            let open_button = render_skill_button(
-                "Open skill",
-                props.state_handles.open_skill_button_handle.clone(),
-                appearance,
-                skill.provider,
-                skill_icon_override,
-                move |ctx| {
-                    ctx.dispatch_typed_action(AIBlockAction::OpenCodeInWarp {
-                        source: source.clone(),
-                    });
-                },
-            );
+                let skill_icon_override = icon_override_for_skill_name(&skill.name);
+                let open_button = render_skill_button(
+                    "Open skill",
+                    button_handle,
+                    appearance,
+                    skill.provider,
+                    skill_icon_override,
+                    move |ctx| {
+                        ctx.dispatch_typed_action(AIBlockAction::OpenCodeInWarp {
+                            source: source.clone(),
+                        });
+                    },
+                );
 
-            renderable_action = renderable_action.with_action_button(open_button);
+                renderable_action = renderable_action.with_action_button(open_button);
+            }
         }
     }
 
@@ -1857,28 +1854,30 @@ fn render_read_files(
 
     // Renders the 'open skill' button if all files belong to the same skill directory.
     if let Some(skill) = parsed_skill {
-        let reference = SkillManager::handle(app)
-            .as_ref(app)
-            .reference_for_skill_path(&skill.path);
-        let source = CodeSource::Skill {
-            reference,
-            location: skill.path.clone(),
-            origin: SkillOpenOrigin::ReadFiles,
-        };
-        let skill_icon_override = icon_override_for_skill_name(&skill.name);
-        let open_button = render_skill_button(
-            &format!("/{}", skill.name),
-            props.state_handles.read_from_skill_button_handle.clone(),
-            appearance,
-            skill.provider,
-            skill_icon_override,
-            move |ctx| {
-                ctx.dispatch_typed_action(AIBlockAction::OpenCodeInWarp {
-                    source: source.clone(),
-                });
-            },
-        );
-        renderable_action = renderable_action.with_action_button(open_button);
+        if let Some(button_handle) = props.state_handles.skill_button_handles.get(id).cloned() {
+            let reference = SkillManager::handle(app)
+                .as_ref(app)
+                .reference_for_skill_path(&skill.path);
+            let source = CodeSource::Skill {
+                reference,
+                location: skill.path.clone(),
+                origin: SkillOpenOrigin::ReadFiles,
+            };
+            let skill_icon_override = icon_override_for_skill_name(&skill.name);
+            let open_button = render_skill_button(
+                &format!("/{}", skill.name),
+                button_handle,
+                appearance,
+                skill.provider,
+                skill_icon_override,
+                move |ctx| {
+                    ctx.dispatch_typed_action(AIBlockAction::OpenCodeInWarp {
+                        source: source.clone(),
+                    });
+                },
+            );
+            renderable_action = renderable_action.with_action_button(open_button);
+        }
     }
 
     renderable_action.render(app).finish()

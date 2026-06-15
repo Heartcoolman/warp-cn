@@ -2,6 +2,8 @@ pub mod agent;
 pub mod api_keys;
 pub mod aws_credentials;
 pub mod direct_backend;
+#[cfg(not(target_family = "wasm"))]
+pub mod grok_subscription;
 pub mod llm_id;
 
 pub use llm_id::LLMId;

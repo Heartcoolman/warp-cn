@@ -10,6 +10,7 @@ settings-section-appearance = Appearance
 settings-section-features = Features
 settings-section-keybindings = Keyboard shortcuts
 settings-section-warpify = Warpify
+settings-section-scripting = Scripting
 settings-section-referrals = Referrals
 settings-section-shared-blocks = Shared blocks
 settings-section-warp-drive = Warp Drive

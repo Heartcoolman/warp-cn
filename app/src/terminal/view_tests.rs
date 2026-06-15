@@ -16,7 +16,7 @@ use warpui::platform::WindowStyle;
 use warpui::{App, Presenter, ReadModel, WindowInvalidation};
 
 use super::*;
-use crate::ai::agent::conversation::ConversationStatus;
+use crate::ai::agent::conversation::{AIConversation, ConversationStatus};
 use crate::ai::agent::task::TaskId;
 use crate::ai::agent::{
     AIAgentExchange, AIAgentExchangeId, AIAgentInput, AIAgentOutputStatus, UserQueryMode,
@@ -51,7 +51,7 @@ use crate::terminal::alt_screen::should_intercept_mouse;
 use crate::terminal::block_list_element::{SnackbarPoint, SnackbarTranslationMode};
 use crate::terminal::block_list_viewport::{ClampingMode, ScrollLines};
 use crate::terminal::cli_agent_sessions::event::{
-    CLIAgentEvent, CLIAgentEventPayload, CLIAgentEventType,
+    CLIAgentEvent, CLIAgentEventPayload, CLIAgentEventSource, CLIAgentEventType,
 };
 use crate::terminal::cli_agent_sessions::listener::CLIAgentSessionListener;
 use crate::terminal::cli_agent_sessions::{
@@ -101,6 +101,46 @@ fn has_pending_user_query_block(view: &TerminalView) -> bool {
         rich_content.view_id() == view_id && rich_content.is_pending_user_query()
     })
 }
+
+#[test]
+fn focus_reporting_writes_focus_events_in_normal_screen() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let terminal = add_window_with_terminal(&mut app, None);
+        let pty_writes: Rc<RefCell<Vec<Vec<u8>>>> = Rc::new(RefCell::new(Vec::new()));
+        let writes = pty_writes.clone();
+
+        app.update(|ctx| {
+            ctx.subscribe_to_view(&terminal, move |_, event, _| {
+                if let Event::WriteBytesToPty { bytes } = event {
+                    writes.borrow_mut().push(bytes.to_vec());
+                }
+            });
+        });
+
+        terminal.update(&mut app, |view, ctx| {
+            let mut model = view.model.lock();
+            model.simulate_long_running_block("python3 /tmp/warp_focus_test.py", "");
+            assert!(!model.is_alt_screen_active());
+            ansi::Handler::set_mode(&mut *model, ansi::Mode::ReportFocusInOut);
+            assert!(model.is_term_mode_set(TermMode::FOCUS_IN_OUT));
+            drop(model);
+            assert!(view.should_report_focus(ctx));
+
+            view.maybe_report_focus_out(ctx);
+            view.maybe_report_focus_in(ctx);
+        });
+
+        assert_eq!(
+            *pty_writes.borrow(),
+            vec![
+                escape_sequences::EscCodes::FOCUS_OUT.to_vec(),
+                escape_sequences::EscCodes::FOCUS_IN.to_vec(),
+            ]
+        );
+    })
+}
+
 fn input_operations_for_buffer_content(app: &mut App, content: &str) -> Vec<CrdtOperation> {
     let terminal = add_window_with_terminal(app, None);
     terminal.update(app, |view, ctx| {
@@ -277,6 +317,63 @@ fn command_block_count_for_conversation(
         })
         .count()
 }
+
+#[test]
+fn updated_conversation_metadata_refreshes_selected_conversation_pane_title() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _agent_view = FeatureFlag::AgentView.override_enabled(false);
+        let terminal = add_window_with_terminal(&mut app, None);
+        let conversation_id = AIConversationId::new();
+
+        terminal.update(&mut app, |view, ctx| {
+            let conversation = AIConversation::new_restored(
+                conversation_id,
+                vec![warp_multi_agent_api::Task {
+                    id: "root-task".to_string(),
+                    messages: vec![],
+                    dependencies: None,
+                    description: "Original title".to_string(),
+                    summary: String::new(),
+                    server_data: String::new(),
+                }],
+                None,
+            )
+            .expect("conversation should restore");
+
+            BlocklistAIHistoryModel::handle(ctx).update(ctx, |history, ctx| {
+                history.restore_conversations(view.view_id, vec![conversation], ctx);
+            });
+            view.ai_context_model.update(ctx, |context_model, ctx| {
+                context_model.set_pending_query_state_for_existing_conversation(
+                    conversation_id,
+                    AgentViewEntryOrigin::AgentViewBlock,
+                    ctx,
+                );
+            });
+            view.update_pane_configuration(ctx);
+            assert_eq!(
+                view.pane_configuration.as_ref(ctx).title(),
+                "Original title"
+            );
+
+            BlocklistAIHistoryModel::handle(ctx).update(ctx, |history, ctx| {
+                history.apply_conversation_title(conversation_id, "Renamed title".to_string(), ctx)
+            });
+            view.handle_ai_history_model_event(
+                BlocklistAIHistoryModel::handle(ctx),
+                &BlocklistAIHistoryEvent::UpdatedConversationTitle {
+                    terminal_view_id: Some(view.view_id),
+                    conversation_id,
+                    title: "Renamed title".to_string(),
+                },
+                ctx,
+            );
+
+            assert_eq!(view.pane_configuration.as_ref(ctx).title(), "Renamed title");
+        });
+    })
+}
 struct TestTerminalManager {
     model: Arc<FairMutex<TerminalModel>>,
     view: ViewHandle<TerminalView>,
@@ -422,6 +519,7 @@ fn submit_cli_agent_rich_input_restores_unlocked_input_config() {
                         plugin_version: None,
                         draft_text: None,
                         custom_command_prefix: None,
+                        received_rich_notification: false,
                     },
                     ctx,
                 );
@@ -488,6 +586,7 @@ fn unregister_cli_agent_session_restores_unlocked_input_config() {
                         plugin_version: None,
                         draft_text: None,
                         custom_command_prefix: None,
+                        received_rich_notification: false,
                     },
                     ctx,
                 );
@@ -555,6 +654,180 @@ fn clear_buffer_action_in_fullscreen_agent_view_starts_new_conversation() {
                 .active_conversation_id()
                 .expect("agent view should still be active");
             assert_ne!(new_conversation_id, original_conversation_id);
+        });
+    })
+}
+
+fn agent_jump_user_query(query: &str) -> AIAgentInput {
+    AIAgentInput::UserQuery {
+        query: query.to_owned(),
+        context: Default::default(),
+        static_query_type: None,
+        referenced_attachments: Default::default(),
+        user_query_mode: UserQueryMode::Normal,
+        running_command: None,
+        intended_agent: None,
+    }
+}
+
+#[test]
+fn jump_to_latest_agent_message_no_ops_when_agent_view_disabled() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let terminal = add_window_with_terminal(&mut app, None);
+
+        // Create a conversation while the agent view feature is enabled...
+        let agent_view = FeatureFlag::AgentView.override_enabled(true);
+        terminal.update(&mut app, |view, ctx| {
+            append_exchange_and_handle_event(view, agent_jump_user_query("hi"), ctx);
+        });
+        drop(agent_view);
+
+        // ...then turn the feature off: the action must be inert even though a
+        // conversation with a visible exchange exists.
+        let _agent_view_off = FeatureFlag::AgentView.override_enabled(false);
+        terminal.update(&mut app, |view, ctx| {
+            view.jump_to_latest_agent_message(ctx);
+        });
+
+        terminal.read(&app, |view, ctx| {
+            assert!(!view.agent_view_controller().as_ref(ctx).is_active());
+            assert_eq!(view.pending_agent_scroll_target, None);
+        });
+    })
+}
+
+#[test]
+fn jump_to_latest_agent_message_no_ops_without_conversations() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+
+        let terminal = add_window_with_terminal(&mut app, None);
+
+        // No conversations exist, so there is nothing to jump to.
+        terminal.update(&mut app, |view, ctx| {
+            view.jump_to_latest_agent_message(ctx);
+        });
+
+        terminal.read(&app, |view, ctx| {
+            assert!(!view.agent_view_controller().as_ref(ctx).is_active());
+            assert_eq!(view.pending_agent_scroll_target, None);
+        });
+    })
+}
+
+#[test]
+fn jump_to_latest_agent_message_enters_agent_view_and_records_pending_scroll() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+
+        let terminal = add_window_with_terminal(&mut app, None);
+
+        let (conversation_id, _task_id, exchange_id, _stream_id) = terminal
+            .update(&mut app, |view, ctx| {
+                append_exchange_and_handle_event(view, agent_jump_user_query("hi"), ctx)
+            });
+
+        terminal.update(&mut app, |view, ctx| {
+            view.jump_to_latest_agent_message(ctx);
+        });
+
+        terminal.read(&app, |view, ctx| {
+            match view.agent_view_controller().as_ref(ctx).agent_view_state() {
+                AgentViewState::Active {
+                    conversation_id: active_conversation_id,
+                    origin,
+                    ..
+                } => {
+                    assert_eq!(*active_conversation_id, conversation_id);
+                    assert_eq!(*origin, AgentViewEntryOrigin::JumpToLatestAgentMessage);
+                }
+                state => panic!("expected an active agent view, got {state:?}"),
+            }
+            // Entering from the terminal mounts the target block on a later frame,
+            // so the scroll target is recorded for `after_terminal_view_layout`.
+            assert_eq!(view.pending_agent_scroll_target, Some(exchange_id));
+        });
+    })
+}
+
+#[test]
+fn jump_to_latest_agent_message_targets_latest_visible_exchange() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+
+        let terminal = add_window_with_terminal(&mut app, None);
+
+        let (conversation_id, _task_id, _first_exchange_id, _stream_id) = terminal
+            .update(&mut app, |view, ctx| {
+                append_exchange_and_handle_event(view, agent_jump_user_query("first"), ctx)
+            });
+
+        // Append a second, newer exchange to the same conversation.
+        let second_exchange_id = terminal.update(&mut app, |view, ctx| {
+            let history_model = BlocklistAIHistoryModel::handle(ctx);
+            history_model.update(ctx, |history_model, ctx| {
+                let response_stream_id = ResponseStreamId::new_for_test();
+                let exchange = exchange_with_inputs(vec![agent_jump_user_query("second")]);
+                let exchange_id = exchange.id;
+                history_model
+                    .conversation_mut(&conversation_id)
+                    .expect("conversation should exist")
+                    .append_reassigned_exchange(&response_stream_id, exchange, view.view_id, ctx)
+                    .expect("exchange should append");
+                exchange_id
+            })
+        });
+
+        terminal.update(&mut app, |view, ctx| {
+            view.jump_to_latest_agent_message(ctx);
+        });
+
+        terminal.read(&app, |view, _ctx| {
+            // The jump targets the latest visible exchange, not the first one.
+            assert_eq!(view.pending_agent_scroll_target, Some(second_exchange_id));
+        });
+    })
+}
+
+#[test]
+fn jump_to_latest_agent_message_scrolls_without_re_entering_when_already_in_view() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+
+        let terminal = add_window_with_terminal(&mut app, None);
+
+        let (conversation_id, _task_id, _exchange_id, _stream_id) = terminal
+            .update(&mut app, |view, ctx| {
+                append_exchange_and_handle_event(view, agent_jump_user_query("hi"), ctx)
+            });
+
+        // First jump enters the agent view from the terminal and records a pending
+        // scroll target; simulate the layout pass consuming it.
+        terminal.update(&mut app, |view, ctx| {
+            view.jump_to_latest_agent_message(ctx);
+            view.pending_agent_scroll_target = None;
+        });
+
+        // Second jump: already in this conversation's agent view, so it scrolls
+        // directly without re-entering or recording a new pending target.
+        terminal.update(&mut app, |view, ctx| {
+            view.jump_to_latest_agent_message(ctx);
+        });
+
+        terminal.read(&app, |view, ctx| {
+            let active_conversation_id = view
+                .agent_view_controller()
+                .as_ref(ctx)
+                .agent_view_state()
+                .active_conversation_id()
+                .expect("agent view should be active");
+            assert_eq!(active_conversation_id, conversation_id);
+            assert_eq!(view.pending_agent_scroll_target, None);
         });
     })
 }
@@ -1735,6 +2008,223 @@ fn cloud_mode_failed_keeps_queued_query_above_tombstone_and_hides_input() {
             assert_eq!(tombstone.credits_for_test(), None);
             assert!(!tombstone.has_continue_in_cloud_button_for_test());
             assert!(!tombstone.has_continue_locally_button_for_test());
+        });
+    });
+}
+
+#[test]
+fn cmd_enter_from_terminal_without_selected_block_enters_agent_view() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        app.add_singleton_model(ImportedConfigModel::new);
+        app.update(|ctx| {
+            crate::terminal::init(ctx);
+            crate::editor::init(ctx);
+        });
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+
+        let (window_id, terminal) = add_window_with_id_and_terminal(&mut app, None);
+
+        terminal.update(&mut app, |view, ctx| {
+            assert!(view
+                .ai_context_model
+                .as_ref(ctx)
+                .pending_context_block_ids()
+                .is_empty());
+            view.focus_terminal(ctx);
+        });
+
+        let keystroke = if cfg!(target_os = "macos") {
+            "cmd-enter"
+        } else {
+            "ctrl-shift-enter"
+        };
+        let handled = app
+            .dispatch_keystroke(
+                window_id,
+                &[terminal.id()],
+                &warpui::keymap::Keystroke::parse(keystroke).expect("valid keystroke"),
+                false,
+            )
+            .expect("dispatch should succeed");
+        assert!(
+            handled,
+            "{keystroke} should be handled from terminal context"
+        );
+
+        terminal.read(&app, |view, ctx| {
+            assert!(view
+                .agent_view_controller()
+                .as_ref(ctx)
+                .agent_view_state()
+                .is_fullscreen());
+            assert!(view
+                .ai_context_model
+                .as_ref(ctx)
+                .pending_context_block_ids()
+                .is_empty());
+        });
+    });
+}
+
+#[test]
+fn cmd_enter_from_terminal_with_selected_block_enters_agent_view_with_context() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        app.add_singleton_model(ImportedConfigModel::new);
+        app.update(|ctx| {
+            crate::terminal::init(ctx);
+            crate::editor::init(ctx);
+        });
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+
+        let (window_id, terminal) = add_window_with_id_and_terminal(&mut app, None);
+
+        let selected_block_id = terminal.update(&mut app, |view, ctx| {
+            let (selected_block_index, selected_block_id) = {
+                let mut model = view.model.lock();
+                model.simulate_block("echo selected", "selected");
+                let block = model
+                    .block_list()
+                    .blocks()
+                    .iter()
+                    .find(|block| block.command_to_string() == "echo selected")
+                    .expect("simulated block should exist");
+                (block.index(), block.id().clone())
+            };
+
+            view.integration_test_change_block_selection_to_single(selected_block_index, ctx);
+            assert!(view
+                .ai_context_model
+                .as_ref(ctx)
+                .pending_context_block_ids()
+                .contains(&selected_block_id));
+            view.focus_terminal(ctx);
+            selected_block_id
+        });
+
+        let keystroke = if cfg!(target_os = "macos") {
+            "cmd-enter"
+        } else {
+            "ctrl-shift-enter"
+        };
+        let handled = app
+            .dispatch_keystroke(
+                window_id,
+                &[terminal.id()],
+                &warpui::keymap::Keystroke::parse(keystroke).expect("valid keystroke"),
+                false,
+            )
+            .expect("dispatch should succeed");
+        assert!(
+            handled,
+            "{keystroke} should be handled from terminal context"
+        );
+
+        terminal.read(&app, |view, ctx| {
+            let conversation_id = view
+                .agent_view_controller()
+                .as_ref(ctx)
+                .agent_view_state()
+                .active_conversation_id()
+                .expect("agent view should be active");
+
+            let model = view.model.lock();
+            let block = model
+                .block_list()
+                .block_with_id(&selected_block_id)
+                .expect("selected block should still exist");
+            assert!(
+                !block.should_hide_block(model.block_list().agent_view_state()),
+                "selected block should remain visible in the new agent conversation"
+            );
+            match block.agent_view_visibility() {
+                AgentViewVisibility::Terminal {
+                    pending_conversation_ids,
+                    ..
+                } => {
+                    assert!(
+                        pending_conversation_ids.contains(&conversation_id),
+                        "selected block should be attached as pending context for the new conversation"
+                    );
+                }
+                visibility => panic!("expected terminal block visibility, got {visibility:?}"),
+            }
+        });
+    });
+}
+
+#[test]
+fn cmd_enter_from_active_non_empty_agent_view_requires_confirmation() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        app.add_singleton_model(ImportedConfigModel::new);
+        app.update(|ctx| {
+            crate::terminal::init(ctx);
+            crate::editor::init(ctx);
+        });
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+
+        let (window_id, terminal) = add_window_with_id_and_terminal(&mut app, None);
+
+        let original_conversation_id = terminal.update(&mut app, |view, ctx| {
+            let (conversation_id, _, _, _) =
+                append_exchange_and_handle_event(view, agent_jump_user_query("first"), ctx);
+            view.enter_agent_view_for_conversation(
+                None,
+                AgentViewEntryOrigin::ConversationSelector,
+                conversation_id,
+                ctx,
+            );
+            view.focus_terminal(ctx);
+            conversation_id
+        });
+
+        let keystroke = if cfg!(target_os = "macos") {
+            "cmd-enter"
+        } else {
+            "ctrl-shift-enter"
+        };
+        let keystroke = warpui::keymap::Keystroke::parse(keystroke).expect("valid keystroke");
+
+        let handled = app
+            .dispatch_keystroke(window_id, &[terminal.id()], &keystroke, false)
+            .expect("dispatch should succeed");
+        assert!(
+            handled,
+            "new conversation keybinding should be handled from terminal context"
+        );
+
+        terminal.read(&app, |view, ctx| {
+            assert_eq!(
+                view.agent_view_controller()
+                    .as_ref(ctx)
+                    .agent_view_state()
+                    .active_conversation_id(),
+                Some(original_conversation_id),
+                "first keybinding press should keep the current conversation active"
+            );
+        });
+
+        let handled = app
+            .dispatch_keystroke(window_id, &[terminal.id()], &keystroke, false)
+            .expect("dispatch should succeed");
+        assert!(
+            handled,
+            "new conversation keybinding should be handled from terminal context"
+        );
+
+        terminal.read(&app, |view, ctx| {
+            let new_conversation_id = view
+                .agent_view_controller()
+                .as_ref(ctx)
+                .agent_view_state()
+                .active_conversation_id()
+                .expect("agent view should be active");
+            assert_ne!(
+                new_conversation_id, original_conversation_id,
+                "second keybinding press should start a new conversation"
+            );
         });
     });
 }
@@ -5129,6 +5619,7 @@ fn submit_rich_input_and_collect_pty_writes(
                     plugin_version: None,
                     draft_text: None,
                     custom_command_prefix: None,
+                    received_rich_notification: false,
                 },
                 ctx,
             );
@@ -5167,6 +5658,7 @@ fn open_cli_agent_rich_input_for_agent_with_window_id(
                     plugin_version: None,
                     draft_text: None,
                     custom_command_prefix: None,
+                    received_rich_notification: false,
                 },
                 ctx,
             );
@@ -5489,6 +5981,7 @@ fn drag_drop_image_in_cli_agent_long_running_command_pastes_via_clipboard() {
                         plugin_version: None,
                         draft_text: None,
                         custom_command_prefix: None,
+                        received_rich_notification: false,
                     },
                     ctx,
                 );
@@ -5564,6 +6057,7 @@ fn paste_raw_image_clipboard_in_cli_agent_sends_correct_bytes() {
                             plugin_version: None,
                             draft_text: None,
                             custom_command_prefix: None,
+                            received_rich_notification: false,
                         },
                         ctx,
                     );
@@ -5641,6 +6135,7 @@ fn submit_without_auto_dismiss_keeps_rich_input_open() {
                         plugin_version: None,
                         draft_text: None,
                         custom_command_prefix: None,
+                        received_rich_notification: false,
                     },
                     ctx,
                 );
@@ -5703,6 +6198,7 @@ fn submit_with_plugin_and_auto_toggle_keeps_rich_input_open() {
                         plugin_version: Some("1.0.0".to_owned()),
                         draft_text: None,
                         custom_command_prefix: None,
+                        received_rich_notification: true,
                     },
                     ctx,
                 );
@@ -5757,6 +6253,7 @@ fn submit_with_plugin_but_auto_toggle_off_respects_auto_dismiss() {
                         plugin_version: Some("1.0.0".to_owned()),
                         draft_text: None,
                         custom_command_prefix: None,
+                        received_rich_notification: false,
                     },
                     ctx,
                 );
@@ -5811,6 +6308,7 @@ fn status_blocked_auto_closes_rich_input() {
                         plugin_version: Some("1.0.0".to_owned()),
                         draft_text: None,
                         custom_command_prefix: None,
+                        received_rich_notification: false,
                     },
                     ctx,
                 );
@@ -5824,6 +6322,7 @@ fn status_blocked_auto_closes_rich_input() {
                 sessions.update_from_event(
                     view.view_id,
                     &CLIAgentEvent {
+                        source: CLIAgentEventSource::RichPlugin,
                         v: 1,
                         agent: CLIAgent::Claude,
                         event: CLIAgentEventType::PermissionRequest,
@@ -5886,6 +6385,7 @@ fn status_in_progress_auto_opens_rich_input_after_blocked() {
                         plugin_version: Some("1.0.0".to_owned()),
                         draft_text: None,
                         custom_command_prefix: None,
+                        received_rich_notification: false,
                     },
                     ctx,
                 );
@@ -5897,6 +6397,7 @@ fn status_in_progress_auto_opens_rich_input_after_blocked() {
                 sessions.update_from_event(
                     view.view_id,
                     &CLIAgentEvent {
+                        source: CLIAgentEventSource::RichPlugin,
                         v: 1,
                         agent: CLIAgent::Claude,
                         event: CLIAgentEventType::PermissionRequest,
@@ -5924,6 +6425,7 @@ fn status_in_progress_auto_opens_rich_input_after_blocked() {
                 sessions.update_from_event(
                     view.view_id,
                     &CLIAgentEvent {
+                        source: CLIAgentEventSource::RichPlugin,
                         v: 1,
                         agent: CLIAgent::Claude,
                         event: CLIAgentEventType::PermissionReplied,
@@ -5982,6 +6484,7 @@ fn codex_status_change_does_not_auto_open_rich_input() {
                         plugin_version: None,
                         draft_text: None,
                         custom_command_prefix: None,
+                        received_rich_notification: false,
                     },
                     ctx,
                 );
@@ -5995,6 +6498,7 @@ fn codex_status_change_does_not_auto_open_rich_input() {
                 sessions.update_from_event(
                     view.view_id,
                     &CLIAgentEvent {
+                        source: CLIAgentEventSource::CodexOsc9Fallback,
                         v: 1,
                         agent: CLIAgent::Codex,
                         event: CLIAgentEventType::Stop,
@@ -6062,6 +6566,7 @@ fn cli_session_status_updates_active_child_conversation() {
                         plugin_version: None,
                         draft_text: None,
                         custom_command_prefix: None,
+                        received_rich_notification: false,
                     },
                     ctx,
                 );
@@ -6082,6 +6587,7 @@ fn cli_session_status_updates_active_child_conversation() {
                 sessions.update_from_event(
                     view.view_id,
                     &CLIAgentEvent {
+                        source: CLIAgentEventSource::RichPlugin,
                         v: 1,
                         agent: CLIAgent::Claude,
                         event: CLIAgentEventType::PermissionRequest,
@@ -6115,6 +6621,7 @@ fn cli_session_status_updates_active_child_conversation() {
                 sessions.update_from_event(
                     view.view_id,
                     &CLIAgentEvent {
+                        source: CLIAgentEventSource::RichPlugin,
                         v: 1,
                         agent: CLIAgent::Claude,
                         event: CLIAgentEventType::PermissionReplied,
@@ -6140,6 +6647,7 @@ fn cli_session_status_updates_active_child_conversation() {
                 sessions.update_from_event(
                     view.view_id,
                     &CLIAgentEvent {
+                        source: CLIAgentEventSource::RichPlugin,
                         v: 1,
                         agent: CLIAgent::Claude,
                         event: CLIAgentEventType::Stop,
@@ -6203,6 +6711,7 @@ fn cli_session_status_updates_single_child_conversation_without_agent_view() {
                         plugin_version: None,
                         draft_text: None,
                         custom_command_prefix: None,
+                        received_rich_notification: false,
                     },
                     ctx,
                 );
@@ -6223,6 +6732,7 @@ fn cli_session_status_updates_single_child_conversation_without_agent_view() {
                 sessions.update_from_event(
                     view.view_id,
                     &CLIAgentEvent {
+                        source: CLIAgentEventSource::RichPlugin,
                         v: 1,
                         agent: CLIAgent::Claude,
                         event: CLIAgentEventType::Stop,
@@ -6280,6 +6790,7 @@ fn manual_dismiss_disables_auto_toggle_for_session() {
                         plugin_version: Some("1.0.0".to_owned()),
                         draft_text: None,
                         custom_command_prefix: None,
+                        received_rich_notification: false,
                     },
                     ctx,
                 );
@@ -6306,6 +6817,7 @@ fn manual_dismiss_disables_auto_toggle_for_session() {
                 sessions.update_from_event(
                     view.view_id,
                     &CLIAgentEvent {
+                        source: CLIAgentEventSource::RichPlugin,
                         v: 1,
                         agent: CLIAgent::Claude,
                         event: CLIAgentEventType::PermissionRequest,
@@ -6324,6 +6836,7 @@ fn manual_dismiss_disables_auto_toggle_for_session() {
                 sessions.update_from_event(
                     view.view_id,
                     &CLIAgentEvent {
+                        source: CLIAgentEventSource::RichPlugin,
                         v: 1,
                         agent: CLIAgent::Claude,
                         event: CLIAgentEventType::PermissionReplied,

@@ -10,6 +10,7 @@ settings-section-appearance = 外观
 settings-section-features = 功能
 settings-section-keybindings = 键盘快捷键
 settings-section-warpify = Warpify
+settings-section-scripting = 脚本
 settings-section-referrals = 邀请有礼
 settings-section-shared-blocks = 共享区块
 settings-section-warp-drive = Warp 云盘

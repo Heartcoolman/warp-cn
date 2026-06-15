@@ -25,6 +25,7 @@ code-review-comment-list-menu-remove = Remove
 
 # git_dialog/mod.rs (12 strings: user_facing_git_error + dialog title/buttons + branch/changes labels)
 code-review-git-error-no-changes = No changes to commit.
+code-review-git-error-no-staged-changes = No staged changes to commit.
 code-review-git-error-identity-not-configured = Git identity not configured. Set user.name and user.email.
 code-review-git-error-pull-before-push = Remote has new changes — pull before pushing.
 code-review-git-error-no-remote = No remote configured for this branch.
@@ -33,6 +34,7 @@ code-review-git-error-network = Network error. Check your connection.
 code-review-git-error-repo-not-found = Remote repository not found.
 code-review-git-error-gh-cli-missing = GitHub CLI (gh) not installed. See https://cli.github.com/.
 code-review-git-error-gh-not-authenticated = GitHub CLI not authenticated. Run `gh auth login`.
+code-review-git-error-git-operation-in-progress = Another git operation is in progress. Finish or abort it first.
 code-review-git-error-generic = Git operation failed.
 code-review-git-button-confirm = Confirm
 code-review-git-button-cancel = Cancel
