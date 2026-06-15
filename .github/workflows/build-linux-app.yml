@@ -33,6 +33,11 @@ on:
         options:
           - debug
           - release
+      release_tag:
+        description: '可选：已存在的 release tag（如 v0.2026.06.01-cn.1）。填写后用它作为版本号构建，并把产物附到该 Release——用于给某次发布补构建 Linux 平台。'
+        required: false
+        default: ''
+        type: string
   push:
     tags:
       - 'v*'
@@ -115,8 +120,10 @@ jobs:
         id: bundle
         run: |
           set -e
-          # 确定版本号：tag 触发用 ref 名；dispatch 触发用 `git describe` 推导。
-          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+          # 确定版本号优先级：dispatch 显式 release_tag > tag ref 名 > `git describe`。
+          if [ -n "${INPUT_RELEASE_TAG:-}" ]; then
+            RELEASE_TAG="${INPUT_RELEASE_TAG}"
+          elif [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             RELEASE_TAG="${GITHUB_REF_NAME}"
           else
             RELEASE_TAG="$(git describe --tags --always 2>/dev/null || true)"
@@ -134,6 +141,7 @@ jobs:
         env:
           INPUT_CHANNEL: ${{ inputs.channel }}
           INPUT_PROFILE: ${{ inputs.profile }}
+          INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
 
       - name: Locate packages
         id: paths
@@ -160,14 +168,16 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      # ===== tag 触发：把产物附加到 GitHub Release（仅可下载，不接 in-app 自更新）=====
+      # ===== tag 触发，或 dispatch 显式传入 release_tag：把产物附加到 GitHub Release =====
+      # （仅可下载，不接 in-app 自更新。dispatch+release_tag 用于给已有发布补构建 Linux。）
       - name: Upload packages to GitHub Release
-        if: github.ref_type == 'tag'
+        if: github.ref_type == 'tag' || inputs.release_tag != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           set -e
-          TAG="${GITHUB_REF_NAME}"
+          TAG="${INPUT_RELEASE_TAG:-$GITHUB_REF_NAME}"
           PKG_DIR="${{ steps.paths.outputs.pkg_dir }}"
           mapfile -t ASSETS < <(find "$PKG_DIR" -maxdepth 1 -type f \( -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' \))
           [ "${#ASSETS[@]}" -gt 0 ] || { echo "无可上传产物"; exit 1; }
