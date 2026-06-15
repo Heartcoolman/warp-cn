@@ -6,7 +6,7 @@
 //!   in `bundles/en/`. Downstream code may `include!` it for runtime sanity checks.
 //! - Re-run when bundle contents change.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
 use std::io::Write;
@@ -19,6 +19,15 @@ fn main() {
 
     let mut en_keys: BTreeSet<String> = BTreeSet::new();
     let mut errors: Vec<String> = Vec::new();
+    // Per-locale message-id occurrences across ALL files of that locale.
+    // `load_locale` (loader.rs) merges every `<locale>/*.ftl` into one
+    // `FluentBundle`, and `add_resource` rejects any id already present —
+    // within OR across files — with an `Overriding` error. That error aborts
+    // `warp_i18n::init`, leaving the global unset so every `t!()` renders as
+    // `{key}` (lib.rs:107-110). The syntactic `parse` below does NOT catch
+    // duplicate ids, so detect them here and fail the build, mirroring exactly
+    // what `add_resource` would reject at runtime.
+    let mut occurrences: BTreeMap<String, BTreeMap<String, Vec<String>>> = BTreeMap::new();
 
     for entry in walkdir::WalkDir::new(&bundles_dir).into_iter().flatten() {
         if !entry.file_type().is_file() {
@@ -35,12 +44,23 @@ fn main() {
                 continue;
             }
         };
+        let rel = entry
+            .path()
+            .strip_prefix(&bundles_dir)
+            .map(|p| p.to_string_lossy().replace('\\', "/"))
+            .unwrap_or_else(|_| entry.path().display().to_string());
         match fluent_syntax::parser::parse(source.as_str()) {
             Ok(resource) => {
-                if is_en(entry.path(), &bundles_dir) {
-                    for entry in resource.body {
-                        if let fluent_syntax::ast::Entry::Message(msg) = entry {
-                            en_keys.insert(msg.id.name.to_string());
+                if let Some(locale) = locale_of(entry.path(), &bundles_dir) {
+                    let is_en = locale == "en";
+                    let per_key = occurrences.entry(locale).or_default();
+                    for item in &resource.body {
+                        if let fluent_syntax::ast::Entry::Message(msg) = item {
+                            let name = msg.id.name.to_string();
+                            if is_en {
+                                en_keys.insert(name.clone());
+                            }
+                            per_key.entry(name).or_default().push(rel.clone());
                         }
                     }
                 }
@@ -53,11 +73,31 @@ fn main() {
         }
     }
 
+    for (locale, keys) in &occurrences {
+        for (key, files) in keys {
+            if files.len() > 1 {
+                let mut unique: Vec<&String> = files.iter().collect();
+                unique.dedup();
+                errors.push(format!(
+                    "duplicate key '{key}' in locale '{locale}' ({} occurrences in {}); \
+                     FluentBundle::add_resource rejects this and warp_i18n::init() then \
+                     fails, rendering every UI string as {{key}}",
+                    files.len(),
+                    unique
+                        .iter()
+                        .map(|s| s.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
+            }
+        }
+    }
+
     if !errors.is_empty() {
         for e in &errors {
             eprintln!("warp_i18n: ftl error: {e}");
         }
-        panic!("warp_i18n: {} ftl parse error(s); aborting build", errors.len());
+        panic!("warp_i18n: {} ftl error(s); aborting build", errors.len());
     }
 
     let out_dir = PathBuf::from(env::var_os("OUT_DIR").unwrap());
@@ -130,10 +170,12 @@ fn main() {
     writeln!(file, "];").unwrap();
 }
 
-fn is_en(path: &Path, bundles_dir: &Path) -> bool {
+/// Locale directory a bundle file lives in (the first path component under
+/// `bundles/`), e.g. `en` or `zh-CN`. Returns `None` for files placed directly
+/// in `bundles/`.
+fn locale_of(path: &Path, bundles_dir: &Path) -> Option<String> {
     path.strip_prefix(bundles_dir)
         .ok()
         .and_then(|p| p.components().next())
-        .map(|c| c.as_os_str() == "en")
-        .unwrap_or(false)
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
 }
