@@ -1,0 +1,177 @@
+name: Build Linux App (unsigned)
+
+# 参照 build-mac-app.yml / build-windows-app.yml 的 Linux 版本。回应 issue #42（社区求 Linux 版）。
+#
+# 两种触发：
+# 1) workflow_dispatch（手动）：按需出包；channel / profile 可选。
+# 2) push tags v*：固定 oss/release 出 AppImage + .deb + .rpm，并作为 GitHub Release 资产上传
+#    （Linux 暂不接入 in-app 自更新与 apt/yum 源，仅提供可下载产物，不做签名）。
+#
+# 复用仓库已 vendored 的 script/linux/bundle + bundle_appimage/bundle_deb/bundle_rpm，
+# 它们已完整支持 oss channel（无 Sentry、bin=warp-oss、APP_NAME=WarpOss、FEATURES=release_bundle）。
+# 与 mac/windows 编译同一个 warp-oss 二进制（同 crate / 同 nld_* 特性），故 zh-CN 翻译 bundle
+# 与其它平台一致内嵌。
+#
+# 仅 x86_64：上游 CI 也只构建 linux x86_64；aarch64-linux 未经 CI 覆盖测试。
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: '发布档次 (oss=无 Sentry/外部依赖；dev=带调试断言；local=本地开发)'
+        required: true
+        default: oss
+        type: choice
+        options:
+          - oss
+          - dev
+          - local
+      profile:
+        description: '编译 profile (debug=cargo dev profile, ~30-60 min；release=release-lto, 数小时 on free runner)'
+        required: true
+        default: release
+        type: choice
+        options:
+          - debug
+          - release
+  push:
+    tags:
+      - 'v*'
+
+# tag 触发时需要 contents:write 才能调 `gh release upload`；
+# actions:write 给 rust-cache 写入用。
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  build:
+    name: Build ${{ inputs.channel || 'oss' }} (x86_64)
+    # GitHub 托管 runner。ubuntu-22.04 默认 gcc>=11，规避了上游为 ubuntu-20.04 gcc-9.5
+    # memcmp/aws-lc-rs bug 而装 gcc-10 的步骤；若日后默认 gcc 退回 <11 需补该步骤。
+    runs-on: ubuntu-22.04
+    # release-lto 在免费 runner 上冷构建可达数小时；debug profile 约 30-60 分钟。
+    timeout-minutes: 360
+
+    env:
+      CARGO_TERM_COLOR: always
+      RUST_BACKTRACE: 1
+      # GitHub runner 无 FUSE，linuxdeploy / appimagetool 需以 extract-and-run 模式运行。
+      APPIMAGE_EXTRACT_AND_RUN: 1
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          # app/build.rs 用 `git describe --tags` 把 GIT_RELEASE_TAG 烧进二进制；
+          # 默认 shallow clone 不拉 tag，会让产物显示 fallback 版本号。
+          fetch-tags: true
+
+      - name: Show runner info
+        run: |
+          set -e
+          (. /etc/os-release && echo "$PRETTY_NAME")
+          uname -a
+          gcc --version | head -1
+          rustc --version || true
+          cargo --version || true
+          df -h /
+
+      - name: Add Rust target
+        # 工具链版本由 rust-toolchain.toml(1.92.0) 决定，rustup 首次调用时自动安装。
+        run: rustup target add x86_64-unknown-linux-gnu
+
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: linux-x86_64-${{ inputs.channel || 'oss' }}-${{ inputs.profile || 'release' }}
+          # 仅 master push 与 tag push 写缓存；PR / sync 分支只读，避免污染。
+          save-if: ${{ github.ref == 'refs/heads/master' || github.ref_type == 'tag' }}
+
+      - name: Install build & runtime dependencies
+        # 复用仓库内 vendored 的依赖脚本（apt 开发库 + protoc 25.1 + X11/Wayland/EGL/Vulkan
+        # 运行库）。install_runtime_deps 内部已链式调用 install_build_deps。
+        # 额外补装打包工具：fakeroot（bundle_deb/bundle_rpm 都用）、rpm（提供 rpmbuild/rpmsign，
+        # Ubuntu 默认不带）。dpkg-deb 为 Ubuntu 自带。
+        run: |
+          set -e
+          sudo apt-get update
+          sudo apt-get install -y fakeroot rpm
+          ./script/linux/install_runtime_deps
+
+      - name: Install linuxdeploy (AppImage tooling)
+        run: |
+          set -e
+          ./script/linux/install_linuxdeploy
+          # bundle_appimage 通过 PATH 调用 linuxdeploy；脚本把它装到 ~/.local/bin。
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Build & bundle
+        id: bundle
+        run: |
+          set -e
+          # 确定版本号：tag 触发用 ref 名；dispatch 触发用 `git describe` 推导。
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            RELEASE_TAG="${GITHUB_REF_NAME}"
+          else
+            RELEASE_TAG="$(git describe --tags --always 2>/dev/null || true)"
+            [ -n "$RELEASE_TAG" ] || RELEASE_TAG="0.0.0-${GITHUB_SHA:0:7}"
+          fi
+          echo "GIT_RELEASE_TAG=$RELEASE_TAG"
+          CHANNEL="${INPUT_CHANNEL:-oss}"
+          PROFILE="${INPUT_PROFILE:-release}"
+          echo "Running script/linux/bundle --channel $CHANNEL --packages appimage,deb,rpm --release-tag $RELEASE_TAG (profile=$PROFILE)"
+          if [ "$PROFILE" = "debug" ]; then
+            ./script/linux/bundle --channel "$CHANNEL" --packages appimage,deb,rpm --release-tag "$RELEASE_TAG" --debug
+          else
+            ./script/linux/bundle --channel "$CHANNEL" --packages appimage,deb,rpm --release-tag "$RELEASE_TAG"
+          fi
+        env:
+          INPUT_CHANNEL: ${{ inputs.channel }}
+          INPUT_PROFILE: ${{ inputs.profile }}
+
+      - name: Locate packages
+        id: paths
+        run: |
+          set -e
+          PKG_DIR="${{ steps.bundle.outputs.packages_dir }}"
+          if [ -z "$PKG_DIR" ] || [ ! -d "$PKG_DIR" ]; then
+            echo "bundle 未输出 packages_dir，回退扫描 target/*/bundle/linux"
+            PKG_DIR="$(find target -type d -path '*/bundle/linux' | head -1)"
+          fi
+          [ -n "$PKG_DIR" ] && [ -d "$PKG_DIR" ] || { echo "找不到产物目录"; exit 1; }
+          echo "pkg_dir=$PKG_DIR" >> "$GITHUB_OUTPUT"
+          echo "找到的产物："
+          find "$PKG_DIR" -maxdepth 1 -type f \( -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' \) -print
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: warp-${{ inputs.channel || 'oss' }}-x86_64-${{ inputs.profile || 'release' }}-linux
+          path: |
+            ${{ steps.paths.outputs.pkg_dir }}/*.AppImage
+            ${{ steps.paths.outputs.pkg_dir }}/*.deb
+            ${{ steps.paths.outputs.pkg_dir }}/*.rpm
+          if-no-files-found: error
+          retention-days: 14
+
+      # ===== tag 触发：把产物附加到 GitHub Release（仅可下载，不接 in-app 自更新）=====
+      - name: Upload packages to GitHub Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          TAG="${GITHUB_REF_NAME}"
+          PKG_DIR="${{ steps.paths.outputs.pkg_dir }}"
+          mapfile -t ASSETS < <(find "$PKG_DIR" -maxdepth 1 -type f \( -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' \))
+          [ "${#ASSETS[@]}" -gt 0 ] || { echo "无可上传产物"; exit 1; }
+          # mac/windows workflow 可能已为同 tag 建好 release；存在则直接上传，否则重试等待其出现。
+          for i in 1 2 3 4 5; do
+            if gh release view "$TAG" >/dev/null 2>&1; then
+              gh release upload "$TAG" "${ASSETS[@]}" --clobber
+              exit 0
+            fi
+            sleep $((i * 3))
+          done
+          # 5 次后仍无 release（纯 Linux tag 场景）：自行创建。
+          gh release create "$TAG" "${ASSETS[@]}" --title "$TAG" --generate-notes
