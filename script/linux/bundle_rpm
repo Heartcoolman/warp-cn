@@ -66,7 +66,11 @@ rm -rf "$RPMBUILD_DIR"
 mkdir -p "$RPMBUILD_DIR"/{SPEC,RPMS}
 
 # Move the RPM-specific package metadata into the package directory.
-VERSION="$GIT_RELEASE_TAG"
+# RPM's Version field forbids '-' (it separates version from release), so strip
+# the leading 'v' and replace any '-' with '.'. Without this, fork tags like
+# 'v0.2026.06.01-cn.1' make rpmbuild fail with
+# "Illegal char '-' (0x2d) in: Version:". (bundle_deb sanitizes similarly.)
+VERSION="$(echo "$GIT_RELEASE_TAG" | sed -E 's/^v//; s/-/./g')"
 RELEASE="1"
 sed \
     "s#@@CHANNEL_SUFFIX@@#$CHANNEL_SUFFIX#g; \
@@ -92,8 +96,10 @@ cp "$RPMBUILD_DIR/RPMS/$ARCH/$RPM_NAME" "$OUT_DIR"
 # should have already been added to the gpg-agent with a preset passphrase.
 if [ "${GITHUB_ACTIONS}" == "true" ]; then
   # Import our signing key's public key into rpm so the signature can be
-  # verified.
-  sudo rpm --import https://releases.warp.dev/linux/keys/warp.asc
+  # verified. Non-fatal: it's only needed for downstream signature verification,
+  # not for producing the package, and the OSS fork doesn't sign anyway (the
+  # rpmsign below is already `|| true`).
+  sudo rpm --import https://releases.warp.dev/linux/keys/warp.asc || true
 
   # We use batch mode with tty-based pin entry to ensure that the build doesn't
   # hang waiting on user input if, for some reason, we failed to preset the
