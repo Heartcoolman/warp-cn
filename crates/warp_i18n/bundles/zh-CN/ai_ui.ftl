@@ -285,3 +285,4 @@ ai-ui-conversation-details-agent = 智能体
 ai-ui-orchestration-modal-title = 随时随地编排任意智能体
 ai-ui-orchestration-modal-description = 我们对 Warp 的云智能体编排平台 Oz 做了重大改进。
 ai-ui-openai-base-url-prompt = OpenAI base URL（可选，按回车跳过）：
+ai-ui-queued-prompts-to-send = 发送

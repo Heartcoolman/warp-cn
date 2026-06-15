@@ -186,3 +186,4 @@ settings-ai-cmd-suffix-warp-credit-fallback = Warp 额度回退
 settings-ai-cmd-suffix-auto-toggle-rich-input = 根据智能体状态自动显示或隐藏富输入
 settings-ai-cmd-suffix-auto-open-rich-input-on-cli-agent-start = 编码智能体会话开始时自动打开富输入
 settings-ai-cmd-suffix-auto-dismiss-rich-input-after-submit = 提交提示后自动关闭富输入
+settings-ai-supergrok-connect-description = 连接你的 SuperGrok 订阅，即可通过你的 xAI 账户在 Warp Agent 中使用 Grok 模型。

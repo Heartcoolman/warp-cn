@@ -8115,7 +8115,7 @@ impl ApiKeysWidget {
 
         let description = Container::new(
             Text::new(
-                "Connect your SuperGrok subscription to use Grok models in the Warp Agent through your xAI account.",
+                warp_i18n::t!("settings-ai-supergrok-connect-description"),
                 appearance.ui_font_family(),
                 CONTENT_FONT_SIZE,
             )
