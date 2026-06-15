@@ -118,6 +118,15 @@ fn plural_selector_en_one_vs_other() {
 }
 
 #[test]
+fn production_bundles_load_without_errors() {
+    // Regression guard for #39/#44: a duplicate key in any bundle file makes
+    // `FluentBundle::add_resource` fail, so `Bundles::load` (and thus
+    // `warp_i18n::init`) returns Err and every UI string renders as `{key}`.
+    // Loading the real embedded en/zh-CN bundles must always succeed.
+    crate::loader::Bundles::load().expect("production bundles must load");
+}
+
+#[test]
 fn init_is_idempotent() {
     ensure_init();
     let _g = lock().lock();

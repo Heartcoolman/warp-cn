@@ -128,5 +128,4 @@ settings-billing-upgrade-enterprise = Upgrade to Enterprise
 settings-billing-enterprise-suffix = " for custom limits and dedicated support."
 settings-billing-contact-support-suffix = " for more AI usage."
 settings-billing-build-byok-credits-suffix = " for more credits and access to more models."
-settings-billing-no-usage-history = No usage history
 settings-billing-usage-history-empty-hint = Kick off an agent task to view usage history here.
