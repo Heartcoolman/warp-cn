@@ -20,12 +20,13 @@ use warp_editor::render::element::VerticalExpansionBehavior;
 use warpui::clipboard::ClipboardContent;
 use warpui::elements::new_scrollable::SingleAxisConfig;
 use warpui::elements::{
-    Border, ChildAnchor, ChildView, ClippedScrollStateHandle, ConstrainedBox, Container,
-    CornerRadius, CrossAxisAlignment, DropShadow, Empty, Expanded, Fill, Flex,
-    FormattedTextElement, Highlight, HighlightedHyperlink, Hoverable, MainAxisAlignment,
-    MainAxisSize, MouseStateHandle, NewScrollable, OffsetPositioning, ParentElement,
-    PositionedElementAnchor, PositionedElementOffsetBounds, Radius, SavePosition, SelectableArea,
-    SelectionHandle, Shrinkable, SizeConstraintCondition, SizeConstraintSwitch, Stack, Text,
+    resizable_state_handle, Border, ChildAnchor, ChildView, ClippedScrollStateHandle,
+    ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, DragBarSide, DropShadow, Empty,
+    Expanded, Fill, Flex, FormattedTextElement, Highlight, HighlightedHyperlink, Hoverable,
+    MainAxisAlignment, MainAxisSize, MouseStateHandle, NewScrollable, OffsetPositioning,
+    ParentElement, PositionedElementAnchor, PositionedElementOffsetBounds, Radius, Resizable,
+    ResizableStateHandle, SavePosition, SelectableArea, SelectionHandle, Shrinkable,
+    SizeConstraintCondition, SizeConstraintSwitch, Stack, Text,
 };
 use warpui::fonts::{Properties, Style, Weight};
 use warpui::keymap::{BindingDescription, EditableBinding, Keystroke};
@@ -98,6 +99,10 @@ use crate::workspace::WorkspaceAction;
 use crate::{send_telemetry_from_ctx, BlocklistAIHistoryModel, ToastStack};
 const MENU_WIDTH: f32 = 200.0;
 const MAX_HEIGHT: f32 = 320.0;
+const MIN_RESIZABLE_WIDTH: f32 = 360.0;
+const MIN_RESIZABLE_HEIGHT: f32 = 40.0;
+const MIN_REMAINING_WINDOW_WIDTH: f32 = 200.0;
+const MIN_REMAINING_WINDOW_HEIGHT: f32 = 100.0;
 const AVATAR_RIGHT_MARGIN: f32 = 8.;
 const CONTENT_PADDING: f32 = 12.;
 const ALLOW_ACTION_POSITION_ID: &str = "allow-action-position-id";
@@ -216,6 +221,8 @@ pub struct CLISubagentView {
 
     is_input_dismissed: bool,
     input_dismiss_timer_handle: Option<SpawnedFutureHandle>,
+    resizable_width: ResizableStateHandle,
+    resizable_height: ResizableStateHandle,
 
     current_working_directory: Option<String>,
     shell_launch_data: Option<ShellLaunchData>,
@@ -470,6 +477,8 @@ impl CLISubagentView {
             always_allow_read_files_checked,
             is_input_dismissed: false,
             input_dismiss_timer_handle: None,
+            resizable_width: resizable_state_handle(MIN_RESIZABLE_WIDTH),
+            resizable_height: resizable_state_handle(MAX_HEIGHT),
             current_working_directory,
             shell_launch_data,
             selected_text: Arc::new(RwLock::new(None)),
@@ -958,6 +967,11 @@ impl View for CLISubagentView {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
         let semantic_selection = SemanticSelection::handle(app).as_ref(app);
+        let resizable_height = self
+            .resizable_height
+            .lock()
+            .map(|g| g.size())
+            .unwrap_or(MAX_HEIGHT);
 
         let mut result = Flex::column()
             .with_main_axis_size(MainAxisSize::Min)
@@ -1016,6 +1030,7 @@ impl View for CLISubagentView {
                         child: selectable_text.finish(),
                         background_color: internal_colors::accent_bg(theme).into(),
                         border: Some(Border::all(1.).with_border_fill(theme.accent())),
+                        max_height: resizable_height,
                     },
                     app,
                 )
@@ -1129,6 +1144,7 @@ impl View for CLISubagentView {
                                             border: Some(Border::all(1.).with_border_fill(
                                                 internal_colors::neutral_3(theme),
                                             )),
+                                            max_height: resizable_height,
                                         },
                                         app,
                                     )
@@ -1156,6 +1172,7 @@ impl View for CLISubagentView {
                                                 internal_colors::neutral_3(theme),
                                             ),
                                         ),
+                                        max_height: resizable_height,
                                     },
                                     app,
                                 )
@@ -1258,6 +1275,7 @@ impl View for CLISubagentView {
                         child: output.finish(),
                         background_color: internal_colors::neutral_2(appearance.theme()),
                         border: Some(output_border),
+                        max_height: resizable_height,
                     },
                     app,
                 )
@@ -1277,6 +1295,7 @@ impl View for CLISubagentView {
                                 input: input.clone(),
                                 mode,
                                 scroll_state: self.state_handles.input_scroll_state.clone(),
+                                max_height: resizable_height,
                             },
                             app,
                         )),
@@ -1377,7 +1396,24 @@ impl View for CLISubagentView {
             );
         }
 
-        result.finish()
+        let content = result.finish();
+        let width_resizable = Resizable::new(self.resizable_width.clone(), content)
+            .with_dragbar_side(DragBarSide::Left)
+            .on_resize(|ctx, _| ctx.notify())
+            .with_bounds_callback(Box::new(|window_size| {
+                let max = (window_size.x() - MIN_REMAINING_WINDOW_WIDTH).max(MIN_RESIZABLE_WIDTH);
+                (MIN_RESIZABLE_WIDTH, max)
+            }))
+            .finish();
+
+        Resizable::new(self.resizable_height.clone(), width_resizable)
+            .with_dragbar_side(DragBarSide::Top)
+            .on_resize(|ctx, _| ctx.notify())
+            .with_bounds_callback(Box::new(|window_size| {
+                let max = (window_size.y() - MIN_REMAINING_WINDOW_HEIGHT).max(MIN_RESIZABLE_HEIGHT);
+                (MIN_RESIZABLE_HEIGHT, max)
+            }))
+            .finish()
     }
 
     fn keymap_context(&self, app: &AppContext) -> warpui::keymap::Context {
@@ -1689,6 +1725,7 @@ struct ScrollableContainerProps {
     child: Box<dyn Element>,
     background_color: ColorU,
     border: Option<Border>,
+    max_height: f32,
 }
 
 fn render_scrollable_container(props: ScrollableContainerProps, _app: &AppContext) -> Container {
@@ -1697,6 +1734,7 @@ fn render_scrollable_container(props: ScrollableContainerProps, _app: &AppContex
         child,
         background_color,
         border,
+        max_height,
     } = props;
 
     let scrollable = NewScrollable::vertical(
@@ -1712,7 +1750,7 @@ fn render_scrollable_container(props: ScrollableContainerProps, _app: &AppContex
     .finish();
 
     let clipped = ConstrainedBox::new(scrollable)
-        .with_max_height(MAX_HEIGHT)
+        .with_max_height(max_height)
         .finish();
 
     let mut container = Container::new(clipped)
@@ -1896,6 +1934,7 @@ struct WriteToPtyInputProps {
     input: bytes::Bytes,
     mode: AIAgentPtyWriteMode,
     scroll_state: ClippedScrollStateHandle,
+    max_height: f32,
 }
 
 fn render_write_to_pty_input(props: WriteToPtyInputProps, app: &AppContext) -> Box<dyn Element> {
@@ -1903,6 +1942,7 @@ fn render_write_to_pty_input(props: WriteToPtyInputProps, app: &AppContext) -> B
         input,
         mode,
         scroll_state,
+        max_height,
     } = props;
 
     let appearance = Appearance::as_ref(app);
@@ -1948,7 +1988,7 @@ fn render_write_to_pty_input(props: WriteToPtyInputProps, app: &AppContext) -> B
     .finish();
 
     let clipped = ConstrainedBox::new(scrollable)
-        .with_max_height(MAX_HEIGHT)
+        .with_max_height(max_height)
         .finish();
 
     Container::new(clipped)

@@ -120,6 +120,7 @@ command-slash-add-prompt-desc = Add new Agent prompt
 command-slash-add-rule-desc = Add a new global rule for the agent
 command-slash-open-file-desc = Open a file in Warp's code editor
 command-slash-rename-tab-desc = Rename the current tab
+command-slash-rename-conversation-desc = Rename the current conversation
 command-slash-set-tab-color-desc = Set the color of the current tab
 command-slash-fork-desc = Fork the current conversation in a new pane or a new tab
 command-slash-open-code-review-desc = Open code review

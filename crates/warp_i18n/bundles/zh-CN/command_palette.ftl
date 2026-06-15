@@ -119,6 +119,7 @@ command-slash-add-prompt-desc = 添加新的智能体提示词
 command-slash-add-rule-desc = 为智能体添加新的全局规则
 command-slash-open-file-desc = 在 Warp 代码编辑器中打开文件
 command-slash-rename-tab-desc = 重命名当前标签页
+command-slash-rename-conversation-desc = 重命名当前会话
 command-slash-set-tab-color-desc = 设置当前标签页颜色
 command-slash-fork-desc = 在新窗格或新标签页中 fork 当前会话
 command-slash-open-code-review-desc = 打开代码审查

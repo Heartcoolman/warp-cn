@@ -34,6 +34,7 @@ code-review-comment-list-menu-remove = 移除
 
 # git_dialog/mod.rs（12 条：user_facing_git_error + 对话框标题/按钮 + 分支/更改标签）
 code-review-git-error-no-changes = 没有可提交的更改。
+code-review-git-error-no-staged-changes = 没有已暂存的更改可提交。
 code-review-git-error-identity-not-configured = 未配置 Git 身份。请设置 user.name 和 user.email。
 code-review-git-error-pull-before-push = 远程有新更改 — 请先拉取再推送。
 code-review-git-error-no-remote = 此分支未配置远程仓库。
@@ -42,6 +43,7 @@ code-review-git-error-network = 网络错误。请检查你的连接。
 code-review-git-error-repo-not-found = 未找到远程仓库。
 code-review-git-error-gh-cli-missing = 未安装 GitHub CLI（gh）。详见 https://cli.github.com/。
 code-review-git-error-gh-not-authenticated = 未登录 GitHub CLI。请运行 `gh auth login`。
+code-review-git-error-git-operation-in-progress = 另一个 Git 操作正在进行中。请先完成或中止它。
 code-review-git-error-generic = Git 操作失败。
 code-review-git-button-confirm = 确认
 code-review-git-button-cancel = 取消
