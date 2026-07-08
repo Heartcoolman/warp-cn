@@ -16,7 +16,6 @@ use crate::terminal::view::init_project::{
     CodebaseIndexingResult, CreateEnvironmentResult, InitActionResult, LanguageServersResult,
     ProjectScopedRulesResult, FILES_TO_CHECK, LINKABLE_FILES,
 };
-use crate::workspaces::user_workspaces::UserWorkspaces;
 
 const INIT_STEP_COUNT: usize = enum_iterator::cardinality::<InitStepKind>();
 

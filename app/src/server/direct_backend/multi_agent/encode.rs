@@ -41,6 +41,7 @@ pub fn build_success_actions_and_finished(
         match block {
             DecodedBlock::Text(text) => {
                 messages.push(api::Message {
+        fetched_memories: vec![],
                     id: msg_id,
                     task_id: task_id.clone(),
                     request_id: request_id.clone(),
@@ -54,6 +55,7 @@ pub fn build_success_actions_and_finished(
             }
             DecodedBlock::ToolUse { tool_use_id, tool } => {
                 messages.push(api::Message {
+        fetched_memories: vec![],
                     id: msg_id,
                     task_id: task_id.clone(),
                     request_id: request_id.clone(),
@@ -163,6 +165,7 @@ pub fn build_add_then_append_text(
     delta: &str,
 ) -> api::ResponseEvent {
     let empty_msg = api::Message {
+        fetched_memories: vec![],
         id: msg_id.to_string(),
         task_id: task_id.into(),
         request_id: request_id.into(),
@@ -176,6 +179,7 @@ pub fn build_add_then_append_text(
         )),
     };
     let delta_msg = api::Message {
+        fetched_memories: vec![],
         id: msg_id.to_string(),
         task_id: task_id.into(),
         request_id: request_id.into(),
@@ -228,6 +232,7 @@ pub fn build_add_then_append_reasoning(
     delta: &str,
 ) -> api::ResponseEvent {
     let empty_msg = api::Message {
+        fetched_memories: vec![],
         id: msg_id.to_string(),
         task_id: task_id.into(),
         request_id: request_id.into(),
@@ -242,6 +247,7 @@ pub fn build_add_then_append_reasoning(
         )),
     };
     let delta_msg = api::Message {
+        fetched_memories: vec![],
         id: msg_id.to_string(),
         task_id: task_id.into(),
         request_id: request_id.into(),
@@ -283,6 +289,7 @@ pub fn build_add_then_append_reasoning(
 
 pub fn build_append_to_reasoning(task_id: &str, msg_id: &str, delta: &str) -> api::ResponseEvent {
     let delta_msg = api::Message {
+        fetched_memories: vec![],
         id: msg_id.to_string(),
         task_id: task_id.into(),
         request_id: String::new(),
@@ -318,6 +325,7 @@ pub fn build_append_to_reasoning(task_id: &str, msg_id: &str, delta: &str) -> ap
 
 pub fn build_append_to_text(task_id: &str, msg_id: &str, delta: &str) -> api::ResponseEvent {
     let delta_msg = api::Message {
+        fetched_memories: vec![],
         id: msg_id.to_string(),
         task_id: task_id.into(),
         request_id: String::new(),
@@ -361,6 +369,7 @@ pub fn build_tool_call_message_action(
     tool: api::message::tool_call::Tool,
 ) -> api::ResponseEvent {
     let msg = api::Message {
+        fetched_memories: vec![],
         id: Uuid::new_v4().to_string(),
         task_id: task_id.into(),
         request_id: request_id.into(),
@@ -394,6 +403,7 @@ pub fn build_inline_text_message(
     text: &str,
 ) -> api::ResponseEvent {
     let msg = api::Message {
+        fetched_memories: vec![],
         id: Uuid::new_v4().to_string(),
         task_id: task_id.into(),
         request_id: request_id.into(),

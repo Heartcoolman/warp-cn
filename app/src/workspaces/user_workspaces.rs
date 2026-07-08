@@ -158,22 +158,23 @@ impl UserWorkspaces {
         current_workspace_uid: Option<WorkspaceUid>,
         ctx: &mut ModelContext<Self>,
     ) -> Self {
-        ctx.subscribe_to_model(&ServerExperiments::handle(ctx), |me, event, ctx| {
+        ctx.subscribe_to_model(&ServerExperiments::handle(ctx), |me, _, event, ctx| {
             let ServerExperimentsEvent::ExperimentsUpdated = event;
             me.update_session_sharing_enablement(ctx);
         });
 
-        ctx.subscribe_to_model(&CodeSettings::handle(ctx), |_, code_settings_event, ctx| {
-            match code_settings_event {
+        ctx.subscribe_to_model(
+            &CodeSettings::handle(ctx),
+            |_, _, code_settings_event, ctx| match code_settings_event {
                 CodeSettingsChangedEvent::CodebaseContextEnabled { .. }
                 | CodeSettingsChangedEvent::AutoIndexingEnabled { .. } => {
                     ctx.emit(UserWorkspacesEvent::CodebaseContextEnablementChanged);
                 }
                 _ => {}
-            }
-        });
+            },
+        );
 
-        ctx.subscribe_to_model(&AISettings::handle(ctx), |_, ai_settings_event, ctx| {
+        ctx.subscribe_to_model(&AISettings::handle(ctx), |_, _, ai_settings_event, ctx| {
             if let AISettingsChangedEvent::IsAnyAIEnabled { .. } = ai_settings_event {
                 ctx.emit(UserWorkspacesEvent::CodebaseContextEnablementChanged);
             }
@@ -503,7 +504,7 @@ impl UserWorkspaces {
     }
     /// Whether custom inference endpoints are enabled for the current user.
     /// Anonymous or logged-out users are not allowed to use custom inference.
-    /// Enterprise workspaces require the enterprise custom inference flag, Warp Plan, or dogfood.
+    /// Controlled by the BYO_ENDPOINT billing policy.
     pub fn is_custom_inference_enabled(&self, app: &AppContext) -> bool {
         if AuthStateProvider::as_ref(app)
             .get()
@@ -513,11 +514,7 @@ impl UserWorkspaces {
         }
 
         self.current_workspace()
-            .map(|workspace| {
-                workspace.billing_metadata.customer_type != CustomerType::Enterprise
-                    || FeatureFlag::CustomInferenceEndpointsEnterprise.is_enabled()
-                    || ChannelState::channel().is_dogfood()
-            })
+            .map(|workspace| workspace.billing_metadata.is_byo_endpoint_enabled())
             .unwrap_or(true)
     }
 

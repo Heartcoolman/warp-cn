@@ -126,8 +126,6 @@ binding-terminal-view-ask-ai-about-selection = 让 Warp AI 解读选区
 binding-terminal-view-ask-ai-last-block = 让 Warp AI 解读最后一个块
 binding-terminal-view-ask-ai = 询问 Warp AI
 binding-terminal-view-insert-command-correction = 插入命令更正
-binding-terminal-view-onboarding-flow = 设置向导
-binding-terminal-view-debug-onboarding-warpinput-terminal = [调试] 引导提示：WarpInput - 终端
 binding-terminal-view-debug-onboarding-warpinput-project = [调试] 引导提示：WarpInput - 项目
 binding-terminal-view-debug-onboarding-warpinput-no-project = [调试] 引导提示：WarpInput - 无项目
 binding-terminal-view-debug-onboarding-modality-project = [调试] 引导提示：模式 - 项目
@@ -360,8 +358,8 @@ binding-workspace-check-for-updates = 检查更新
 binding-workspace-log-out = 退出登录
 binding-workspace-toggle-resource-center = 切换资源中心
 binding-workspace-export-warp-drive-objects = 导出全部 Warp 云盘对象
-binding-workspace-install-cli = 安装 Oz CLI 命令
-binding-workspace-uninstall-cli = 卸载 Oz CLI 命令
+binding-workspace-install-cli = 全局安装 Oz CLI（可在 Warp 之外使用）
+binding-workspace-uninstall-cli = 撤销 Oz CLI 全局安装（oz 在 Warp 内仍可使用）
 binding-workspace-view-changelog = 查看最新更新日志
 binding-workspace-toggle-warp-ai = 切换 Warp AI
 binding-workspace-shift-focus-left = 切换焦点到左侧面板
@@ -413,6 +411,7 @@ binding-workspace-toggle-sync-inputs-all-tabs = 切换同步所有标签页所�
 binding-code-review-save-all = 保存代码审查中所有未保存文件
 binding-code-review-show-find-bar = 在代码审查中显示查找栏
 binding-code-review-undo-revert = 撤销
+binding-code-review-submit-review-comments = 将代码审查评论发送给智能体
 
 # workflows/workflow_view.rs（2 EditableBinding）
 binding-workflow-save = 保存工作流

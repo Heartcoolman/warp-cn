@@ -126,8 +126,6 @@ binding-terminal-view-ask-ai-about-selection = Ask Warp AI about Selection
 binding-terminal-view-ask-ai-last-block = Ask Warp AI about last block
 binding-terminal-view-ask-ai = Ask Warp AI
 binding-terminal-view-insert-command-correction = Insert Command Correction
-binding-terminal-view-onboarding-flow = Setup Guide
-binding-terminal-view-debug-onboarding-warpinput-terminal = [Debug] Onboarding Callout: WarpInput - Terminal
 binding-terminal-view-debug-onboarding-warpinput-project = [Debug] Onboarding Callout: WarpInput - Project
 binding-terminal-view-debug-onboarding-warpinput-no-project = [Debug] Onboarding Callout: WarpInput - No Project
 binding-terminal-view-debug-onboarding-modality-project = [Debug] Onboarding Callout: Modality - Project
@@ -360,8 +358,8 @@ binding-workspace-check-for-updates = Check for updates
 binding-workspace-log-out = Log out
 binding-workspace-toggle-resource-center = Toggle resource center
 binding-workspace-export-warp-drive-objects = Export all Warp Drive objects
-binding-workspace-install-cli = Install Oz CLI command
-binding-workspace-uninstall-cli = Uninstall Oz CLI command
+binding-workspace-install-cli = Install Oz CLI globally for use outside of Warp
+binding-workspace-uninstall-cli = Undo global Oz CLI installation (oz will still work within Warp)
 binding-workspace-view-changelog = View latest changelog
 binding-workspace-toggle-warp-ai = Toggle Warp AI
 binding-workspace-shift-focus-left = Switch Focus to Left Panel
@@ -413,6 +411,7 @@ binding-workspace-toggle-sync-inputs-all-tabs = Toggle Synchronizing All Panes i
 binding-code-review-save-all = Save all unsaved files in code review
 binding-code-review-show-find-bar = Show find bar in code review
 binding-code-review-undo-revert = Undo
+binding-code-review-submit-review-comments = Send code review comments to agent
 
 # workflows/workflow_view.rs (2 EditableBinding)
 binding-workflow-save = Save workflow

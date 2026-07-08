@@ -125,6 +125,7 @@ code-review-view-cannot-attach-input-unavailable = Cannot attach diff while inpu
 code-review-view-button-create-pr = Create PR
 code-review-view-button-publish = Publish
 code-review-view-tooltip-no-changes-to-commit = No changes to commit
+code-review-view-tooltip-commit-changes = Commit changes locally
 code-review-view-tooltip-no-git-actions = No git actions available
 code-review-view-menu-commit = Commit
 code-review-view-menu-push = Push

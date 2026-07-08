@@ -56,6 +56,7 @@ if [[ -z "$WARP_PLIST_NO_FILE_TYPES" ]]; then
     <dict>
       <key>CFBundleTypeName</key><string>Folder</string>
       <key>CFBundleTypeRole</key><string>Editor</string>
+      <key>LSHandlerRank</key><string>Alternate</string>
       <key>LSItemContentTypes</key>
       <array>
         <string>public.folder</string>
@@ -80,6 +81,7 @@ if [[ -z "$WARP_PLIST_NO_FILE_TYPES" ]]; then
     <dict>
       <key>CFBundleTypeName</key><string>Markdown File</string>
       <key>CFBundleTypeRole</key><string>Editor</string>
+      <key>LSHandlerRank</key><string>Alternate</string>
       <key>LSItemContentTypes</key>
       <array>
         <string>net.daringfireball.markdown</string>
@@ -91,6 +93,7 @@ if [[ -z "$WARP_PLIST_NO_FILE_TYPES" ]]; then
     <dict>
       <key>CFBundleTypeName</key><string>Plain Text File</string>
       <key>CFBundleTypeRole</key><string>Editor</string>
+      <key>LSHandlerRank</key><string>Alternate</string>
       <key>LSItemContentTypes</key>
       <array>
         <string>public.plain-text</string>
@@ -99,6 +102,7 @@ if [[ -z "$WARP_PLIST_NO_FILE_TYPES" ]]; then
     <dict>
       <key>CFBundleTypeName</key><string>Source Code File</string>
       <key>CFBundleTypeRole</key><string>Editor</string>
+      <key>LSHandlerRank</key><string>Alternate</string>
       <key>LSItemContentTypes</key>
       <array>
         <string>public.source-code</string>

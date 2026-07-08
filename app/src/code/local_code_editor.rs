@@ -6,6 +6,7 @@ use std::{
     ops::Range,
     path::{Path, PathBuf},
     rc::Rc,
+    sync::Arc,
     time::Duration,
 };
 
@@ -109,7 +110,7 @@ pub enum LocalCodeEditorEvent {
     },
     FileSaved,
     FailedToSave {
-        error: Rc<FileSaveError>,
+        error: Arc<FileSaveError>,
     },
     DiffAccepted,
     DiffRejected,
@@ -321,7 +322,7 @@ impl LocalCodeEditorView {
         });
 
         ctx.subscribe_to_view(&editor, |me, _, event, ctx| match event {
-            CodeEditorEvent::UnifiedDiffComputed(_) => {
+            CodeEditorEvent::UnifiedDiffComputed => {
                 ctx.emit(LocalCodeEditorEvent::DiffAccepted);
             }
             CodeEditorEvent::ContentChanged { origin, .. } => {
@@ -1138,7 +1139,7 @@ impl LocalCodeEditorView {
         if let Err(err) = result {
             log::error!("Failed to save file: {err:?}");
             ctx.emit(LocalCodeEditorEvent::FailedToSave {
-                error: Rc::new(err),
+                error: Arc::new(err),
             });
         }
     }
@@ -1519,7 +1520,6 @@ impl LocalCodeEditorView {
             if event.file_id() != file_id {
                 return;
             }
-            me.update_diff_hunk_gutter_buttons(ctx);
             match event {
                 GlobalBufferModelEvent::BufferLoaded {
                     content_version, ..
@@ -1531,13 +1531,13 @@ impl LocalCodeEditorView {
                     if me.base_content_version.is_some() {
                         me.base_content_version = Some(*content_version);
                         ctx.notify();
-                        return;
+                    } else {
+                        me.base_content_version = Some(*content_version);
+                        me.subscribe_to_lsp_manager_updates(ctx);
+                        me.try_connect_lsp_server(ctx);
+                        me.on_file_loaded(ctx);
+                        ctx.emit(LocalCodeEditorEvent::FileLoaded);
                     }
-                    me.base_content_version = Some(*content_version);
-                    me.subscribe_to_lsp_manager_updates(ctx);
-                    me.try_connect_lsp_server(ctx);
-                    me.on_file_loaded(ctx);
-                    ctx.emit(LocalCodeEditorEvent::FileLoaded);
                 }
                 GlobalBufferModelEvent::FailedToLoad { error, .. } => {
                     me.is_new_file = true;
@@ -1557,7 +1557,10 @@ impl LocalCodeEditorView {
                         me.base_content_version = Some(*content_version);
                     }
                 }
-                GlobalBufferModelEvent::FileSaved { .. } => {
+                GlobalBufferModelEvent::FileSaved {
+                    content_version, ..
+                } => {
+                    me.base_content_version = Some(*content_version);
                     me.has_remote_conflict = false;
                     ctx.emit(LocalCodeEditorEvent::FileSaved);
                 }
@@ -1575,6 +1578,8 @@ impl LocalCodeEditorView {
                     // Not relevant for local code editors.
                 }
             }
+
+            me.update_diff_hunk_gutter_buttons(ctx);
         });
     }
 
@@ -1679,7 +1684,7 @@ impl LocalCodeEditorView {
             }) {
             log::error!("Failed to save file to new path: {err:?}");
             ctx.emit(LocalCodeEditorEvent::FailedToSave {
-                error: Rc::new(err),
+                error: Arc::new(err),
             });
             SaveOutcome::Failed
         } else {
@@ -2076,22 +2081,6 @@ impl DiffViewer for LocalCodeEditorView {
         self.was_edited
     }
 
-    /// Automatically accept and save this diff. Unlike [`Self::accept_diff`] and [`Self::save_local`], this
-    /// waits for the initial file contents to be loaded.
-    fn accept_and_save_diff(&self, ctx: &mut ViewContext<Self>) {
-        ctx.spawn(self.file_loaded.wait(), move |me, _, ctx| {
-            me.accept_diff(ctx);
-            if let Err(err) = me.save_local(ctx) {
-                log::error!("{err:?}");
-                if let ImmediateSaveError::FailedToSave(err) = err {
-                    ctx.emit(LocalCodeEditorEvent::FailedToSave {
-                        error: Rc::new(err),
-                    });
-                }
-            }
-        });
-    }
-
     fn reject_diff(&mut self, ctx: &mut ViewContext<Self>) {
         ctx.emit(LocalCodeEditorEvent::DiffRejected);
     }
@@ -2299,7 +2288,7 @@ impl TypedActionView for LocalCodeEditorView {
                 if let Err(ImmediateSaveError::FailedToSave(err)) = self.save_local(ctx) {
                     log::error!("Failed to save file {err:?}");
                     ctx.emit(LocalCodeEditorEvent::FailedToSave {
-                        error: Rc::new(err),
+                        error: Arc::new(err),
                     });
                 };
             }

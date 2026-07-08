@@ -27,7 +27,19 @@ use uuid::Uuid;
 use warp_multi_agent_api as api;
 
 use super::{DirectProviderKind, ResolvedProvider};
-use crate::server::server_api::{AIApiError, AIOutputStream};
+use crate::server::server_api::AIApiError;
+
+// Replacement for the old `server_api::AIOutputStream` alias, removed upstream
+// when the multi-agent HTTP client moved to `warp_multi_agent_client`.
+cfg_if::cfg_if! {
+    if #[cfg(target_family = "wasm")] {
+        pub type AIOutputStream<T> =
+            futures::stream::LocalBoxStream<'static, Result<T, Arc<AIApiError>>>;
+    } else {
+        pub type AIOutputStream<T> =
+            futures::stream::BoxStream<'static, Result<T, Arc<AIApiError>>>;
+    }
+}
 
 /// Hard ceiling on a single provider HTTP call. Without this any of the
 /// drivers' `reqwest::Client::send().await` calls could hang indefinitely on

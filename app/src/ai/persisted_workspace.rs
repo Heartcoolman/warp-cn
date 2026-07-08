@@ -238,9 +238,8 @@ impl PersistedWorkspace {
             .collect();
 
         if crate::ai::codebase_index_backend::is_codebase_index_feature_available(ctx) {
-            ctx.subscribe_to_model(
-                &CodebaseIndexManager::handle(ctx),
-                |me, event, ctx| match event {
+            ctx.subscribe_to_model(&CodebaseIndexManager::handle(ctx), |me, _, event, ctx| {
+                match event {
                     CodebaseIndexManagerEvent::IndexMetadataUpdated { root_path, event } => {
                         me.handle_index_metadata_event(root_path, *event);
                     }
@@ -253,26 +252,30 @@ impl PersistedWorkspace {
                         send_active_indexed_repos_changed_telemetry(ctx);
                     }
                     _ => {}
-                },
-            );
-
-            // Subscribe to AI conversation events to trigger incremental sync
-            ctx.subscribe_to_model(&BlocklistAIHistoryModel::handle(ctx), |me, event, ctx| {
-                if let BlocklistAIHistoryEvent::StartedNewConversation {
-                    terminal_view_id, ..
-                } = event
-                {
-                    #[cfg(feature = "local_fs")]
-                    me.clean_up_deleted_indices(ctx);
-
-                    me.trigger_incremental_sync_for_conversation(*terminal_view_id, ctx);
                 }
             });
+
+            // Subscribe to AI conversation events to trigger incremental sync
+            ctx.subscribe_to_model(
+                &BlocklistAIHistoryModel::handle(ctx),
+                |me, _, event, ctx| {
+                    if let BlocklistAIHistoryEvent::StartedNewConversation {
+                        terminal_surface_id,
+                        ..
+                    } = event
+                    {
+                        #[cfg(feature = "local_fs")]
+                        me.clean_up_deleted_indices(ctx);
+
+                        me.trigger_incremental_sync_for_conversation(*terminal_surface_id, ctx);
+                    }
+                },
+            );
 
             // Subscribe to changes in workspace settings.
             ctx.subscribe_to_model(
                 &UserWorkspaces::handle(ctx),
-                |me, user_workspaces_event, ctx| {
+                |me, _, user_workspaces_event, ctx| {
                     if let UserWorkspacesEvent::CodebaseContextEnablementChanged =
                         user_workspaces_event
                     {
@@ -282,7 +285,7 @@ impl PersistedWorkspace {
             );
 
             // Subscribe to ProjectContextModel events to persist rule changes
-            ctx.subscribe_to_model(&ProjectContextModel::handle(ctx), |me, event, _ctx| {
+            ctx.subscribe_to_model(&ProjectContextModel::handle(ctx), |me, _, event, _ctx| {
                 if let ProjectContextModelEvent::KnownRulesChanged(delta) = event {
                     let mut events = vec![];
 
@@ -312,7 +315,7 @@ impl PersistedWorkspace {
             feature = "integration_tests"
         )) && CodebaseIndexManager::as_ref(ctx).is_indexing_enabled()
         {
-            ctx.subscribe_to_model(&DetectedRepositories::handle(ctx), |me, event, ctx| {
+            ctx.subscribe_to_model(&DetectedRepositories::handle(ctx), |me, _, event, ctx| {
                 let DetectedRepositoriesEvent::DetectedGitRepo { repository, .. } = event;
                 let repo_path = repository.as_ref(ctx).root_dir().to_local_path_lossy();
 
@@ -1130,7 +1133,7 @@ impl PersistedWorkspace {
         for server in servers {
             let workspace_root_display = workspace_root_display.clone();
             let server_type_name = server.as_ref(ctx).server_name();
-            ctx.subscribe_to_model(&server, move |_me, event, ctx| match event {
+            ctx.subscribe_to_model(&server, move |_me, _, event, ctx| match event {
                 LspEvent::Started => {
                     send_telemetry_from_ctx!(
                         LspTelemetryEvent::ServerStarted {

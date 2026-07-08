@@ -10,7 +10,7 @@ use ai::index::locations::CodeContextLocation;
 use anyhow::anyhow;
 use futures_util::stream::AbortHandle;
 use instant::Instant;
-use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
+use warpui::{AppContext, Entity, ModelContext, ModelHandle, SingletonEntity};
 
 #[cfg(not(target_family = "wasm"))]
 use crate::ai::agent::SearchCodebaseFailureReason;
@@ -141,6 +141,7 @@ impl GetRelevantFilesController {
 
     fn handle_codebase_manager_event(
         &mut self,
+        _: ModelHandle<CodebaseIndexManager>,
         codebase_manager_event: &CodebaseIndexManagerEvent,
         ctx: &mut ModelContext<Self>,
     ) {

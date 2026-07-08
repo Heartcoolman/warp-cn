@@ -262,6 +262,7 @@ fn default_screenshot_params() -> ScreenshotParams {
         max_long_edge_px: None,
         max_total_px: None,
         region: None,
+        target: Default::default(),
     }
 }
 

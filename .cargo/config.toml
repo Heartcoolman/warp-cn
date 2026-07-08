@@ -1,3 +1,4 @@
+# warp-cn fork: `cargo xtask` alias for the i18n lint / repo tooling.
 [alias]
 xtask = "run --package xtask --bin xtask --"
 
@@ -11,19 +12,18 @@ xtask = "run --package xtask --bin xtask --"
 # `script/bundle`.
 MACOSX_DEPLOYMENT_TARGET = "10.14"
 
-[build]
-rustflags = ["-C", "symbol-mangling-version=v0"]
-
 [net]
 git-fetch-with-cli = true
 
+# Use the v0 symbol mangling scheme on every target. It encodes generic
+# instantiations (which the legacy scheme hashes away irreversibly), improving
+# demangled names in backtraces and Sentry symbolication. On wasm the shipped
+# bundle strips symbol names, so this only enriches the split-off debug artifact.
+[target.'cfg(all())']
+rustflags = ["-C", "symbol-mangling-version=v0"]
+
 [target.'cfg(target_os = "macos")']
-# `-headerpad_max_install_names` is a macOS/Mach-O linker flag (it reserves space
-# in the Mach-O header for `install_name_tool` to rewrite dylib install names
-# during bundling, see `script/bundle`). It is passed via the GNU-style `-Wl,`
-# driver syntax and is rejected by Windows (MSVC `link.exe` / `lld-link`) and by
-# the Linux linker, so it must only be applied on macOS.
-rustflags = ["-C", "symbol-mangling-version=v0", "-C", "link-args=-Wl,-headerpad_max_install_names"]
+rustflags = ["-C", "link-args=-Wl,-headerpad_max_install_names"]
 
 [target.'cfg(target_family = "wasm")']
 rustflags = ["--cfg=web_sys_unstable_apis"]

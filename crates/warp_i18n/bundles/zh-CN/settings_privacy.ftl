@@ -9,7 +9,6 @@ settings-privacy-custom-secret-description = 使用正则表达式定义您想�
 settings-privacy-telemetry-title = 帮助改进 Warp
 settings-privacy-telemetry-description = 应用分析有助于我们为您改进产品。我们可能收集某些控制台交互数据以改进 Warp 的 AI 能力。
 settings-privacy-telemetry-description-old = 应用分析有助于我们为您改进产品。我们仅收集应用使用元数据，绝不收集控制台输入或输出。
-settings-privacy-telemetry-free-tier-note = 在免费版中，必须启用分析才能使用 AI 功能。
 settings-privacy-data-management-title = 管理您的数据
 settings-privacy-data-management-description = 您可以随时选择永久删除您的 Warp 账户。删除后您将无法继续使用 Warp。
 settings-privacy-data-management-link = 访问数据管理页面

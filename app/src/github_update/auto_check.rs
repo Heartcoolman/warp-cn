@@ -93,7 +93,12 @@ impl UpdateNotificationModel {
         self.last_check_at
     }
 
-    fn on_state_change(&mut self, _event: &(), ctx: &mut ModelContext<Self>) {
+    fn on_state_change(
+        &mut self,
+        _handle: warpui::ModelHandle<GithubUpdateState>,
+        _event: &(),
+        ctx: &mut ModelContext<Self>,
+    ) {
         let state = GithubUpdateState::as_ref(ctx).clone();
 
         // Only persist *terminal* check results. Skipping Checking /

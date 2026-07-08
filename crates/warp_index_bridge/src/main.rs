@@ -186,17 +186,19 @@ impl WarpIndexBridge {
 #[tool_handler]
 impl ServerHandler for WarpIndexBridge {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            protocol_version: ProtocolVersion::default(),
-            capabilities: ServerCapabilities::builder().enable_tools().build(),
-            server_info: Implementation::from_build_env(),
-            instructions: Some(
-                "Read-only metadata bridge to Warp's local codebase-index snapshots. \
-                 Useful for Claude Code to know which repos Warp has indexed and how fresh \
-                 the snapshot is, without parsing Warp's private snapshot format."
-                    .into(),
-            ),
-        }
+        // `ServerInfo` is #[non_exhaustive] in rmcp 1.6, so build it from
+        // `Default` instead of a struct literal.
+        let mut info = ServerInfo::default();
+        info.protocol_version = ProtocolVersion::default();
+        info.capabilities = ServerCapabilities::builder().enable_tools().build();
+        info.server_info = Implementation::from_build_env();
+        info.instructions = Some(
+            "Read-only metadata bridge to Warp's local codebase-index snapshots. \
+             Useful for Claude Code to know which repos Warp has indexed and how fresh \
+             the snapshot is, without parsing Warp's private snapshot format."
+                .into(),
+        );
+        info
     }
 }
 

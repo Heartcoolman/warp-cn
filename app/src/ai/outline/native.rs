@@ -20,7 +20,6 @@ use crate::settings::{
     AISettings, AISettingsChangedEvent, CodeSettings, CodeSettingsChangedEvent, InputSettings,
     InputSettingsChangedEvent,
 };
-use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::{safe_info, safe_warn, send_telemetry_from_ctx, TelemetryEvent};
 
 /// State for a repository outline, containing both the repository handle and the outline status.
@@ -60,13 +59,13 @@ impl RepoOutlines {
     }
 
     pub fn new_with_indexing_enabled(indexing_enabled: bool, ctx: &mut ModelContext<Self>) -> Self {
-        ctx.subscribe_to_model(&AISettings::handle(ctx), |me, event, ctx| {
+        ctx.subscribe_to_model(&AISettings::handle(ctx), |me, _, event, ctx| {
             if let AISettingsChangedEvent::IsAnyAIEnabled { .. } = event {
                 Self::handle_setting_change_event(me, ctx);
             }
         });
 
-        ctx.subscribe_to_model(&CodeSettings::handle(ctx), |me, event, ctx| {
+        ctx.subscribe_to_model(&CodeSettings::handle(ctx), |me, _, event, ctx| {
             if let CodeSettingsChangedEvent::CodebaseContextEnabled { .. } = event {
                 Self::handle_setting_change_event(me, ctx);
             }
@@ -79,7 +78,7 @@ impl RepoOutlines {
                 feature = "integration_tests"
             ))
         {
-            ctx.subscribe_to_model(&DetectedRepositories::handle(ctx), |me, event, ctx| {
+            ctx.subscribe_to_model(&DetectedRepositories::handle(ctx), |me, _, event, ctx| {
                 let DetectedRepositoriesEvent::DetectedGitRepo {
                     repository,
                     source: _,
@@ -88,7 +87,7 @@ impl RepoOutlines {
             });
         }
 
-        ctx.subscribe_to_model(&InputSettings::handle(ctx), |me, event, ctx| {
+        ctx.subscribe_to_model(&InputSettings::handle(ctx), |me, _, event, ctx| {
             if let InputSettingsChangedEvent::OutlineCodebaseSymbolsForAtContextMenu { .. } = event
             {
                 Self::handle_setting_change_event(me, ctx);

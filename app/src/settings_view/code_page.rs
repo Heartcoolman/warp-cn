@@ -367,6 +367,7 @@ impl CodeSettingsPageView {
                 Box::new(CodeReviewDiffStatsToggleWidget::default()),
                 Box::new(ProjectExplorerToggleWidget::default()),
                 Box::new(GlobalSearchToggleWidget::default()),
+                Box::new(ShowHiddenFilesToggleWidget::default()),
                 Box::new(FormatOnSaveToggleWidget::default()),
             ]);
             let categories = vec![
@@ -460,6 +461,7 @@ impl CodeSettingsPageView {
                             Box::new(CodeReviewDiffStatsToggleWidget::default()),
                             Box::new(ProjectExplorerToggleWidget::default()),
                             Box::new(GlobalSearchToggleWidget::default()),
+                            Box::new(ShowHiddenFilesToggleWidget::default()),
                             Box::new(FormatOnSaveToggleWidget::default()),
                         ]);
                     }
@@ -513,6 +515,7 @@ impl CodeSettingsPageView {
                 Box::new(CodeReviewDiffStatsToggleWidget::default()),
                 Box::new(ProjectExplorerToggleWidget::default()),
                 Box::new(GlobalSearchToggleWidget::default()),
+                Box::new(ShowHiddenFilesToggleWidget::default()),
                 Box::new(FormatOnSaveToggleWidget::default()),
             ]);
             let categories = vec![
@@ -642,6 +645,7 @@ pub enum CodeSettingsPageAction {
     ToggleAutoOpenCodeReviewPane,
     ToggleProjectExplorer,
     ToggleGlobalSearch,
+    ToggleShowHiddenFiles,
     ToggleFormatOnSave,
     /// Install (if needed) and enable a suggested LSP server.
     InstallAndEnableLspServer {
@@ -849,6 +853,12 @@ impl TypedActionView for CodeSettingsPageView {
                 });
                 ctx.notify();
             }
+            CodeSettingsPageAction::ToggleShowHiddenFiles => {
+                CodeSettings::handle(ctx).update(ctx, |settings, ctx| {
+                    report_if_error!(settings.show_hidden_files.toggle_and_save_value(ctx));
+                });
+                ctx.notify();
+            }
             CodeSettingsPageAction::ToggleFormatOnSave => {
                 CodeSettings::handle(ctx).update(ctx, |settings, ctx| {
                     report_if_error!(settings.format_on_save.toggle_and_save_value(ctx));
@@ -1008,6 +1018,14 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
                     )),
                     context,
                     flags::SHOW_GLOBAL_SEARCH,
+                ),
+                ToggleSettingActionPair::new(
+                    "show hidden files in project explorer",
+                    builder(SettingsAction::Code(
+                        CodeSettingsPageAction::ToggleShowHiddenFiles,
+                    )),
+                    context,
+                    flags::SHOW_HIDDEN_FILES,
                 ),
             ],
             app,
@@ -3098,6 +3116,48 @@ impl SettingsWidget for GlobalSearchToggleWidget {
                 })
                 .finish(),
             Some(warp_i18n::t!("settings-code-global-search-desc").to_string()),
+        )
+    }
+}
+
+#[derive(Default)]
+struct ShowHiddenFilesToggleWidget {
+    switch_state: SwitchStateHandle,
+}
+
+impl SettingsWidget for ShowHiddenFilesToggleWidget {
+    type View = CodeSettingsPageView;
+
+    fn search_terms(&self) -> &str {
+        "show hidden files dotfiles project explorer file tree"
+    }
+
+    fn render(
+        &self,
+        _view: &Self::View,
+        appearance: &Appearance,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        let code_settings = CodeSettings::as_ref(app);
+
+        render_body_item::<CodeSettingsPageAction>(
+            "Show hidden files in project explorer".into(),
+            None,
+            LocalOnlyIconState::Hidden,
+            ToggleState::Enabled,
+            appearance,
+            appearance
+                .ui_builder()
+                .switch(self.switch_state.clone())
+                .check(*code_settings.show_hidden_files)
+                .build()
+                .on_click(move |ctx, _, _| {
+                    ctx.dispatch_typed_action(CodeSettingsPageAction::ToggleShowHiddenFiles);
+                })
+                .finish(),
+            Some(
+                "Show dotfiles and hidden files (starting with .) in the project explorer.".into(),
+            ),
         )
     }
 }

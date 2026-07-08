@@ -131,6 +131,7 @@ code-review-view-cannot-attach-input-unavailable = 输入不可用时无法附�
 code-review-view-button-create-pr = 创建 PR
 code-review-view-button-publish = 发布
 code-review-view-tooltip-no-changes-to-commit = 没有可提交的更改
+code-review-view-tooltip-commit-changes = 在本地提交更改
 code-review-view-tooltip-no-git-actions = 没有可用的 git 操作
 code-review-view-menu-commit = 提交
 code-review-view-menu-push = 推送

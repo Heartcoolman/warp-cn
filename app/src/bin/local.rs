@@ -1,6 +1,3 @@
-#[path = "channel_config.rs"]
-mod channel_config;
-
 use anyhow::Result;
 use warp_core::channel::{Channel, ChannelState};
 use warp_core::features;
@@ -10,7 +7,7 @@ fn main() -> Result<()> {
     #[cfg(target_os = "macos")]
     warp::install_uncaught_exception_handler();
 
-    let config = channel_config::load_config!("local");
+    let config = warp_channel_config::load_config!("local");
 
     let mut state = ChannelState::new(Channel::Local, config)
         .with_additional_features(features::DEBUG_FLAGS)

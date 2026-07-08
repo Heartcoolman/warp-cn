@@ -29,13 +29,12 @@ pub use callout::{OnboardingCalloutView, OnboardingKeybindings};
 /// skip-login confirmation dialog so the two always stay in sync. Render via
 /// `warp_i18n::tr!(key)` at the callsite.
 pub const AI_FEATURES: &[&str] = &[
-    "onboarding-feature-warp-agents",
+    "onboarding-feature-frontier-models",
     "onboarding-feature-oz-cloud",
-    "onboarding-feature-next-cmd-predictions",
-    "onboarding-feature-prompt-suggestions",
-    "onboarding-feature-codebase-context",
+    "onboarding-feature-auto-fix-errors",
+    "onboarding-feature-agentic-control",
+    "onboarding-feature-code-review",
     "onboarding-feature-remote-control",
-    "onboarding-feature-agents-over-ssh",
 ];
 
 /// i18n keys for Warp Drive features. Render via `warp_i18n::tr!(key)`.

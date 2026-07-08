@@ -9,7 +9,6 @@ settings-privacy-custom-secret-description = Use regex to define additional secr
 settings-privacy-telemetry-title = Help improve Warp
 settings-privacy-telemetry-description = App analytics help us make the product better for you. We may collect certain console interactions to improve Warp's AI capabilities.
 settings-privacy-telemetry-description-old = App analytics help us make the product better for you. We only collect app usage metadata, never console input or output.
-settings-privacy-telemetry-free-tier-note = On the free tier, analytics must be enabled to use AI features.
 settings-privacy-data-management-title = Manage your data
 settings-privacy-data-management-description = At any time, you may choose to delete your Warp account permanently. You will no longer be able to use Warp.
 settings-privacy-data-management-link = Visit the data management page

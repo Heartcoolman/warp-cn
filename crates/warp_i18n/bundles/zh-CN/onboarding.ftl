@@ -3,9 +3,6 @@
 
 onboarding-agent-team-workspace-title = 由团队工作区设定
 onboarding-agent-team-workspace-body = 自主行为设置由团队工作区统一配置。
-onboarding-agent-disable-label = 禁用 Warp Agent
-onboarding-agent-upgrade-title = 升级以使用高级模型。
-onboarding-agent-upgrade-body = 顶尖模型需要付费方案。
 onboarding-theme-sync-os = 跟随系统切换浅色/深色主题
 
 # HOA 引导
@@ -45,8 +42,8 @@ onboarding-intro-get-started = 开始使用
 # 意向页
 onboarding-intention-welcome = 欢迎使用 Warp
 onboarding-intention-question = 你想以哪种方式工作？
-onboarding-intention-agent-title = 让 AI 智能体提速
-onboarding-intention-agent-desc = 智能体优先的体验，配合一流的终端能力。包含面向终端与智能体驱动开发的 AI 功能：
+onboarding-intention-agent-title = 用智能体更快构建
+onboarding-intention-agent-desc = 获取 AI 功能，加速终端与智能体驱动的工作流：
 onboarding-intention-terminal-title = 仅作为终端使用
 onboarding-intention-terminal-badge = 不启用 AI
 onboarding-intention-terminal-desc = 现代化终端，专注于速度、上下文与控制，不依赖 AI。
@@ -57,13 +54,12 @@ onboarding-nav-next = 下一步
 onboarding-nav-get-warping = 开始使用 Warp
 
 # AI / Drive 功能列表
-onboarding-feature-warp-agents = Warp 智能体
-onboarding-feature-oz-cloud = Oz 云端智能体平台
-onboarding-feature-next-cmd-predictions = 下一条命令预测
-onboarding-feature-prompt-suggestions = 提示建议
-onboarding-feature-codebase-context = 代码库上下文
+onboarding-feature-frontier-models = 在 Warp Agent 中使用前沿与开放权重模型
+onboarding-feature-oz-cloud = 将智能体任务交给云端智能体处理
+onboarding-feature-auto-fix-errors = 自动诊断并修复终端错误
+onboarding-feature-agentic-control = 智能体化控制长时间运行的命令与 TUI
+onboarding-feature-code-review = 审查代码差异并将评论直接发送给智能体
 onboarding-feature-remote-control = 远程控制 Claude Code、Codex 及其他智能体
-onboarding-feature-agents-over-ssh = 通过 SSH 使用智能体
 onboarding-feature-warp-drive = Warp Drive
 onboarding-feature-session-sharing = 会话共享
 
@@ -89,24 +85,22 @@ onboarding-subscribe-item-cloud-storage = 不限量的云端会话存储
 
 # 智能体设置页
 onboarding-agent-header-title = 自定义你的 Warp 智能体
-onboarding-agent-header-subtitle = 选择应用内智能体的默认设置。
+onboarding-agent-header-subtitle = 选择 Warp Agent 的默认设置。
 onboarding-agent-section-default-model = 默认模型
 onboarding-agent-section-autonomy = 自主程度
 onboarding-agent-pill-recommended = 推荐
-onboarding-agent-pill-premium = 付费版
 onboarding-agent-autonomy-full-title = 完全自主
-onboarding-agent-autonomy-full-desc = 无需询问即可运行命令、编写代码与读取文件。
+onboarding-agent-autonomy-full-desc = Warp Agent 无需询问即可运行命令、编写代码与读取文件。
 onboarding-agent-autonomy-partial-title = 部分自主
-onboarding-agent-autonomy-partial-desc = 可规划、读取文件并执行低风险命令；进行任何更改或执行敏感命令前会先询问。
+onboarding-agent-autonomy-partial-desc = Warp Agent 可规划、读取文件并执行低风险命令；进行任何更改或执行敏感命令前会先询问。
 onboarding-agent-autonomy-none-title = 不自主
-onboarding-agent-autonomy-none-desc = 未经你批准不会采取任何操作。
-onboarding-agent-button-upgrade = 升级
+onboarding-agent-autonomy-none-desc = 未经你批准，Warp Agent 不会采取任何操作。
 onboarding-agent-auth-bar-prefix = 如果浏览器未启动，
 onboarding-agent-auth-bar-link-copy-url = 复制链接
 onboarding-agent-auth-bar-middle = 并手动打开页面。
 onboarding-agent-auth-bar-link-paste = 点此处
 onboarding-agent-auth-bar-suffix = 以从浏览器粘贴你的令牌。
-onboarding-agent-toast-plan-activated = 方案已激活。所有高级模型均可使用。
+onboarding-agent-toast-plan-activated = 方案已成功激活！
 
 # 主题选择
 onboarding-theme-title = 选择主题
@@ -150,15 +144,17 @@ onboarding-third-party-notifications-title = 通知
 # 登录页
 onboarding-login-title-drive = 开启 Warp Drive
 onboarding-login-title-ai = 开启 AI 功能
+onboarding-login-title-third-party = 创建账户
 onboarding-login-subtitle-drive = 连接你的账号，跨设备保存与共享 Notebook、Workflow 等。
 onboarding-login-subtitle-ai = 连接你的账号，开启 AI 驱动的规划、编码与自动化能力。
+onboarding-login-subtitle-third-party = 创建 Warp 账户，开启 AI 驱动的规划、编码与自动化能力。
 onboarding-login-disclaimer-tos-prefix = 继续即表示你同意 Warp 的
 onboarding-login-disclaimer-tos-link = 服务条款
 onboarding-login-disclaimer-privacy-link = 隐私设置
 onboarding-login-disclaimer-privacy-prefix-with-ai = 如果你想退出分析数据上报与 AI 功能，可调整你的
 onboarding-login-disclaimer-privacy-prefix-no-ai = 如果你想退出分析数据上报，可调整你的
 onboarding-login-skip-disable-drive = 不启用 Warp Drive
-onboarding-login-skip-disable-ai = 不启用 AI 功能
+onboarding-login-skip-for-now = 暂时跳过
 onboarding-login-button-continue = 继续
 onboarding-login-browser-title = 请在浏览器中登录以继续
 onboarding-login-browser-hint-prefix = 如果浏览器未启动，
@@ -168,12 +164,18 @@ onboarding-login-browser-token-input-placeholder = 认证令牌
 onboarding-login-browser-token-link = 点此处从浏览器粘贴你的令牌
 onboarding-login-privacy-title = 隐私设置
 onboarding-login-skip-dialog-title-drive = 确定要不启用 Warp Drive 吗？
-onboarding-login-skip-dialog-title-ai = 确定要不启用 AI 功能吗？
+onboarding-login-skip-dialog-title-ai = 不登录直接继续？
 onboarding-login-skip-dialog-body-drive = Warp Drive 让你跨设备保存工作流与知识，并与团队共享。继续即表示你将无法使用以下功能：
-onboarding-login-skip-dialog-body-ai = AI 让 Warp 更强大。继续即表示你将无法使用以下功能：
+onboarding-login-skip-dialog-body-ai = 没有账户将无法使用 Warp 的 AI 功能。随时登录即可解锁智能体及其他 AI 功能。
 onboarding-login-skip-dialog-cancel-drive = 启用 Warp Drive
-onboarding-login-skip-dialog-cancel-ai = 启用 AI 功能
+onboarding-login-skip-dialog-cancel-ai = 登录
 onboarding-login-skip-dialog-confirm = 暂时跳过
+
+# No-AI confirmation dialog (agent onboarding)
+onboarding-no-ai-dialog-title = 确定不需要 AI 吗？
+onboarding-no-ai-dialog-body = 不使用 AI，你仍可获得 Warp 的终端体验，但将无法使用自动修复终端错误等智能体功能。
+onboarding-no-ai-dialog-cancel = 我要 AI 功能
+onboarding-no-ai-dialog-confirm = 我不需要 AI
 
 # 引导气泡
 onboarding-callout-meet-warp-input-title = 认识 Warp 输入框

@@ -51,6 +51,7 @@ define_settings_group!(LanguageSettings, settings: [
         default: Language::Zh,
         supported_platforms: SupportedPlatforms::ALL,
         sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        surface: settings::SettingSurfaces::GUI,
         private: false,
         toml_path: "language",
         description: "UI language preference. \"zh-CN\" or \"en\" forces a locale; \"system\" follows the host OS.",

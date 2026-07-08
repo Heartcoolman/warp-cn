@@ -3,9 +3,6 @@
 
 onboarding-agent-team-workspace-title = Set by Team Workspace
 onboarding-agent-team-workspace-body = Autonomy settings are configured as part of your team workspace.
-onboarding-agent-disable-label = Disable Warp Agent
-onboarding-agent-upgrade-title = Upgrade for access to premium models.
-onboarding-agent-upgrade-body = State-of-the-art models require paid plans.
 onboarding-theme-sync-os = Sync light/dark theme with OS
 
 # HOA onboarding
@@ -45,8 +42,8 @@ onboarding-intro-get-started = Get started
 # Intention slide
 onboarding-intention-welcome = Welcome to Warp
 onboarding-intention-question = How do you want to work?
-onboarding-intention-agent-title = Build faster with AI agents
-onboarding-intention-agent-desc = An agent-first experience with best in class terminal support. Get terminal and agent driven development AI features like:
+onboarding-intention-agent-title = Build faster with agents
+onboarding-intention-agent-desc = Get AI features to accelerate terminal and agent-driven workflows:
 onboarding-intention-terminal-title = Just use the terminal
 onboarding-intention-terminal-badge = No AI features
 onboarding-intention-terminal-desc = A modern terminal optimized for speed, context, and control without AI.
@@ -57,13 +54,12 @@ onboarding-nav-next = Next
 onboarding-nav-get-warping = Get Warping
 
 # AI / Drive feature lists
-onboarding-feature-warp-agents = Warp agents
-onboarding-feature-oz-cloud = Oz cloud agents platform
-onboarding-feature-next-cmd-predictions = Next command predictions
-onboarding-feature-prompt-suggestions = Prompt suggestions
-onboarding-feature-codebase-context = Codebase context
-onboarding-feature-remote-control = Remote control with Claude Code, Codex, and other agents
-onboarding-feature-agents-over-ssh = Agents over SSH
+onboarding-feature-frontier-models = Use frontier and open-weight models with Warp Agent
+onboarding-feature-oz-cloud = Hand off agent work to cloud agents
+onboarding-feature-auto-fix-errors = Automatically diagnose and fix terminal errors
+onboarding-feature-agentic-control = Agentic control of long-running commands and TUIs
+onboarding-feature-code-review = Review code diffs and send comments directly to agents
+onboarding-feature-remote-control = Remote control for Claude Code, Codex, and other agents
 onboarding-feature-warp-drive = Warp Drive
 onboarding-feature-session-sharing = Session Sharing
 
@@ -89,24 +85,22 @@ onboarding-subscribe-item-cloud-storage = Unlimited cloud conversation storage
 
 # Agent slide
 onboarding-agent-header-title = Customize your Warp Agent
-onboarding-agent-header-subtitle = Select your in-app agent's defaults.
+onboarding-agent-header-subtitle = Select your Warp Agent's defaults.
 onboarding-agent-section-default-model = Default model
 onboarding-agent-section-autonomy = Autonomy
 onboarding-agent-pill-recommended = Recommended
-onboarding-agent-pill-premium = Premium
 onboarding-agent-autonomy-full-title = Full
-onboarding-agent-autonomy-full-desc = Runs commands, writes code, and reads files without asking.
+onboarding-agent-autonomy-full-desc = Warp Agent runs commands, writes code, and reads files without asking.
 onboarding-agent-autonomy-partial-title = Partial
-onboarding-agent-autonomy-partial-desc = Can plan, read files, and execute low-risk commands. Asks before making any changes or executing sensitive commands.
+onboarding-agent-autonomy-partial-desc = Warp Agent can plan, read files, and execute low-risk commands. Asks before making any changes or executing sensitive commands.
 onboarding-agent-autonomy-none-title = None
-onboarding-agent-autonomy-none-desc = Takes no actions without your approval.
-onboarding-agent-button-upgrade = Upgrade
+onboarding-agent-autonomy-none-desc = Warp Agent takes no actions without your approval.
 onboarding-agent-auth-bar-prefix = If your browser hasn't launched,
 onboarding-agent-auth-bar-link-copy-url = copy the URL
 onboarding-agent-auth-bar-middle = and open the page manually.
 onboarding-agent-auth-bar-link-paste = Click here
 onboarding-agent-auth-bar-suffix = to paste your token from the browser.
-onboarding-agent-toast-plan-activated = Plan successfully activated. All premium models are available.
+onboarding-agent-toast-plan-activated = Plan successfully activated!
 
 # Theme picker
 onboarding-theme-title = Choose a theme
@@ -150,15 +144,17 @@ onboarding-third-party-notifications-title = Notifications
 # Login slide
 onboarding-login-title-drive = Get started with Warp Drive
 onboarding-login-title-ai = Get started with AI
+onboarding-login-title-third-party = Create an account
 onboarding-login-subtitle-drive = Connect your account to save and share notebooks, workflows, and more across devices.
 onboarding-login-subtitle-ai = Connect your account to enable AI-powered planning, coding, and automation.
+onboarding-login-subtitle-third-party = Create a Warp account to enable AI-powered planning, coding, and automations.
 onboarding-login-disclaimer-tos-prefix = By continuing, you agree to Warp's
 onboarding-login-disclaimer-tos-link = Terms of Service
 onboarding-login-disclaimer-privacy-link = Privacy Settings
 onboarding-login-disclaimer-privacy-prefix-with-ai = If you'd like to opt out of analytics and AI features, you can adjust your
 onboarding-login-disclaimer-privacy-prefix-no-ai = If you'd like to opt out of analytics, you can adjust your
 onboarding-login-skip-disable-drive = Disable Warp Drive
-onboarding-login-skip-disable-ai = Disable AI features
+onboarding-login-skip-for-now = Skip for now
 onboarding-login-button-continue = Continue
 onboarding-login-browser-title = Sign in on your browser to continue
 onboarding-login-browser-hint-prefix = If your browser hasn't launched,
@@ -168,12 +164,18 @@ onboarding-login-browser-token-input-placeholder = Auth Token
 onboarding-login-browser-token-link = Click here to paste your token from the browser
 onboarding-login-privacy-title = Privacy Settings
 onboarding-login-skip-dialog-title-drive = Are you sure you want to disable Warp Drive?
-onboarding-login-skip-dialog-title-ai = Are you sure you want to disable AI features?
+onboarding-login-skip-dialog-title-ai = Continue without signing in?
 onboarding-login-skip-dialog-body-drive = Warp Drive lets you save workflows and knowledge across devices and share them with your team. By continuing, you won't have access to the following features:
-onboarding-login-skip-dialog-body-ai = Warp is better with AI. By continuing, you won't have access to any of the following features:
+onboarding-login-skip-dialog-body-ai = Without an account, you won't have access to Warp's AI features. Sign in anytime to unlock agents and other AI features.
 onboarding-login-skip-dialog-cancel-drive = Enable Warp Drive
-onboarding-login-skip-dialog-cancel-ai = Enable AI features
+onboarding-login-skip-dialog-cancel-ai = Sign in
 onboarding-login-skip-dialog-confirm = Skip for now
+
+# No-AI confirmation dialog (agent onboarding)
+onboarding-no-ai-dialog-title = Are you sure you don't want AI?
+onboarding-no-ai-dialog-body = Without AI, you'll still get Warp's terminal experience, but you'll miss our agentic features like automatic fixes for terminal errors.
+onboarding-no-ai-dialog-cancel = Give me AI features
+onboarding-no-ai-dialog-confirm = I don't want AI
 
 # Onboarding callouts
 onboarding-callout-meet-warp-input-title = Meet the Warp input
