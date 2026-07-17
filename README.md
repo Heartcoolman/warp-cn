@@ -1,166 +1,174 @@
-<a href="https://www.warp.dev">
-    <img width="1024" alt="Warp Agentic Development Environment product preview" src="https://github.com/user-attachments/assets/9976b2da-2edd-4604-a36c-8fd53719c6d4" />
-</a>
-&nbsp;
-<p align="center">
-  <a href="https://www.warp.dev"><img height="20" alt="Built with Warp" src="https://raw.githubusercontent.com/warpdotdev/brand-assets/main/Github/Built-With-Warp-Export@2x.png" /></a>
-  &nbsp;
-  <a href="https://oz.warp.dev"><img height="20" alt="Powered by Oz" src="https://raw.githubusercontent.com/warpdotdev/brand-assets/main/Github/Powered-By-Oz-Export@2x.png" /></a>
-</p>
+# Warp 中文社区版
 
-<p align="center">
-  <a href="https://www.warp.dev">Website</a>
-  ·
-  <a href="https://www.warp.dev/code">Code</a>
-  ·
-  <a href="https://www.warp.dev/agents">Agents</a>
-  ·
-  <a href="https://www.warp.dev/terminal">Terminal</a>
-  ·
-  <a href="https://www.warp.dev/drive">Drive</a>
-  ·
-  <a href="https://docs.warp.dev">Docs</a>
-  ·
-  <a href="https://www.warp.dev/blog/how-warp-works">How Warp Works</a>
-</p>
+**中文** | [English](./README_en.md)
 
-> [!NOTE]
-> OpenAI is the founding sponsor of the new, open-source Warp repository, and the new agentic management workflows are powered by GPT models.
+本仓库是 [warpdotdev/warp](https://github.com/warpdotdev/warp) 的**中文社区 fork**：客户端 UI 全量汉化，默认中文，可在设置中切换为英文或跟随系统。
 
-<h1></h1>
+> 本 fork 仅汉化客户端 UI（菜单、命令面板、设置、对话框、Tooltip、Block actions、Resource Center、Onboarding 等）；终端命令输出、服务端 GraphQL 字段、AI 模型回复保持原样不变。
 
-## About
+## 语言切换
 
-[Warp](https://www.warp.dev) is an agentic development environment, born out of the terminal. Use Warp's built-in coding agent, or bring your own CLI agent (Claude Code, Codex, Gemini CLI, and others).
+打开 **设置 → 通用 → 语言**：
 
-## Installation
+- `中文（简体）` — 强制中文（fork 默认）
+- `English` — 强制英文
+- `跟随系统` — 系统 locale 为 `zh*` 时使用中文，否则英文
 
-You can [download Warp](https://www.warp.dev/download) and [read our docs](https://docs.warp.dev/) for platform-specific instructions.
+切换不需要重启 Warp。设置项位于 `~/.warp/settings.toml` 的 `language` 字段。
 
-## Warp Contributions Overview Dashboard
+## 自动更新（无需 Apple Developer ID）
 
-Explore [build.warp.dev](https://build.warp.dev) to:
-- Watch thousands of Oz agents triage issues, write specs, implement changes, and review PRs
-- View top contributors and in-flight features
-- Track your own issues with GitHub sign-in
-- Click into active agent sessions in a web-compiled Warp terminal
+本 fork 通过 GitHub Releases 实现客户端自更新，**不依赖任何后端服务器**。机制：
 
-## Oz for OSS
+- CI 在打 `v*` tag 时产出 `.tar.gz` + `.minisig` 资产，使用 minisign 私钥签名（私钥仅存在于 GitHub Actions Secret）。
+- 客户端启动后到 **设置 → 账户 → 版本**，点击 **下载并安装**，进程内通过 `reqwest` 拉取并验签，`tar` 解压后原地替换、重启。
+- 进程内下载不会附加 `com.apple.quarantine`，因此 ad-hoc 签名的 `.app` 替换后 Gatekeeper 不会重新评估，更新对用户静默。
 
-Maintaining a popular open-source project? [Apply for Oz credits](https://tally.so/r/LZWxqG) to explore [Oz for OSS](https://github.com/warpdotdev/oz-for-oss).
-
-Oz for OSS is our partner program for bringing the same agentic open-source management workflows used in this repository to select partner repositories. We work directly with maintainers to implement workflows for issue triage, PR review, community management, and contributor coordination in a way that fits each project.
-
-## Licensing
-
-Warp's UI framework (the `warpui_core` and `warpui` crates) are licensed under the [MIT license](LICENSE-MIT).
-
-The rest of the code in this repository is licensed under the [AGPL v3](LICENSE-AGPL).
-
-## Open Source & Contributing
-
-Warp's client codebase is open source and lives in this repository. We welcome community contributions and have designed a lightweight workflow to help new contributors get started. For the full contribution flow, read our [CONTRIBUTING.md](CONTRIBUTING.md) guide.
-
-> [!TIP]
-> **Chat with contributors and the Warp team** in the [`#oss-contributors`](https://warpcommunity.slack.com/archives/C0B0LM8N4DB) Slack channel — a good place for ad-hoc questions, design discussion, and pairing with maintainers. New here? [Join the Warp Slack community](https://go.warp.dev/join-preview) first, then jump into `#oss-contributors`.
-
-### Issue to PR
-
-Before filing, [search existing issues](https://github.com/warpdotdev/warp/issues?q=is%3Aissue+is%3Aopen+sort%3Areactions-%2B1-desc) for your bug or feature request. If nothing exists, [file an issue](https://github.com/warpdotdev/warp/issues/new/choose) using our templates. Security vulnerabilities should be reported privately as described in [CONTRIBUTING.md](CONTRIBUTING.md#reporting-security-issues).
-
-Once filed, a Warp maintainer reviews the issue and may apply a readiness label: [`ready-to-spec`](https://github.com/warpdotdev/warp/issues?q=is%3Aissue+is%3Aopen+label%3Aready-to-spec) signals the design is open for contributors to spec out, and [`ready-to-implement`](https://github.com/warpdotdev/warp/issues?q=is%3Aissue+is%3Aopen+label%3Aready-to-implement) signals the design is settled and code PRs are welcome. Anyone can pick up a labeled issue — mention **@oss-maintainers** on an issue if you'd like it considered for a readiness label.
-
-### Building the Repo Locally
-
-To build and run Warp from source:
+**首次安装** 是唯一需要手动操作的一次（macOS 不允许应用绕过 Gatekeeper 自我授权）：
 
 ```bash
-./script/bootstrap   # platform-specific setup
-./script/run         # build and run Warp
-./script/presubmit   # fmt, clippy, and tests
+xattr -dr com.apple.quarantine /path/to/Warp-cn.app
 ```
 
-See [AGENTS.md](AGENTS.md) for the full engineering guide, including coding style, testing, and platform-specific notes.
+或在 系统设置 → 隐私与安全性 中点击「仍要打开」。**之后所有自动更新永久静默生效。**
 
-## Joining the Team
+> 维护者 fork 后首次启用更新通道：执行 `script/generate_update_keys.sh` 生成 minisign 密钥对，将公钥提交到仓库（`script/warp-update.pub`），私钥放入 GitHub Actions Secret `MINISIGN_SECRET_KEY`。
 
-Interested in joining the team? See our [open roles](https://www.warp.dev/careers).
+## macOS 凭据存储（不使用钥匙串）
 
-## Support and Questions
+ad-hoc 签名的 `.app` 每次发版二进制 CDHash 都会变，而 macOS 钥匙串 ACL 对 ad-hoc 二进制是按 CDHash 信任的，没有 designated requirement 可以跨版本共享，因此每次升级都会弹「Warp-cn 想要使用 dev.warp.WarpCn 中的机密信息」。本 fork 在 macOS 上**不使用钥匙串**，登录 token / AI API key / MCP OAuth 凭据全部以 AES-256-GCM 加密文件形式落在：
 
-1. See our [docs](https://docs.warp.dev/) for a comprehensive guide to Warp's features.
-2. Join our [Slack Community](https://go.warp.dev/join-preview) to connect with other users and get help from the Warp team — contributors hang out in [`#oss-contributors`](https://warpcommunity.slack.com/archives/C0B0LM8N4DB).
-3. Try our [Preview build](https://www.warp.dev/download-preview) to test the latest experimental features.
-4. Mention **@oss-maintainers** on any issue to escalate to the team — for example, if you encounter problems with the automated agents.
+```
+~/Library/Application Support/dev.warp.WarpCn/dev.warp.WarpCn-<KEY>
+```
 
-## Code of Conduct
+文件权限 `0600`，加密方案与本仓库 Linux fallback 同款（见 `crates/warpui_extras/src/secure_storage/mac.rs`）。
 
-We ask everyone to be respectful and empathetic. Warp follows the [Code of Conduct](CODE_OF_CONDUCT.md). To report violations, email warp-coc at warp.dev.
+**从旧版本（曾使用钥匙串）升级**会触发一次性代价：
 
-## Open Source Dependencies
+- 需要重新登录账号
+- 需要重填 AI API key（设置 → AI）
+- MCP OAuth server 需要重新授权
 
-We'd like to call out a few of the [open source dependencies](https://docs.warp.dev/help/licenses) that have helped Warp to get off the ground:
+旧钥匙串条目不会被自动清理（避免再次弹窗）。如要手动清理，打开「钥匙串访问.app」搜索 `dev.warp.WarpCn`，删除 `USER_STORAGE_KEY`、`SECURE_STORAGE_KEY`、`FileBasedMcpCredentials` 三条；不删除也无副作用，仅占用零碎空间。
 
-- [Tokio](https://github.com/tokio-rs/tokio)
-- [NuShell](https://github.com/nushell/nushell)
-- [Fig Completion Specs](https://github.com/withfig/autocomplete)
-- [Warp Server Framework](https://github.com/seanmonstar/warp)
-- [Alacritty](https://github.com/alacritty/alacritty)
-- [Hyper HTTP library](https://github.com/hyperium/hyper)
-- [FontKit](https://github.com/servo/font-kit)
-- [Core-foundation](https://github.com/servo/core-foundation-rs)
-- [Smol](https://github.com/smol-rs/smol)
+## Windows 支持
 
----
+本 fork 可在 Windows（x86_64）上原生构建运行，UI 同样默认中文。
 
-## warp-cn fork additions
+### 运行所需文件
 
-This repository is the [warp-cn community fork](https://github.com/Heartcoolman/warp-cn). Fork-only additions sit behind `#[cfg(feature = "direct_llm_backend")]` or in fork-only paths, so upstream-feature-off builds are unaffected. See [`README_zh.md`](./README_zh.md) for the full Chinese write-up.
+`warp-oss.exe` 依赖一组运行库文件，**必须按下述布局放在一起**，否则启动会报 `Failed to load ConPTY library module` 或缺失 VC++ 运行时：
 
-### Direct LLM Backend (BYOK) — initial preview
+```
+warp-oss.exe
+conpty.dll
+dxcompiler.dll
+dxil.dll
+vcruntime140.dll
+vcruntime140_1.dll
+msvcp140.dll
+x64\
+  └─ OpenConsole.exe      ← 注意在 x64 子目录下
+resources\                ← 打包资源（由安装流程生成）
+```
 
-> ⚠️ **Initial release (v0.1).** Core paths work end-to-end (project evaluation, file reads, shell, MCP), but tool-result race conditions and a few rough edges are still being smoothed out. Please file issues in the fork repo.
+> 以官方 `script/windows/windows-installer.iss` 的安装布局为准。其中 `conpty.dll` / DXC / VC++ 运行时与 exe 同级，而 `OpenConsole.exe` 位于 `x64\` 子目录。`app/build.rs` 在构建时会把 ConPTY 与 DXC 这几个 DLL 自动拷到 `target/<profile>/` 下对应位置；VC++ 运行时三件套（`vcruntime140.dll` / `vcruntime140_1.dll` / `msvcp140.dll`）由安装包从 `app/assets/windows/<arch>/` 一并打入。便携分发请直接用安装包，或参照 iss 布局手动组织，不要只复制 exe 同级的几个文件。
 
-Lets users point Warp at **their own LLM API key** (Anthropic / OpenAI-compatible incl. DeepSeek / Google Gemini) and run the full agent loop **without ever talking to Warp Cloud**. Landed via merge `84f9ef23` on `master` (9 commits squashed under `feat/direct-llm-backend`).
+### 从源码构建
 
-**Supported providers**
+在 Windows 上构建有两条资源编译路径。默认（未设置 `WARP_RC` 时）需要 MSVC 工具链（Visual Studio 2022 Build Tools，含 Windows SDK）：`app/build.rs` 经注册表定位 `cl.exe` 以装配 MSVC 环境（让资源编译器能找到头文件），再由 embed-resource 调用 `rc.exe` 编译资源：
 
-| Provider | Default base URL | Notes |
+```sh
+cargo build --release --bin warp-oss --features gui
+```
+
+还需 `protoc`（protobuf 编译器）在 PATH 上。
+
+> **免 Visual Studio 的便携工具链**（LLVM `clang-cl` / `lld-link` / `llvm-rc` + xwin）已支持：设置 `WARP_RC` 环境变量指向独立资源编译器（如 `llvm-rc`）后，`app/build.rs` 会直接用它编译资源、跳过上面的 `cl.exe` 注册表查找。详细配置见 [`docs/building-windows-portable.md`](docs/building-windows-portable.md)。
+
+### 中文渲染
+
+Windows 上 UI 文本经 cosmic-text 排版，启动时会预加载系统的中文字体（微软雅黑、宋体）+ Segoe UI Emoji 供字形回退；若系统缺这些字体则回退到全量系统字体扫描，确保中文不出现豆腐块。
+
+### 凭据存储
+
+Windows 上登录 token / AI API key / MCP 凭据通过 **Windows DPAPI**（`CryptProtectData`，按当前用户加密）保护后落盘，不使用系统钥匙串，见 `crates/warpui_extras/src/secure_storage/windows.rs`。（注：macOS 用 AES-256-GCM 加密文件，二者机制不同。）
+
+> Windows 安装包（InnoSetup）流水线参见 `script/windows/`（`bundle.ps1` + `windows-installer.iss`），相关进展见 issue #10。
+
+## 与上游同步
+
+本 fork 维护者会定期 merge upstream。每个含 UI 字符串的 PR 拆为两步：
+
+1. **结构步**：`t!("...")` 替换 inline 字面量 + 同步 `bundles/en/*.ftl`
+2. **翻译步**：填充 `bundles/zh-CN/*.ftl`
+
+详见 `crates/warp_i18n/MERGE_NOTES.md`。
+
+## 贡献翻译 / 修订
+
+- 新增字符串 / 修订术语：见 `docs/i18n.md`
+- 术语锁定：`crates/warp_i18n/GLOSSARY.md`
+- Lint 与 CI：`cargo xtask check-i18n --mode hard`
+- Bundle 对齐校验：`cargo xtask check-i18n --check-parity`
+
+## Direct LLM Backend（BYOK 直连）— 初版预览
+
+> ⚠️ **初版（v0.1）**：核心路径已通，但仍在打磨。基本评测、读盘、shell、MCP 均可跑；偶尔会遇到 tool result 时序竞态（v4-flash 出现 "tool result unavailable" 文本时模型已被指引重试）。请把遇到的问题在 issue 区反馈，我们会持续迭代。
+
+允许用户**直接用自己的 API Key 调用第三方 LLM**，跑完整 agent 循环时**完全不连 Warp 云端**。9 个 commit 一次合入 master（merge `84f9ef23`）。
+
+### 已支持的 Provider
+
+| Provider | 默认入口 | 备注 |
 |---|---|---|
-| Anthropic | `https://api.anthropic.com/v1` | Native SSE |
-| OpenAI-compatible | `https://api.openai.com/v1` | Works with DeepSeek (`https://api.deepseek.com/v1`) and any `/v1/chat/completions` endpoint |
-| Google Gemini | `https://generativelanguage.googleapis.com/v1beta` | `?alt=sse` streaming |
+| Anthropic | `https://api.anthropic.com/v1` | 原生 SSE |
+| OpenAI 兼容 | `https://api.openai.com/v1` | 含 DeepSeek（`https://api.deepseek.com/v1`）等任何 OpenAI-compatible endpoint |
+| Google Gemini | `https://generativelanguage.googleapis.com/v1beta` | `?alt=sse` 流式 |
 
-Each provider keeps its own base URL + key + default model; the model dropdown is populated dynamically from the provider's `/v1/models` endpoint.
+每个 Provider 可独立配置 base url + API key + 默认 model；模型列表通过 provider 的 `/v1/models` 动态拉取。
 
-**Enabling**
+### 启用方法
 
-1. **Settings → AI → API Keys** has a new "Direct backend" section — fill in any provider's key, URL, and default model.
-2. **Settings → General** switch the active provider (one-time restart on first switch).
-3. From then on, Agent Mode talks to your own API key directly. **No Warp account login required.**
+1. **设置 → AI → API Keys** 面板新增的 "Direct backend" 部分填入任一 provider 的 key + url + 默认 model
+2. **设置 → 通用** 切换到对应 provider（首次启用需重启一次）
+3. 之后所有 Agent Mode 对话直接走你自己的 API key，**无需登录 Warp 账号**
 
-**Tool set (11)**
+### 已实现的工具集（11 个）
 
 `read_files` · `run_shell_command` · `grep` · `file_glob` · `apply_file_diffs` · `ask_user_question` · `write_to_long_running_shell_command` · `read_shell_command_output` · `transfer_shell_command_control_to_user` · `read_mcp_resource` · `call_mcp_tool`
 
-MCP runs client-side and reuses the local `~/.warp/.mcp.json`; no MCP server-side re-wiring needed.
+MCP 走客户端侧执行，复用本机已配的 `~/.warp/.mcp.json`，无需在 server 侧重新对接 MCP server。
 
-**Known limitations**
+### 已知限制 / 待办
 
-- **Reasoning models**: DeepSeek-R1 / o1-style `reasoning_content` echo-back is supported; other reasoning models surface as errors if rejected.
-- **Tool-result race**: client occasionally fires the next request before all parallel tool results return; the server stubs missing IDs with a transient-retry hint to keep the model from hallucinating. Look for `DirectBackend OpenAI: stubbed N missing` in `~/Library/Logs/warp-oss.log`.
-- **Computer Use / Drive / Workflow agents** and other Warp-cloud-only auxiliaries return empty in direct mode (does not affect the main chat loop).
-- **Cost / token accounting**: only input / output tokens are reported in `StreamFinished.token_usage`; cost is not computed.
+- **Reasoning 模型回灌**：DeepSeek-R1 / o1 系列已支持 `reasoning_content` 必须 echo back 的协议；其他 reasoning 模型若拒收按错误暴露
+- **Tool result 时序**：客户端在多 parallel tool_call 场景下偶尔在 result 全部回流前就发下一轮请求，缺失的 result 由 server 侧 stub 引导 LLM 重试。复现请抓 `~/Library/Logs/warp-oss.log` 里的 `DirectBackend OpenAI: stubbed N missing` 警告
+- **Computer Use / Workflow agent / Drive 等高阶云功能**：在 direct mode 下走默认空响应，不影响主对话路径
+- **Cost / token 统计**：`StreamFinished.token_usage` 仅记 input/output，不算成本
 
-**Security / permissions**
+### 安全 / 权限
 
-- Four permission gates (`read_files`, `mcp`, `file_write`, `pty`, `execute_commands`) coerce upstream `AlwaysAsk` to `AgentDecides` (or `AskOnFirstWrite` for PTY) when the feature is on, so own-LLM read-only inspection isn't trapped by a popup the model can never satisfy.
-- All fork behavior is gated by `#[cfg(feature = "direct_llm_backend")]`; upstream-feature-off builds are unchanged.
-- API keys are persisted to `~/Library/Application Support/dev.warp.WarpCn/` as AES-256-GCM encrypted files (no macOS Keychain).
+- 4 个权限 gate（read_files / mcp / file_write / pty / execute_commands）在启用 feature 时把上游默认 `AlwaysAsk` 强制 coerce 到 `AgentDecides`，确保 own-LLM 的 read-only 探查不会被 UI 弹窗陷阱拒死
+- 所有 fork 行为都在 `#[cfg(feature = "direct_llm_backend")]` 之后；上游 build（关 feature）行为完全不受影响
+- API Key 走 `~/Library/Application Support/dev.warp.WarpCn/` 的 AES-256-GCM 加密文件，不入钥匙串
 
-**Source layout**
+### 详细信息
 
-- Entry: `app/src/server/direct_backend/`
-- Config schema: `crates/ai/src/direct_backend/config.rs`
-- Multi-provider drivers / SSE: `app/src/server/direct_backend/multi_agent/`
-- Cargo feature: `app/Cargo.toml` → `direct_llm_backend = [...]` (on by default in fork builds)
+- 入口源码：`app/src/server/direct_backend/`
+- 配置 schema：`crates/ai/src/direct_backend/config.rs`
+- 工具调度 / SSE：`app/src/server/direct_backend/multi_agent/`
+- Cargo feature：`app/Cargo.toml` 的 `direct_llm_backend = [...]`（默认开启，编译 fork build 时无需额外 flag）
+
+## 与上游差异
+
+- 客户端 UI ~7000+ 字符串汉化（不影响功能 / 性能）
+- 新增 crate：`warp_i18n`、`warp_i18n_macros`
+- 新增 CI workflow：`.github/workflows/i18n-lint.yml`（`hard` 模式 + allowlist 冻结）
+- `crates/warp_server_client` 增加 `RemoteString` marker，标记不可本地化的服务端字段
+- 新增 `direct_llm_backend` cargo feature（见上）
+
+## 上游 / 英文 README
+
+通用项目说明、构建、贡献流程、许可证：见 [`README_en.md`](./README_en.md)。
