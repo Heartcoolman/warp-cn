@@ -42,6 +42,19 @@ emit_multiline() {
   fi
 }
 
+# Never carry upstream changes under .github/workflows/ into the sync branch: the
+# Actions GITHUB_TOKEN is forbidden from pushing workflow-file changes ("refusing
+# to allow a GitHub App to create or update workflow ... without workflows
+# permission"), which silently broke the 2026-07-13 and -20 syncs at the push
+# step. The fork maintains its own CI, so pin every workflow file to the fork
+# version: restore modified/conflicted ones and drop any that upstream added.
+# Leaves the result staged (index == worktree == base for .github/workflows/).
+restore_fork_workflows() {
+  local base_ref="$1"
+  git rm -rf --ignore-unmatch --quiet .github/workflows >/dev/null 2>&1 || true
+  git checkout "$base_ref" -- .github/workflows 2>/dev/null || true
+}
+
 # Ensure upstream remote points at the canonical URL.
 if git remote get-url "$UPSTREAM_REMOTE" >/dev/null 2>&1; then
   git remote set-url "$UPSTREAM_REMOTE" "$UPSTREAM_URL"
@@ -60,14 +73,27 @@ git fetch "$UPSTREAM_REMOTE" "$UPSTREAM_BRANCH"
 # Make sure the local base branch is up to date with origin (where CI's checkout lands).
 git fetch origin "$BASE_BRANCH" 2>/dev/null || true
 
-git checkout -B "$SYNC_BRANCH" "origin/$BASE_BRANCH" 2>/dev/null \
-  || git checkout -B "$SYNC_BRANCH" "$BASE_BRANCH"
+# Resolve the base ref once so post-merge cleanup can diff/restore against the same
+# tree the sync branch was cut from.
+if git rev-parse -q --verify "origin/$BASE_BRANCH" >/dev/null; then
+  BASE_REF="origin/$BASE_BRANCH"
+else
+  BASE_REF="$BASE_BRANCH"
+fi
+
+git checkout -B "$SYNC_BRANCH" "$BASE_REF"
 
 emit "sync_branch=$SYNC_BRANCH"
 
 if git merge --no-ff "$UPSTREAM_REMOTE/$UPSTREAM_BRANCH" \
      -m "chore(sync): merge upstream/$UPSTREAM_BRANCH"; then
   echo "::notice::clean merge into $SYNC_BRANCH"
+  # Strip any upstream .github/workflows/ change the merge pulled in; commit the
+  # revert on top so the pushed branch never carries a workflow-file diff.
+  restore_fork_workflows "$BASE_REF"
+  if ! git diff --cached --quiet -- .github/workflows; then
+    git commit --no-verify -m "chore(sync): keep fork CI workflows"
+  fi
   emit "status=clean"
   exit 0
 fi
@@ -82,6 +108,10 @@ if ! git rev-parse -q --verify MERGE_HEAD >/dev/null; then
   emit "status=error"
   exit 1
 fi
+
+# Resolve .github/workflows/ to the fork version before counting conflicts, so an
+# upstream workflow edit never appears as a conflict or reaches the (rejected) push.
+restore_fork_workflows "$BASE_REF"
 
 # Conflict path: capture conflicted paths, snapshot the conflict state as a WIP commit
 # (so the branch is pushable and humans can pick up where the merge left off).
