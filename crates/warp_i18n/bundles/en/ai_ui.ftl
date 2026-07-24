@@ -253,6 +253,7 @@ ai-ui-agent-source-scheduled = Scheduled
 ai-ui-agent-source-warp-app = Warp App
 ai-ui-agent-source-oz-web = Oz Web
 ai-ui-agent-source-github-action = GitHub Action
+ai-ui-agent-source-github-webhook = GitHub Webhook
 ai-ui-agent-copied-branch-name = Copied branch name
 ai-ui-agent-session-expired = Session expired
 ai-ui-agent-session-expired-tooltip = Sessions expire after one week and cannot be opened.

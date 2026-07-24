@@ -4,14 +4,14 @@ use std::path::PathBuf;
 use anyhow::anyhow;
 use cfg_if::cfg_if;
 
+use super::DirEntryOrFragment;
 use super::node::{ChildrenPath, MerkleNode, NodeId, NodeLens, NodeMask};
 use super::serialized_tree::SerializedMerkleTree;
-use super::DirEntryOrFragment;
+use crate::index::Entry;
+use crate::index::full_source_code_embedding::Error;
 use crate::index::full_source_code_embedding::fragment_metadata::{
     LeafToFragmentMetadata, LeafToFragmentMetadataUpdates,
 };
-use crate::index::full_source_code_embedding::Error;
-use crate::index::Entry;
 
 /// Aggregate counts walked from the current Merkle tree, surfaced to the
 /// settings UI alongside sync status.

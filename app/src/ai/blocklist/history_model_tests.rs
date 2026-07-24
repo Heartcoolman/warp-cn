@@ -9,33 +9,36 @@ use warp_cli::agent::Harness;
 use warpui::{App, EntityId, ModelHandle};
 
 use super::{
-    convert_persisted_conversation_to_ai_conversation_with_metadata, AIConversationMetadata,
-    AIQueryHistoryOutputStatus, BeginConversationRenameError, BlocklistAIHistoryEvent,
-    BlocklistAIHistoryModel, PersistedAIInput, PersistedAIInputType,
+    AIConversationMetadata, AIQueryHistoryOutputStatus, BeginConversationRenameError,
+    BlocklistAIHistoryEvent, BlocklistAIHistoryModel, PersistedAIInput, PersistedAIInputType,
+    convert_persisted_conversation_to_ai_conversation_with_metadata,
 };
 use crate::ai::agent::api::ServerConversationToken;
 use crate::ai::agent::conversation::{
     AIAgentHarness, AIConversation, AIConversationId, ConversationStatus,
-    ServerAIConversationMetadata,
+    ServerAIConversationMetadata, TodoStatus,
 };
 use crate::ai::agent::task::helper::MessageExt;
+use crate::ai::agent::todos::AIAgentTodoList;
 use crate::ai::agent::{
-    AIAgentExchange, AIAgentExchangeId, AIAgentInput, AIAgentOutputStatus, FinishedAIAgentOutput,
-    RenderableAIError, Shared, TransientNetworkErrorKind, UserQueryMode,
+    AIAgentExchange, AIAgentExchangeId, AIAgentInput, AIAgentOutputStatus, AIAgentTodo,
+    AIAgentTodoId, FinishedAIAgentOutput, RenderableAIError, Shared, TransientNetworkErrorKind,
+    UserQueryMode,
 };
 use crate::ai::ambient_agents::{
-    conversation_output_status_from_conversation, AmbientAgentTaskId, AmbientConversationStatus,
+    AmbientAgentTaskId, AmbientConversationStatus, conversation_output_status_from_conversation,
 };
-use crate::ai::blocklist::controller::RequestInput;
 use crate::ai::blocklist::ResponseStreamId;
+use crate::ai::blocklist::controller::RequestInput;
 use crate::ai::llms::LLMId;
 use crate::auth::AuthStateProvider;
 use crate::cloud_object::{Owner, Revision, ServerMetadata, ServerPermissions};
 use crate::input_suggestions::HistoryInputSuggestion;
-use crate::persistence::model::{
-    AgentConversation, AgentConversationData, AgentConversationRecord, PersistedAutoexecuteMode,
-};
 use crate::persistence::ModelEvent;
+use crate::persistence::model::{
+    AgentConversation, AgentConversationData, AgentConversationRecord, AgentConversationSummary,
+    PersistedAutoexecuteMode,
+};
 use crate::server::ids::ServerId;
 use crate::server::telemetry::context_provider::AppTelemetryContextProvider;
 use crate::terminal::model::session::SessionId;
@@ -125,6 +128,7 @@ fn persisted_agent_conversation(
             conversation_data: serde_json::to_string(&conversation_data)
                 .expect("conversation data should serialize"),
             last_modified_at,
+            summary: None,
         },
         tasks,
     }
@@ -183,6 +187,7 @@ fn persisted_agent_conversation_from_update_event(event: ModelEvent) -> AgentCon
             conversation_data: serde_json::to_string(&conversation_data)
                 .expect("conversation data should serialize"),
             last_modified_at: Utc::now().naive_utc(),
+            summary: None,
         },
         tasks: updated_tasks,
     }
@@ -246,9 +251,11 @@ fn begin_conversation_rename_updates_title_and_cached_metadata() {
                     .map(|metadata| metadata.title.as_str()),
                 Some("Manual title"),
             );
-            assert!(model
-                .in_flight_conversation_renames
-                .contains_key(&conversation_id));
+            assert!(
+                model
+                    .in_flight_conversation_renames
+                    .contains_key(&conversation_id)
+            );
         });
     });
 }
@@ -302,9 +309,11 @@ fn begin_conversation_rename_rejects_conversation_without_server_token() {
                     .map(|metadata| metadata.title.as_str()),
                 Some("Generated title"),
             );
-            assert!(!model
-                .in_flight_conversation_renames
-                .contains_key(&conversation_id));
+            assert!(
+                !model
+                    .in_flight_conversation_renames
+                    .contains_key(&conversation_id)
+            );
         });
     });
 }
@@ -341,9 +350,11 @@ fn begin_conversation_rename_rejects_optimistic_root_task() {
                 .expect("conversation should have a root task");
             assert!(root_task.source().is_none());
             assert_eq!(root_task.description(), "");
-            assert!(!model
-                .in_flight_conversation_renames
-                .contains_key(&conversation_id));
+            assert!(
+                !model
+                    .in_flight_conversation_renames
+                    .contains_key(&conversation_id)
+            );
         });
     });
 }
@@ -410,9 +421,11 @@ fn complete_conversation_rename_applies_normalized_title_and_clears_in_flight_st
                     .map(|metadata| metadata.title.as_str()),
                 Some("Normalized title"),
             );
-            assert!(!model
-                .in_flight_conversation_renames
-                .contains_key(&conversation_id));
+            assert!(
+                !model
+                    .in_flight_conversation_renames
+                    .contains_key(&conversation_id)
+            );
         });
     });
 }
@@ -475,9 +488,11 @@ fn fail_conversation_rename_reverts_title_and_cached_metadata() {
                     .map(|metadata| metadata.title.as_str()),
                 Some("Generated title"),
             );
-            assert!(!model
-                .in_flight_conversation_renames
-                .contains_key(&conversation_id));
+            assert!(
+                !model
+                    .in_flight_conversation_renames
+                    .contains_key(&conversation_id)
+            );
         });
     });
 }
@@ -524,9 +539,11 @@ fn begin_conversation_rename_rejects_second_rename_while_in_flight() {
                 .conversation(&conversation_id)
                 .expect("conversation should exist");
             assert_eq!(conversation.title().as_deref(), Some("Manual title"));
-            assert!(model
-                .in_flight_conversation_renames
-                .contains_key(&conversation_id));
+            assert!(
+                model
+                    .in_flight_conversation_renames
+                    .contains_key(&conversation_id)
+            );
         });
     });
 }
@@ -703,6 +720,7 @@ fn test_initialize_historical_conversations_uses_root_task_description_title() {
                 })
                 .expect("conversation data should serialize"),
                 last_modified_at: now,
+                summary: None,
             },
             tasks: vec![warp_multi_agent_api::Task {
                 id: task_id.clone(),
@@ -731,6 +749,107 @@ fn test_initialize_historical_conversations_uses_root_task_description_title() {
         });
     });
 }
+
+#[test]
+fn test_initialize_historical_conversations_uses_summary_column_without_tasks() {
+    // Startup rows carry only `agent_conversations` records: task lists are
+    // empty and the metadata comes from the write-time `summary` column.
+    App::test((), |app| async move {
+        let conversation_id = AIConversationId::new();
+        let now = Utc::now().naive_utc();
+        let summary = AgentConversationSummary {
+            initial_query: "Initial query".to_string(),
+            title: "Summary title".to_string(),
+            initial_working_directory: Some("/tmp/repo".to_string()),
+            is_restorable: true,
+            is_unlisted_auto_code_diff: false,
+        };
+        let conversations = vec![AgentConversation {
+            conversation: AgentConversationRecord {
+                id: 0,
+                conversation_id: conversation_id.to_string(),
+                conversation_data: r#"{"server_conversation_token":null}"#.to_string(),
+                last_modified_at: now,
+                summary: Some(serde_json::to_string(&summary).expect("summary should serialize")),
+            },
+            tasks: vec![],
+        }];
+
+        let history_model = app
+            .add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], vec![], &conversations));
+
+        history_model.read(&app, |model, _| {
+            let metadata = model
+                .get_conversation_metadata(&conversation_id)
+                .expect("conversation metadata should be initialized from the summary column");
+            assert_eq!(metadata.title, "Summary title");
+            assert_eq!(metadata.initial_query, "Initial query");
+            assert_eq!(
+                metadata.initial_working_directory.as_deref(),
+                Some("/tmp/repo")
+            );
+            assert!(metadata.has_local_data);
+            // The conversation itself stays on the lazy path.
+            assert!(model.conversation(&conversation_id).is_none());
+        });
+    });
+}
+
+#[test]
+fn test_initialize_historical_conversations_skips_unrestorable_and_unlisted_summaries() {
+    App::test((), |app| async move {
+        let unrestorable_id = AIConversationId::new();
+        let unlisted_id = AIConversationId::new();
+        let now = Utc::now().naive_utc();
+        let record = |id: &AIConversationId, summary: &AgentConversationSummary, row: i32| {
+            AgentConversation {
+                conversation: AgentConversationRecord {
+                    id: row,
+                    conversation_id: id.to_string(),
+                    conversation_data: r#"{"server_conversation_token":null}"#.to_string(),
+                    last_modified_at: now,
+                    summary: Some(
+                        serde_json::to_string(summary).expect("summary should serialize"),
+                    ),
+                },
+                tasks: vec![],
+            }
+        };
+        let conversations = vec![
+            record(
+                &unrestorable_id,
+                &AgentConversationSummary {
+                    initial_query: "Initial query".to_string(),
+                    title: "Unrestorable".to_string(),
+                    initial_working_directory: None,
+                    is_restorable: false,
+                    is_unlisted_auto_code_diff: false,
+                },
+                0,
+            ),
+            record(
+                &unlisted_id,
+                &AgentConversationSummary {
+                    initial_query: "diff".to_string(),
+                    title: "Passive diff".to_string(),
+                    initial_working_directory: None,
+                    is_restorable: true,
+                    is_unlisted_auto_code_diff: true,
+                },
+                1,
+            ),
+        ];
+
+        let history_model = app
+            .add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], vec![], &conversations));
+
+        history_model.read(&app, |model, _| {
+            assert!(model.get_conversation_metadata(&unrestorable_id).is_none());
+            assert!(model.get_conversation_metadata(&unlisted_id).is_none());
+        });
+    });
+}
+
 #[test]
 fn test_initialize_historical_conversations_eagerly_hydrates_orchestration_children() {
     // Fix C: orchestration children should be inserted into `conversations_by_id`
@@ -1620,6 +1739,64 @@ fn test_ambient_agent_conversations_excluded_from_list_but_accessible_by_id() {
 }
 
 #[test]
+fn test_child_agent_conversations_excluded_from_list_but_accessible_by_id() {
+    use crate::ai::agent::conversation::AIConversation;
+
+    App::test((), |mut app| async move {
+        let history_model =
+            app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], vec![], &[]));
+
+        let regular_id = AIConversationId::new();
+
+        // One child linked via a local parent placeholder, one via the
+        // parent's server-side run identifier (driver-hosted processes).
+        let mut local_child = AIConversation::new(false, false);
+        local_child.set_parent_conversation_id(AIConversationId::new());
+        let local_child_id = local_child.id();
+        let mut driver_child = AIConversation::new(false, false);
+        driver_child.set_parent_agent_id("parent-run-id".to_string());
+        let driver_child_id = driver_child.id();
+
+        history_model.update(&mut app, |model, _| {
+            let regular_metadata = AIConversationMetadata::from_server_metadata(
+                regular_id,
+                create_server_metadata(
+                    "Regular Conversation",
+                    "token-regular-child-test",
+                    5.0,
+                    None,
+                ),
+            );
+            model
+                .all_conversations_metadata
+                .insert(regular_id, regular_metadata);
+            model
+                .all_conversations_metadata
+                .insert(local_child_id, AIConversationMetadata::from(&local_child));
+            model
+                .all_conversations_metadata
+                .insert(driver_child_id, AIConversationMetadata::from(&driver_child));
+        });
+
+        history_model.read(&app, |model, _| {
+            let listed: Vec<AIConversationId> = model
+                .get_local_conversations_metadata()
+                .map(|m| m.id)
+                .collect();
+            assert_eq!(
+                listed,
+                vec![regular_id],
+                "child agent conversations must be excluded from the navigable list"
+            );
+
+            // Both children remain accessible by ID.
+            assert!(model.get_conversation_metadata(&local_child_id).is_some());
+            assert!(model.get_conversation_metadata(&driver_child_id).is_some());
+        });
+    });
+}
+
+#[test]
 fn test_initialize_historical_conversations_indexes_child_conversations() {
     use chrono::NaiveDateTime;
 
@@ -1641,6 +1818,7 @@ fn test_initialize_historical_conversations_indexes_child_conversations() {
                 conversation_id: child_id.to_string(),
                 conversation_data: child_conversation_data,
                 last_modified_at: NaiveDateTime::default(),
+                summary: None,
             },
             tasks: vec![],
         }];
@@ -1756,6 +1934,66 @@ fn test_set_parent_multiple_children() {
             assert!(children.contains(&child_a));
             assert!(children.contains(&child_b));
             assert_eq!(model.child_conversations_of(parent_id).len(), 2);
+        });
+    });
+}
+
+#[test]
+fn test_remove_child_conversation_cleans_parent_index() {
+    App::test((), |mut app| async move {
+        let terminal_view_id = EntityId::new();
+        let history_model =
+            app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], vec![], &[]));
+        let parent_id = history_model.update(&mut app, |model, ctx| {
+            model.start_new_conversation(terminal_view_id, false, false, false, ctx)
+        });
+        let child_id = history_model.update(&mut app, |model, ctx| {
+            let child_id = model.start_new_conversation(terminal_view_id, false, false, false, ctx);
+            model.set_parent_for_conversation(child_id, parent_id);
+            child_id
+        });
+
+        history_model.update(&mut app, |model, ctx| {
+            model.remove_conversation(child_id, terminal_view_id, ctx);
+        });
+
+        history_model.read(&app, |model, _| {
+            assert!(model.conversation(&child_id).is_none());
+            assert!(model.child_conversation_ids_of(&parent_id).is_empty());
+        });
+    });
+}
+
+#[test]
+fn test_remove_parent_conversation_cleans_incoming_and_outgoing_index_entries() {
+    App::test((), |mut app| async move {
+        let terminal_view_id = EntityId::new();
+        let history_model =
+            app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], vec![], &[]));
+        let grandparent_id = history_model.update(&mut app, |model, ctx| {
+            model.start_new_conversation(terminal_view_id, false, false, false, ctx)
+        });
+        let parent_id = history_model.update(&mut app, |model, ctx| {
+            let parent_id =
+                model.start_new_conversation(terminal_view_id, false, false, false, ctx);
+            model.set_parent_for_conversation(parent_id, grandparent_id);
+            parent_id
+        });
+        let child_id = history_model.update(&mut app, |model, ctx| {
+            let child_id = model.start_new_conversation(terminal_view_id, false, false, false, ctx);
+            model.set_parent_for_conversation(child_id, parent_id);
+            child_id
+        });
+
+        history_model.update(&mut app, |model, ctx| {
+            model.remove_conversation(parent_id, terminal_view_id, ctx);
+        });
+
+        history_model.read(&app, |model, _| {
+            assert!(model.conversation(&parent_id).is_none());
+            assert!(model.conversation(&child_id).is_some());
+            assert!(model.child_conversation_ids_of(&grandparent_id).is_empty());
+            assert!(model.child_conversation_ids_of(&parent_id).is_empty());
         });
     });
 }
@@ -2259,7 +2497,10 @@ fn test_optimistic_root_upgrade_then_persist_emits_event_with_single_server_task
             1,
             "post-upgrade persist must emit exactly one task row (the server root); got {} task(s) with ids {:?}",
             second_updated_tasks.len(),
-            second_updated_tasks.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(),
+            second_updated_tasks
+                .iter()
+                .map(|t| t.id.as_str())
+                .collect::<Vec<_>>(),
         );
         let only_task = &second_updated_tasks[0];
         assert_eq!(
@@ -2352,6 +2593,7 @@ fn test_optimistic_root_restore_round_trip_yields_in_progress_optimistic_root() 
                 conversation_data: serde_json::to_string(&conversation_data)
                     .expect("conversation data should serialize"),
                 last_modified_at: Utc::now().naive_utc(),
+                summary: None,
             },
             tasks: updated_tasks,
         };
@@ -2480,7 +2722,10 @@ fn test_truncate_from_exchange_to_empty_persist_event_has_empty_updated_tasks() 
             updated_tasks.is_empty(),
             "truncate-to-empty resets the root to optimistic; the persist must emit zero task rows, got {} row(s) with ids {:?}",
             updated_tasks.len(),
-            updated_tasks.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(),
+            updated_tasks
+                .iter()
+                .map(|t| t.id.as_str())
+                .collect::<Vec<_>>(),
         );
     });
 }
@@ -4033,8 +4278,8 @@ fn statuses_after_stream_error(
         });
     });
     // Two steps: a tail-expression `lock()` temporary would outlive `derived` (E0597).
-    let result = std::mem::take(&mut *derived.lock().unwrap());
-    result
+
+    std::mem::take(&mut *derived.lock().unwrap())
 }
 
 /// A failure with a recovery scheduled moves the conversation to the
@@ -4214,11 +4459,11 @@ fn has_dangling_subagent_pair(task: &warp_multi_agent_api::Task) -> bool {
         .filter_map(|m| m.tool_call_result().map(|r| r.tool_call_id.as_str()))
         .collect();
     // A sub-agent call without its result.
-    let call_without_result = subagent_call_ids.iter().any(|id| !result_ids.contains(id));
+
     // A result for a sub-agent call that no longer exists. (Non-sub-agent tool
     // results, e.g. run_shell_command, are not tracked in `subagent_call_ids`
     // and so are correctly ignored here.)
-    call_without_result
+    subagent_call_ids.iter().any(|id| !result_ids.contains(id))
 }
 
 /// Helper: build + restore a conversation, find the root exchange holding
@@ -4657,7 +4902,7 @@ fn straddle_rewind_followup_requests_are_clean_and_durable() {
         let restored_tasks: Vec<warp_multi_agent_api::Task> = loop {
             match receiver.recv_timeout(Duration::from_secs(2)) {
                 Ok(ModelEvent::UpdateMultiAgentConversation { updated_tasks, .. }) => {
-                    break updated_tasks
+                    break updated_tasks;
                 }
                 Ok(_) => continue,
                 Err(_) => panic!("rewind must persist a task snapshot"),
@@ -4981,5 +5226,58 @@ fn fork_exact_reconciles_fork_point_client_tool_calls() {
             result_for(orphan_id).is_none(),
             "no result may be synthesized outside the fork-point exchange"
         );
+    });
+}
+
+#[test]
+fn todo_projections_delegate_to_the_conversation() {
+    App::test((), |mut app| async move {
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
+        let terminal_view_id = EntityId::new();
+        let conversation_id = history_model.update(&mut app, |history, ctx| {
+            history.start_new_conversation(terminal_view_id, false, false, false, ctx)
+        });
+
+        let completed = AIAgentTodo::new("t1".to_owned().into(), "one".to_owned(), String::new());
+        let pending_first =
+            AIAgentTodo::new("t2".to_owned().into(), "two".to_owned(), String::new());
+        let pending_second =
+            AIAgentTodo::new("t3".to_owned().into(), "three".to_owned(), String::new());
+        history_model.update(&mut app, |history, _| {
+            history
+                .conversation_mut(&conversation_id)
+                .expect("conversation exists")
+                .set_todo_lists_for_test(vec![
+                    AIAgentTodoList::default()
+                        .with_completed_items(vec![completed.clone()])
+                        .with_pending_items(vec![pending_first, pending_second.clone()]),
+                ]);
+        });
+
+        history_model.read(&app, |history, _| {
+            assert_eq!(
+                history.todo_status(&conversation_id, &completed.id),
+                Some(TodoStatus::Completed)
+            );
+            // Non-head pending items are Pending regardless of conversation status.
+            assert_eq!(
+                history.todo_status(&conversation_id, &pending_second.id),
+                Some(TodoStatus::Pending)
+            );
+            assert_eq!(
+                history.todo_status(&conversation_id, &AIAgentTodoId::from("missing".to_owned())),
+                None
+            );
+            assert_eq!(
+                history
+                    .active_todo_list(&conversation_id)
+                    .map(AIAgentTodoList::len),
+                Some(3)
+            );
+            // Unknown conversations yield no projections at all.
+            let unknown = AIConversationId::new();
+            assert_eq!(history.todo_status(&unknown, &completed.id), None);
+            assert!(history.active_todo_list(&unknown).is_none());
+        });
     });
 }

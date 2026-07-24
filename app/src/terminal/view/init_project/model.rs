@@ -13,8 +13,8 @@ use crate::ai::persisted_workspace::PersistedWorkspace;
 use crate::settings::CodeSettings;
 use crate::terminal::view::init_project::lsp_server_selector::LSPServerInfo;
 use crate::terminal::view::init_project::{
-    CodebaseIndexingResult, CreateEnvironmentResult, InitActionResult, LanguageServersResult,
-    ProjectScopedRulesResult, FILES_TO_CHECK, LINKABLE_FILES,
+    CodebaseIndexingResult, CreateEnvironmentResult, FILES_TO_CHECK, InitActionResult,
+    LINKABLE_FILES, LanguageServersResult, ProjectScopedRulesResult,
 };
 
 const INIT_STEP_COUNT: usize = enum_iterator::cardinality::<InitStepKind>();

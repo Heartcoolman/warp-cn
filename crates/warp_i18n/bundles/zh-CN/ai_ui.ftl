@@ -253,6 +253,7 @@ ai-ui-agent-source-scheduled = 定时任务
 ai-ui-agent-source-warp-app = Warp 应用
 ai-ui-agent-source-oz-web = Oz 网页端
 ai-ui-agent-source-github-action = GitHub Action
+ai-ui-agent-source-github-webhook = GitHub Webhook
 ai-ui-agent-copied-branch-name = 已复制分支名
 ai-ui-agent-session-expired = 会话已过期
 ai-ui-agent-session-expired-tooltip = 会话会在一周后过期，过期后无法打开。

@@ -26,6 +26,7 @@ use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
 use warpui::units::Pixels;
 use warpui::{Action, AppContext, SingletonEntity, ViewContext, ViewHandle};
 
+use super::SettingsSection;
 use super::about_page::AboutPageView;
 use super::ai_page::{AISettingsPageAction, AISettingsPageView};
 use super::appearance_page::AppearanceSettingsPageView;
@@ -43,13 +44,14 @@ use super::show_blocks_view::ShowBlocksView;
 use super::teams_page::TeamsPageView;
 use super::warp_drive_page::WarpDriveSettingsPageView;
 use super::warpify_page::WarpifyPageView;
-use super::SettingsSection;
 use crate::appearance::Appearance;
 use crate::settings::CloudPreferencesSettings;
 use crate::themes::theme::Fill;
 use crate::ui_components::blended_colors;
 use crate::ui_components::icons::Icon;
-use crate::view_components::{Dropdown, DropdownItemAction, SubmittableTextInput, ToastFlavor};
+use crate::view_components::{
+    Dropdown, DropdownItemAction, FilterableDropdown, SubmittableTextInput, ToastFlavor,
+};
 
 pub const TOGGLE_BUTTON_RIGHT_PADDING: f32 = 5.;
 pub const HEADER_PADDING: f32 = 15.;
@@ -489,11 +491,7 @@ pub enum ToggleState {
 
 impl From<bool> for ToggleState {
     fn from(value: bool) -> Self {
-        if value {
-            Self::Enabled
-        } else {
-            Self::Disabled
-        }
+        if value { Self::Enabled } else { Self::Disabled }
     }
 }
 
@@ -967,6 +965,49 @@ pub(crate) fn render_dropdown_item<T: DropdownItemAction>(
     .finish()
 }
 
+/// Like [`render_dropdown_item`], but for a [`FilterableDropdown`] (a dropdown
+/// with a built-in search box). Used for long option lists such as the
+/// voice-input Speech Language picker.
+pub(crate) fn render_filterable_dropdown_item<T: DropdownItemAction>(
+    appearance: &Appearance,
+    label: &str,
+    secondary_text: Option<&str>,
+    dropdown_subtext: Option<Box<dyn Element>>,
+    local_only_icon_state: LocalOnlyIconState,
+    color_override: Option<Fill>,
+    handle: &ViewHandle<FilterableDropdown<T>>,
+) -> Box<dyn Element> {
+    let row = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
+
+    let dropdown_item_label = Align::new(render_dropdown_item_label(
+        label.to_string(),
+        secondary_text.map(|secondary_text| secondary_text.to_string()),
+        local_only_icon_state,
+        color_override,
+        appearance,
+    ))
+    .left()
+    .finish();
+
+    let mut dropdown = Flex::column().with_child(ChildView::new(handle).finish());
+    if let Some(dropdown_subtext) = dropdown_subtext {
+        dropdown.add_child(dropdown_subtext);
+    }
+
+    row.with_child(
+        Shrinkable::new(
+            1.0,
+            Container::new(dropdown_item_label)
+                .with_margin_bottom(4.)
+                .with_padding_right(16.)
+                .finish(),
+        )
+        .finish(),
+    )
+    .with_child(dropdown.finish())
+    .finish()
+}
+
 pub(crate) fn render_settings_info_banner(
     text: &str,
     subtext: Option<&str>,
@@ -986,16 +1027,18 @@ pub(crate) fn render_settings_info_banner(
     .finish();
 
     let text = {
-        let mut children = vec![Container::new(
-            Text::new(
-                text.to_string(),
-                appearance.ui_font_family(),
-                appearance.ui_font_size(),
+        let mut children = vec![
+            Container::new(
+                Text::new(
+                    text.to_string(),
+                    appearance.ui_font_family(),
+                    appearance.ui_font_size(),
+                )
+                .with_color(appearance.theme().active_ui_text_color().into())
+                .finish(),
             )
-            .with_color(appearance.theme().active_ui_text_color().into())
             .finish(),
-        )
-        .finish()];
+        ];
 
         if let Some(subtext) = subtext {
             children.push(
@@ -1332,6 +1375,19 @@ impl From<usize> for MatchData {
     }
 }
 
+/// Returns true if every whitespace-delimited word in `query` appears somewhere
+/// in `terms` (case-insensitive). An empty query matches everything.
+pub(super) fn search_terms_match(terms: &str, query: &str) -> bool {
+    if query.is_empty() {
+        return true;
+    }
+    let terms_lower = terms.to_lowercase();
+    query
+        .to_lowercase()
+        .split_whitespace()
+        .all(|word| terms_lower.contains(word))
+}
+
 impl<V: warpui::View> PageType<V> {
     /// A page where the contents cannot be separated for showing search results. If any part
     /// matches the search query, the whole page must show. The whole page is one big
@@ -1406,18 +1462,6 @@ impl<V: warpui::View> PageType<V> {
     /// Uses all-words matching: every word in the query must appear somewhere in the
     /// widget's search terms (but not necessarily contiguously).
     pub(super) fn update_filter(&mut self, query: &str, app: &AppContext) -> MatchData {
-        /// Returns true if every whitespace-delimited word in `query` appears
-        /// somewhere in `terms` (case-insensitive). An empty query matches everything.
-        fn search_terms_match(terms: &str, query: &str) -> bool {
-            if query.is_empty() {
-                return true;
-            }
-            let terms_lower = terms.to_lowercase();
-            query
-                .to_lowercase()
-                .split_whitespace()
-                .all(|word| terms_lower.contains(word))
-        }
         match self {
             Self::Monolith { widget, filter, .. } => {
                 *filter =
@@ -1636,16 +1680,16 @@ impl<V: warpui::View> PageType<V> {
         let page = match self.get_filtered() {
             FilteredPageType::Monolith { widget, title, .. } => {
                 let mut page = Empty::new().finish();
-                if let Some(widget) = widget {
-                    if widget.should_render(app) {
-                        if let Some(title) = title {
-                            let col = Flex::column()
-                                .with_child(render_page_title(title, HEADER_FONT_SIZE, appearance))
-                                .with_child(widget.render_widget(view, false, appearance, app));
-                            page = col.finish();
-                        } else {
-                            page = widget.render_widget(view, false, appearance, app);
-                        }
+                if let Some(widget) = widget
+                    && widget.should_render(app)
+                {
+                    if let Some(title) = title {
+                        let col = Flex::column()
+                            .with_child(render_page_title(title, HEADER_FONT_SIZE, appearance))
+                            .with_child(widget.render_widget(view, false, appearance, app));
+                        page = col.finish();
+                    } else {
+                        page = widget.render_widget(view, false, appearance, app);
                     }
                 }
                 page
@@ -1793,12 +1837,11 @@ impl<V: warpui::View> PageType<V> {
     }
 
     pub fn render(&self, view: &V, app: &AppContext) -> Box<dyn Element> {
-        if let (Some(vertical_scroll_state), Some(horizontal_scroll_state)) =
-            self.get_scroll_states()
-        {
-            self.wrap_dual_scrollable(view, horizontal_scroll_state, vertical_scroll_state, app)
-        } else {
-            self.render_page(view, app)
+        match self.get_scroll_states() {
+            (Some(vertical_scroll_state), Some(horizontal_scroll_state)) => {
+                self.wrap_dual_scrollable(view, horizontal_scroll_state, vertical_scroll_state, app)
+            }
+            _ => self.render_page(view, app),
         }
     }
 }

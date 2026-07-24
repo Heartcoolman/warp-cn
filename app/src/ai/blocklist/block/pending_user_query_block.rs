@@ -5,8 +5,8 @@ use warp_core::features::FeatureFlag;
 use warp_core::semantic_selection::SemanticSelection;
 use warp_i18n::t;
 use warpui::elements::{
-    get_rich_content_position_id, ChildView, Container, CrossAxisAlignment, Expanded, Flex,
-    ParentElement, SavePosition, SelectableArea, SelectionHandle, Text,
+    ChildView, Container, CrossAxisAlignment, Expanded, Flex, ParentElement, SavePosition,
+    SelectableArea, SelectionHandle, Text, get_rich_content_position_id,
 };
 use warpui::fonts::{Properties, Style, Weight};
 use warpui::{

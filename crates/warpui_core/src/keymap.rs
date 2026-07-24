@@ -2,8 +2,8 @@ use std::any::Any;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::anyhow;
 use lazy_static::lazy_static;
@@ -16,7 +16,7 @@ use crate::{Action, AppContext, Tracked};
 mod context;
 mod matcher;
 
-pub use context::{macros, Context, ContextPredicate};
+pub use context::{Context, ContextPredicate, macros};
 pub use matcher::{IsBindingValid, MatchResult, Matcher};
 
 use crate::platform::OperatingSystem;
@@ -337,8 +337,8 @@ impl schemars::JsonSchema for Keystroke {
         std::borrow::Cow::Borrowed("Keystroke")
     }
 
-    fn json_schema(gen: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        gen.subschema_for::<String>()
+    fn json_schema(sgen: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        sgen.subschema_for::<String>()
     }
 }
 
@@ -1020,7 +1020,42 @@ impl Keystroke {
             s.push("Meta".into());
         }
 
-        s.push(match self.key.as_str() {
+        s.push(self.displayed_key());
+
+        if macos {
+            s.join("")
+        } else {
+            s.join(" ")
+        }
+    }
+
+    /// Returns a platform-independent keybinding label with expanded modifier
+    /// names, such as `Ctrl + Shift + P`.
+    pub fn displayed_expanded(&self) -> String {
+        let mut parts = Vec::new();
+        if self.ctrl {
+            parts.push("Ctrl".to_owned());
+        }
+        if self.alt {
+            parts.push("Alt".to_owned());
+        }
+        if self.shift {
+            parts.push("Shift".to_owned());
+        }
+        if self.cmd {
+            parts.push("Cmd".to_owned());
+        }
+        if self.meta {
+            parts.push("Meta".to_owned());
+        }
+        parts.push(self.displayed_key());
+        parts.join(" + ")
+    }
+
+    fn displayed_key(&self) -> String {
+        // Always treat the key as uppercase--this matches how operating systems and most
+        // applications display keybindings.
+        match self.key.as_str() {
             "up" => "↑".into(),
             "down" => "↓".into(),
             "left" => "←".into(),
@@ -1029,18 +1064,15 @@ impl Keystroke {
             " " => "Space".into(),
             "enter" => "⏎".into(),
             "backspace" => "⌫".into(),
-            key => key.chars()
-                .next()
-                .map(|c| c.to_ascii_uppercase())
-                .into_iter()
-                .chain(key.chars().skip(1))
-                .collect::<String>(),
-        });
-
-        if macos {
-            s.join("")
-        } else {
-            s.join(" ")
+            key => {
+                // Capitalize the first letter of the key name
+                key.chars()
+                    .next()
+                    .map(|c| c.to_ascii_uppercase())
+                    .into_iter()
+                    .chain(key.chars().skip(1))
+                    .collect()
+            }
         }
     }
 }

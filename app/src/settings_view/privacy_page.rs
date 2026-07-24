@@ -8,8 +8,10 @@ use regex::Regex;
 use settings::Setting as _;
 use warp_core::context_flag::ContextFlag;
 use warp_core::features::FeatureFlag;
-use warp_core::ui::theme::color::internal_colors;
 use warp_core::ui::theme::WarpTheme;
+use warp_core::ui::theme::color::internal_colors;
+use warp_errors::{report_error, report_if_error};
+use warpui::r#async::{SpawnedFutureHandle, Timer};
 use warpui::elements::{
     Align, ChildAnchor, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
     Empty, Expanded, Flex, Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle,
@@ -19,34 +21,34 @@ use warpui::elements::{
 use warpui::fonts::Weight;
 use warpui::keymap::ContextPredicate;
 use warpui::platform::Cursor;
-use warpui::r#async::{SpawnedFutureHandle, Timer};
 use warpui::ui_components::button::{ButtonVariant, TextAndIcon, TextAndIconAlignment};
 use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
 use warpui::ui_components::switch::{SwitchStateHandle, TooltipConfig};
 use warpui::{
-    id, Action, AppContext, Element, Entity, ModelHandle, SingletonEntity, TypedActionView,
-    UpdateModel, View, ViewContext, ViewHandle,
+    Action, AppContext, Element, Entity, ModelHandle, SingletonEntity, TypedActionView,
+    UpdateModel, View, ViewContext, ViewHandle, id,
 };
 
 use super::privacy::{AddRegexModal, AddRegexModalEvent};
 use super::settings_page::{
-    render_body_item, render_sub_header, LocalOnlyIconState, MatchData, PageType, SettingsPageMeta,
-    SettingsPageViewHandle, SettingsWidget, ToggleState, HEADER_PADDING, PAGE_PADDING,
-    TOGGLE_BUTTON_RIGHT_PADDING,
+    HEADER_PADDING, LocalOnlyIconState, MatchData, PAGE_PADDING, PageType, SettingsPageMeta,
+    SettingsPageViewHandle, SettingsWidget, TOGGLE_BUTTON_RIGHT_PADDING, ToggleState,
+    render_body_item, render_sub_header,
 };
-use super::{flags, SettingsAction, SettingsSection, ToggleSettingActionPair};
+use super::{SettingsAction, SettingsSection, ToggleSettingActionPair, flags};
 use crate::appearance::Appearance;
 use crate::auth::auth_manager::AuthManager;
 use crate::channel::ChannelState;
 use crate::modal::{Modal, ModalEvent, ModalViewState};
+use crate::send_telemetry_from_ctx;
 use crate::server::telemetry::TelemetryEvent;
 use crate::settings::{AISettings, CustomSecretRegex, PrivacySettings, RegexDisplayInfo};
 use crate::settings_view::privacy::AddRegexModalViewState;
 use crate::settings_view::render_body_item_label;
 use crate::settings_view::settings_page::CONTENT_FONT_SIZE;
 use crate::terminal::safe_mode_settings::{
-    get_effective_secret_display_mode, SafeModeEnabled, SafeModeSettings, SecretDisplayMode,
-    SecretDisplayModeSetting,
+    SafeModeEnabled, SafeModeSettings, SecretDisplayMode, SecretDisplayModeSetting,
+    get_effective_secret_display_mode,
 };
 use crate::ui_components::buttons::icon_button;
 use crate::ui_components::icons::Icon;
@@ -56,7 +58,6 @@ use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::workspaces::workspace::{
     AdminEnablementSetting, CustomerType, UgcCollectionEnablementSetting,
 };
-use crate::{report_if_error, send_telemetry_from_ctx};
 
 const FONT_SIZE: f32 = 12.;
 
@@ -276,9 +277,11 @@ impl PrivacyPageView {
         );
 
         ctx.update_model(&safe_mode_settings, move |safe_mode_settings, ctx| {
-            report_if_error!(safe_mode_settings
-                .safe_mode_enabled
-                .set_value(new_value, ctx));
+            report_if_error!(
+                safe_mode_settings
+                    .safe_mode_enabled
+                    .set_value(new_value, ctx)
+            );
         });
         ctx.notify();
     }
@@ -293,9 +296,11 @@ impl PrivacyPageView {
         };
 
         ctx.update_model(&safe_mode_settings, move |safe_mode_settings, ctx| {
-            report_if_error!(safe_mode_settings
-                .hide_secrets_in_block_list
-                .set_value(new_value, ctx));
+            report_if_error!(
+                safe_mode_settings
+                    .hide_secrets_in_block_list
+                    .set_value(new_value, ctx)
+            );
         });
         ctx.notify();
     }
@@ -448,31 +453,38 @@ impl PrivacyPageView {
         }
 
         let privacy_settings_handle = PrivacySettings::handle(ctx);
-        ctx.update_model(&privacy_settings_handle, |privacy_settings, ctx| {
-            if let Ok(regex) = Regex::new(&pattern) {
-                let mut new_user_secret_regex_list =
-                    privacy_settings.user_secret_regex_list.to_vec();
-                new_user_secret_regex_list.push(CustomSecretRegex {
-                    pattern: regex,
-                    name: if name.trim().is_empty() {
-                        None
-                    } else {
-                        Some(name.trim().to_string())
-                    },
-                });
+        ctx.update_model(
+            &privacy_settings_handle,
+            |privacy_settings, ctx| match Regex::new(&pattern) {
+                Ok(regex) => {
+                    let mut new_user_secret_regex_list =
+                        privacy_settings.user_secret_regex_list.to_vec();
+                    new_user_secret_regex_list.push(CustomSecretRegex {
+                        pattern: regex,
+                        name: if name.trim().is_empty() {
+                            None
+                        } else {
+                            Some(name.trim().to_string())
+                        },
+                    });
 
-                if privacy_settings
-                    .user_secret_regex_list
-                    .set_value(new_user_secret_regex_list, ctx)
-                    .is_err()
-                {
-                    log::error!("Failed to add custom regex to secret regex list");
+                    if privacy_settings
+                        .user_secret_regex_list
+                        .set_value(new_user_secret_regex_list, ctx)
+                        .is_err()
+                    {
+                        report_error!("Failed to add custom regex to secret regex list");
+                    }
+                    ctx.notify();
                 }
-                ctx.notify();
-            } else {
-                log::error!("Invalid regex pattern: {pattern}");
-            }
-        });
+                _ => {
+                    report_error!(
+                        "Invalid regex pattern",
+                        extra: { "pattern" => %pattern }
+                    );
+                }
+            },
+        );
     }
 
     pub fn get_modal_content(&self) -> Option<Box<dyn Element>> {
@@ -554,27 +566,27 @@ impl TypedActionView for PrivacyPageView {
                             .filter(|r| !current_patterns.contains(&r.pattern))
                             .collect();
 
-                    if let Some(regex) = recommended_regexes.get(*idx) {
-                        if let Ok(pattern) = Regex::new(regex.pattern) {
-                            let mut new_user_secret_regex_list =
-                                privacy_settings.user_secret_regex_list.to_vec();
-                            new_user_secret_regex_list.push(CustomSecretRegex {
-                                pattern,
-                                name: Some(regex.name.to_string()),
-                            });
+                    if let Some(regex) = recommended_regexes.get(*idx)
+                        && let Ok(pattern) = Regex::new(regex.pattern)
+                    {
+                        let mut new_user_secret_regex_list =
+                            privacy_settings.user_secret_regex_list.to_vec();
+                        new_user_secret_regex_list.push(CustomSecretRegex {
+                            pattern,
+                            name: Some(regex.name.to_string()),
+                        });
 
-                            if privacy_settings
-                                .user_secret_regex_list
-                                .set_value(new_user_secret_regex_list, ctx)
-                                .is_err()
-                            {
-                                log::error!(
-                                    "{}",
-                                    warp_i18n::t!("settings-privacy-add-recommended-regex-failed")
-                                );
-                            }
-                            ctx.notify();
+                        if privacy_settings
+                            .user_secret_regex_list
+                            .set_value(new_user_secret_regex_list, ctx)
+                            .is_err()
+                        {
+                            log::error!(
+                                "{}",
+                                warp_i18n::t!("settings-privacy-add-recommended-regex-failed")
+                            );
                         }
+                        ctx.notify();
                     }
                 });
             }

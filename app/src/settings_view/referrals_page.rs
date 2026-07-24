@@ -7,6 +7,7 @@ use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::Vector2F;
 use thiserror::Error;
 use validator::ValidateEmail;
+use warp_errors::report_error;
 use warpui::clipboard::ClipboardContent;
 use warpui::elements::{
     Align, Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Element, Fill,
@@ -21,10 +22,10 @@ use warpui::{
     ViewContext, ViewHandle,
 };
 
-use super::settings_page::{
-    MatchData, PageType, SettingsPageMeta, SettingsPageViewHandle, SettingsWidget, PAGE_PADDING,
-};
 use super::SettingsSection;
+use super::settings_page::{
+    MatchData, PAGE_PADDING, PageType, SettingsPageMeta, SettingsPageViewHandle, SettingsWidget,
+};
 use crate::appearance::Appearance;
 use crate::auth::AuthStateProvider;
 use crate::editor::{EditorView, Event as EditorEvent, SingleLineEditorOptions, TextOptions};
@@ -369,7 +370,7 @@ impl ReferralsPageView {
                 });
             }
             Err(err) => {
-                log::error!("Error sending referral emails: {err}");
+                report_error!(err.context("Error sending referral emails"));
                 ctx.emit(ReferralsPageEvent::ShowToast {
                     message: email_failure_toast().to_owned(),
                     flavor: ToastFlavor::Error,
@@ -794,14 +795,13 @@ impl ReferralsWidget {
             )
             .with_child(self.render_rewards_list(view, appearance));
 
-        if !is_anonymous {
-            if let Some(count) = self.render_claimed_referrals_count(view, appearance) {
-                reward_status_row.add_child(
-                    Container::new(count)
-                        .with_margin_left(CLAIMED_REFERRAL_COUNT_LEFT_MARGIN)
-                        .finish(),
-                );
-            }
+        if !is_anonymous && let Some(count) = self.render_claimed_referrals_count(view, appearance)
+        {
+            reward_status_row.add_child(
+                Container::new(count)
+                    .with_margin_left(CLAIMED_REFERRAL_COUNT_LEFT_MARGIN)
+                    .finish(),
+            );
         };
 
         rewards_section.add_child(reward_status_row.finish());

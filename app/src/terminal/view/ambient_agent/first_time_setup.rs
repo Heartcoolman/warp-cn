@@ -5,6 +5,7 @@
 
 use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
 use warp_core::ui::theme::{AnsiColorIdentifier, Fill};
+use warp_errors::report_error;
 use warp_i18n::t;
 use warpui::elements::new_scrollable::SingleAxisConfig;
 use warpui::elements::{
@@ -17,7 +18,7 @@ use warpui::{AppContext, Entity, SingletonEntity, TypedActionView, View, ViewCon
 
 use crate::ai::ambient_agents::github_auth_url::{AuthSource, GithubAuthRedirectTarget};
 use crate::ai::request_usage_model::AMBIENT_AGENT_TRIAL_CREDIT_THRESHOLD;
-use crate::ai::{cloud_environments, AIRequestUsageModel};
+use crate::ai::{AIRequestUsageModel, cloud_environments};
 use crate::appearance::Appearance;
 use crate::server::cloud_objects::update_manager::UpdateManager;
 use crate::server::ids::ClientId;
@@ -97,7 +98,7 @@ impl FirstTimeCloudAgentSetupView {
                 };
 
                 let Some(owner) = owner else {
-                    log::error!("Unable to create environment: not logged in");
+                    report_error!("Unable to create environment: not logged in");
                     // Reset form before emitting cancelled event
                     self.reset_form(ctx);
                     ctx.emit(FirstTimeCloudAgentSetupViewEvent::Cancelled);

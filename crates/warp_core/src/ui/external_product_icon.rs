@@ -10,6 +10,9 @@ pub enum ExternalProductIcon {
     Github,
     Slack,
     Composio,
+    Resend,
+    Sentry,
+    YouDotCom,
 }
 
 impl ExternalProductIcon {
@@ -23,6 +26,9 @@ impl ExternalProductIcon {
             "github" => Some(ExternalProductIcon::Github),
             "slack" => Some(ExternalProductIcon::Slack),
             "composio" => Some(ExternalProductIcon::Composio),
+            "resend" => Some(ExternalProductIcon::Resend),
+            "sentry" => Some(ExternalProductIcon::Sentry),
+            "you.com" => Some(ExternalProductIcon::YouDotCom),
             _other => None,
         }
     }
@@ -36,6 +42,9 @@ impl ExternalProductIcon {
             ExternalProductIcon::Github => "bundled/svg/github.svg",
             ExternalProductIcon::Slack => "bundled/svg/slack-logo.svg",
             ExternalProductIcon::Composio => "bundled/svg/composio.svg",
+            ExternalProductIcon::Resend => "bundled/svg/resend.svg",
+            ExternalProductIcon::Sentry => "bundled/svg/sentry.svg",
+            ExternalProductIcon::YouDotCom => "bundled/svg/you-com.svg",
         }
     }
 

@@ -6,9 +6,10 @@ use ai::workspace::WorkspaceMetadata;
 use csv::Writer;
 use enclose::enclose;
 use itertools::Itertools;
-use settings::manager::SettingsManager;
 use settings::Setting as _;
+use settings::manager::SettingsManager;
 use warp_core::context_flag::ContextFlag;
+use warp_errors::{report_error, report_if_error};
 use warp_i18n::t;
 use warp_util::path::user_friendly_path;
 use warpui::actions::StandardAction;
@@ -20,9 +21,10 @@ use warpui::windowing::WindowManager;
 use warpui::{AppContext, SingletonEntity};
 
 use crate::ai::persisted_workspace::PersistedWorkspace;
+use crate::auth;
 use crate::auth::AuthStateProvider;
 use crate::default_terminal::DefaultTerminal;
-use crate::features::{runtime_flags_menu_items, FeatureFlag};
+use crate::features::{FeatureFlag, runtime_flags_menu_items};
 use crate::root_view::OpenLaunchConfigArg;
 use crate::server::telemetry::LaunchConfigUiLocation;
 use crate::settings::{
@@ -33,10 +35,9 @@ use crate::terminal::session_settings::SessionSettings;
 use crate::terminal::settings::{SpacingMode, TerminalSettings};
 use crate::undo_close::UndoCloseStack;
 use crate::user_config::WarpConfig;
-use crate::util::bindings::{self, trigger_to_keystroke, CustomAction};
+use crate::util::bindings::{self, CustomAction, trigger_to_keystroke};
 use crate::util::links;
 use crate::workspace::sync_inputs::SyncedInputState;
-use crate::{auth, report_if_error};
 
 type CheckmarkStatusGetter = dyn 'static + Fn(&mut AppContext) -> bool;
 
@@ -338,15 +339,13 @@ fn make_new_edit_menu(ctx: &AppContext) -> Menu {
             updateable_custom_item_with_checkmark(
                 CustomAction::DisableSyncTerminalInputs,
                 ctx,
-                Box::new(|ctx| {
-                    if let Some(window_id) = WindowManager::handle(ctx).as_ref(ctx).active_window()
-                    {
-                        SyncedInputState::handle(ctx)
-                            .read(ctx, |status, _| !status.is_syncing_any_inputs(window_id))
-                    } else {
-                        false
-                    }
-                }),
+                Box::new(
+                    |ctx| match WindowManager::handle(ctx).as_ref(ctx).active_window() {
+                        Some(window_id) => SyncedInputState::handle(ctx)
+                            .read(ctx, |status, _| !status.is_syncing_any_inputs(window_id)),
+                        _ => false,
+                    },
+                ),
             ),
         ],
     )));
@@ -436,9 +435,11 @@ fn make_new_view_menu(ctx: &AppContext) -> Menu {
             move |ctx| {
                 TerminalSettings::handle(ctx).update(ctx, |terminal_settings, ctx| {
                     let current_value = *terminal_settings.spacing_mode;
-                    report_if_error!(terminal_settings
-                        .spacing_mode
-                        .set_value(current_value.other_mode(), ctx));
+                    report_if_error!(
+                        terminal_settings
+                            .spacing_mode
+                            .set_value(current_value.other_mode(), ctx)
+                    );
                 });
             },
             move |_props, _| MenuItemPropertyChanges {
@@ -630,7 +631,9 @@ fn block_menu_debug_items() -> Vec<MenuItem> {
                     .should_show_in_band_command_blocks
                     .set_value(new_value, ctx)
                 {
-                    log::error!("Failed to persist 'Show in-band command blocks' setting: {e}");
+                    report_error!(
+                        e.context("Failed to persist 'Show in-band command blocks' setting")
+                    );
                 }
             });
         },
@@ -661,7 +664,7 @@ fn block_menu_debug_items() -> Vec<MenuItem> {
                     .should_show_ssh_block
                     .set_value(new_value, ctx)
                 {
-                    log::error!("Failed to persist 'Show ssh command blocks' setting: {e}");
+                    report_error!(e.context("Failed to persist 'Show ssh command blocks' setting"));
                 }
             });
         },
@@ -697,7 +700,7 @@ fn toggle_bootstrap_block_menu_item() -> MenuItem {
                     .should_show_bootstrap_block
                     .set_value(new_value, ctx)
                 {
-                    log::error!("Failed to persist 'Show bootstrap block' setting: {e}");
+                    report_error!(e.context("Failed to persist 'Show bootstrap block' setting"));
                 }
             });
         },
@@ -745,7 +748,7 @@ fn debug_menu_items() -> Vec<MenuItem> {
                         .is_shell_debug_mode_enabled
                         .set_value(new_value, ctx)
                     {
-                        log::error!("Failed to persist 'Debug mode' setting: {e}");
+                        report_error!(e.context("Failed to persist 'Debug mode' setting"));
                     }
                 });
             },
@@ -802,7 +805,9 @@ fn debug_menu_items() -> Vec<MenuItem> {
                         .are_in_band_generators_for_all_sessions_enabled
                         .set_value(new_value, ctx)
                     {
-                        log::error!("Failed to persist 'Enable in-band generators' setting: {e}");
+                        report_error!(
+                            e.context("Failed to persist 'Enable in-band generators' setting")
+                        );
                     }
                 });
             },
@@ -1069,20 +1074,18 @@ fn custom_action_dispatcher(action: CustomAction) -> impl Fn(&mut AppContext) + 
 /// Dispatch events to open the user's default tab type in the active window
 /// or make a new window if there is no active window.
 fn open_new_default_tab_or_window(ctx: &mut AppContext) {
-    if let Some(wid) = WindowManager::handle(ctx).as_ref(ctx).active_window() {
-        ctx.dispatch_custom_action(CustomAction::NewTab, wid)
-    } else {
-        open_new_window(ctx)
+    match WindowManager::handle(ctx).as_ref(ctx).active_window() {
+        Some(wid) => ctx.dispatch_custom_action(CustomAction::NewTab, wid),
+        _ => open_new_window(ctx),
     }
 }
 
 /// Dispatch events to open an agent tab in the active window
 /// or make a new window if there is no active window.
 fn open_new_agent_tab_or_window(ctx: &mut AppContext) {
-    if let Some(wid) = WindowManager::handle(ctx).as_ref(ctx).active_window() {
-        ctx.dispatch_custom_action(CustomAction::NewAgentTab, wid)
-    } else {
-        open_new_window(ctx)
+    match WindowManager::handle(ctx).as_ref(ctx).active_window() {
+        Some(wid) => ctx.dispatch_custom_action(CustomAction::NewAgentTab, wid),
+        _ => open_new_window(ctx),
     }
 }
 
