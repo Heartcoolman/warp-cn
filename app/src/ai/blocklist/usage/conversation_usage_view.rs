@@ -1125,7 +1125,7 @@ fn render_context_window_other_tooltip(appearance: &Appearance) -> Box<dyn Eleme
     let background = theme.tooltip_background();
     let text = ConstrainedBox::new(
         Text::new(
-            "Includes other request context and temporary instructions added to help the agent better respond.".to_string(),
+            warp_i18n::t!("ai-ui-context-window-other-tooltip"),
             appearance.ui_font_family(),
             appearance.ui_font_size() - 2.,
         )

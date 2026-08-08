@@ -62,23 +62,23 @@ fn modal_terminal_magenta_overlay_1(appearance: &Appearance) -> ColorU {
 
 struct FeatureItem {
     icon: Icon,
-    label: &'static str,
-    title: &'static str,
-    description: &'static str,
+    label_key: &'static str,
+    title_key: &'static str,
+    description_key: &'static str,
 }
 
 const FEATURE_ITEMS: &[FeatureItem] = &[
     FeatureItem {
         icon: Icon::LayoutAlt01,
-        label: "What's new:",
-        title: "Use the Warp Agent anywhere",
-        description: "Warp's state of the art agent is now available in any terminal through the CLI.",
+        label_key: "ai-ui-agent-cli-modal-whats-new-label",
+        title_key: "ai-ui-agent-cli-modal-whats-new-title",
+        description_key: "ai-ui-agent-cli-modal-whats-new-desc",
     },
     FeatureItem {
         icon: Icon::Inbox,
-        label: "What's special:",
-        title: "Built-in terminal multiplexer",
-        description: "Each Warp Agent creates its own PTY, enabling better behavior for REPLS, ssh, directory switching, and more.",
+        label_key: "ai-ui-agent-cli-modal-whats-special-label",
+        title_key: "ai-ui-agent-cli-modal-whats-special-title",
+        description_key: "ai-ui-agent-cli-modal-whats-special-desc",
     },
 ];
 
@@ -156,7 +156,7 @@ impl AgentCliLaunchModal {
         });
 
         let get_started_button = ctx.add_view(|_ctx| {
-            ActionButton::new("Get started", CtaButtonTheme)
+            ActionButton::new(warp_i18n::t!("ai-ui-agent-get-started"), CtaButtonTheme)
                 .with_full_width(true)
                 .on_click(|ctx| ctx.dispatch_typed_action(AgentCliLaunchModalAction::GetStarted))
         });
@@ -208,9 +208,13 @@ impl AgentCliLaunchModal {
     fn render_badge(appearance: &Appearance) -> Box<dyn Element> {
         let text_color = modal_terminal_magenta(appearance);
         let background_color = modal_terminal_magenta_overlay_1(appearance);
-        let text = Text::new_inline("New".to_string(), appearance.ui_font_family(), 14.)
-            .with_color(text_color)
-            .finish();
+        let text = Text::new_inline(
+            warp_i18n::t!("ai-ui-agent-cli-modal-badge"),
+            appearance.ui_font_family(),
+            14.,
+        )
+        .with_color(text_color)
+        .finish();
         ConstrainedBox::new(
             Container::new(
                 Flex::row()
@@ -230,7 +234,7 @@ impl AgentCliLaunchModal {
 
     fn render_title(appearance: &Appearance) -> Box<dyn Element> {
         Text::new(
-            "Introducing the Warp Agent CLI: A coding agent that does what others can't",
+            warp_i18n::t!("ai-ui-agent-cli-modal-title"),
             appearance.ui_font_family(),
             20.,
         )
@@ -249,8 +253,9 @@ impl AgentCliLaunchModal {
         .with_height(16.)
         .finish();
 
-        let title = format!("{} {}", item.label, item.title);
-        let label_char_count = item.label.chars().count();
+        let label = warp_i18n::tr!(item.label_key);
+        let title = format!("{} {}", label, warp_i18n::tr!(item.title_key));
+        let label_char_count = label.chars().count();
         let title_row = Text::new(title, appearance.ui_font_family(), FEATURE_FONT_SIZE)
             .with_color(modal_text_main(appearance))
             .with_single_highlight(
@@ -265,7 +270,7 @@ impl AgentCliLaunchModal {
             .with_child(title_row)
             .with_child(
                 Text::new(
-                    item.description,
+                    warp_i18n::tr!(item.description_key),
                     appearance.ui_font_family(),
                     FEATURE_FONT_SIZE,
                 )

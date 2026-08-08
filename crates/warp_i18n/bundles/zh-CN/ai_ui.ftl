@@ -287,3 +287,19 @@ ai-ui-orchestration-modal-title = 随时随地编排任意智能体
 ai-ui-orchestration-modal-description = 我们对 Warp 的云智能体编排平台 Oz 做了重大改进。
 ai-ui-openai-base-url-prompt = OpenAI base URL（可选，按回车跳过）：
 ai-ui-queued-prompts-to-send = 发送
+
+# warp-cn: 2026-08 sync — 新增上游字符串汉化
+ai-ui-agent-cli-modal-badge = 新功能
+ai-ui-agent-cli-modal-title = 隆重推出 Warp Agent CLI：一款能做到别家做不到的编码智能体
+ai-ui-agent-cli-modal-whats-new-label = 新功能：
+ai-ui-agent-cli-modal-whats-new-title = 随时随地使用 Warp Agent
+ai-ui-agent-cli-modal-whats-new-desc = Warp 顶尖的智能体现已通过 CLI 在任意终端中可用。
+ai-ui-agent-cli-modal-whats-special-label = 特别之处：
+ai-ui-agent-cli-modal-whats-special-title = 内置终端多路复用器
+ai-ui-agent-cli-modal-whats-special-desc = 每个 Warp Agent 都会创建自己的 PTY，让 REPL、ssh、切换目录等场景表现更好。
+ai-ui-auto-handoff-modal-badge = 运行连接已断开
+ai-ui-auto-handoff-modal-title = 启用自动移交？
+ai-ui-auto-handoff-modal-desc = 允许 Warp 在电脑进入睡眠时，自动把运行中的本地智能体迁移到云端。
+ai-ui-auto-handoff-modal-enable = 启用
+ai-ui-run-agents-child-agents-note = 这些智能体可能会启动它们自己的子智能体
+ai-ui-context-window-other-tooltip = 包含其他请求上下文，以及为帮助智能体更好地响应而添加的临时指令。

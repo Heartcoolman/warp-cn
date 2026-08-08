@@ -287,3 +287,19 @@ ai-ui-orchestration-modal-title = Orchestrate any agent, anywhere
 ai-ui-orchestration-modal-description = We've made major improvements to Warp's cloud agent orchestration platform, Oz.
 ai-ui-openai-base-url-prompt = OpenAI base URL (optional, press Enter to skip):
 ai-ui-queued-prompts-to-send = to send
+
+# warp-cn: 2026-08 sync — newly localized upstream strings
+ai-ui-agent-cli-modal-badge = New
+ai-ui-agent-cli-modal-title = Introducing the Warp Agent CLI: A coding agent that does what others can't
+ai-ui-agent-cli-modal-whats-new-label = What's new:
+ai-ui-agent-cli-modal-whats-new-title = Use the Warp Agent anywhere
+ai-ui-agent-cli-modal-whats-new-desc = Warp's state of the art agent is now available in any terminal through the CLI.
+ai-ui-agent-cli-modal-whats-special-label = What's special:
+ai-ui-agent-cli-modal-whats-special-title = Built-in terminal multiplexer
+ai-ui-agent-cli-modal-whats-special-desc = Each Warp Agent creates its own PTY, enabling better behavior for REPLS, ssh, directory switching, and more.
+ai-ui-auto-handoff-modal-badge = Run Connection Lost
+ai-ui-auto-handoff-modal-title = Enable auto-handoff?
+ai-ui-auto-handoff-modal-desc = Give Warp the option to automatically move active local agents to the cloud when your computer sleeps.
+ai-ui-auto-handoff-modal-enable = Enable
+ai-ui-run-agents-child-agents-note = These agents may start their own child agents
+ai-ui-context-window-other-tooltip = Includes other request context and temporary instructions added to help the agent better respond.
