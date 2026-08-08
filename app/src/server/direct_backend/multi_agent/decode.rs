@@ -328,6 +328,7 @@ mod tests {
             timestamp: None,
             server_message_data: String::new(),
             citations: vec![],
+            fetched_memories: vec![],
             message: Some(api::message::Message::UserQuery(api::message::UserQuery {
                 query: text.into(),
                 ..Default::default()
@@ -343,6 +344,7 @@ mod tests {
             timestamp: None,
             server_message_data: String::new(),
             citations: vec![],
+            fetched_memories: vec![],
             message: Some(api::message::Message::AgentOutput(api::message::AgentOutput {
                 text: text.into(),
             })),
@@ -363,6 +365,7 @@ mod tests {
             timestamp: None,
             server_message_data: String::new(),
             citations: vec![],
+            fetched_memories: vec![],
             message: Some(api::message::Message::ToolCall(api::message::ToolCall {
                 tool_call_id: id.into(),
                 tool: Some(api::message::tool_call::Tool::ReadFiles(rf)),
@@ -437,6 +440,7 @@ mod tests {
                             timestamp: None,
                             server_message_data: String::new(),
                             citations: vec![],
+                            fetched_memories: vec![],
                             message: Some(api::message::Message::ToolCall(api::message::ToolCall {
                                 tool_call_id: "tc".into(),
                                 tool: Some(api::message::tool_call::Tool::SearchCodebase(

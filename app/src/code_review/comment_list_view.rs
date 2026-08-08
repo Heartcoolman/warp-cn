@@ -238,7 +238,11 @@ impl CommentListView {
 
         // Keep the stored button state in sync when AI availability changes.
         ctx.subscribe_to_model(&AIRequestUsageModel::handle(ctx), |me, _, event, ctx| {
-            if let AIRequestUsageModelEvent::RequestUsageUpdated = event {
+            if matches!(
+                event,
+                AIRequestUsageModelEvent::RequestUsageUpdated
+                    | AIRequestUsageModelEvent::CreditAvailabilityUpdated
+            ) {
                 me.sync_send_button(ctx);
             }
         });
@@ -955,11 +959,9 @@ impl CommentListView {
             if !has_sendable_comments {
                 Cow::Owned(warp_i18n::t!("code-review-comment-list-no-non-outdated"))
             } else {
-                let cmd = agent.command_prefix();
-                let label = if cmd.is_empty() { "CLI agent" } else { cmd };
                 Cow::Owned(warp_i18n::t!(
                     "code-review-comment-list-send-to-cli-tooltip",
-                    label = label.to_string()
+                    label = agent.display_name().to_string()
                 ))
             }
         } else if !ai_enabled {

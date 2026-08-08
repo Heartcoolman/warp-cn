@@ -45,6 +45,24 @@ pub const ADD_MCP: StaticCommand = StaticCommand {
     auto_enter_ai_mode: false,
     argument: None,
 };
+pub const RESET_STATUSLINE: StaticCommand = StaticCommand {
+    name: "/reset-statusline",
+    description_key: "command-slash-reset-statusline-desc",
+    kind: SlashCommandKind::ResetStatusline,
+    supported_surfaces: SlashCommandSurfaces::TuiOnly,
+    availability: Availability::ALWAYS,
+    auto_enter_ai_mode: false,
+    argument: None,
+};
+pub const STATUSLINE: StaticCommand = StaticCommand {
+    name: "/statusline",
+    description_key: "command-slash-statusline-desc",
+    kind: SlashCommandKind::Statusline,
+    supported_surfaces: SlashCommandSurfaces::TuiOnly,
+    availability: Availability::ALWAYS,
+    auto_enter_ai_mode: false,
+    argument: None,
+};
 
 pub const AUTO_APPROVE: StaticCommand = StaticCommand {
     name: "/auto-approve",
@@ -79,6 +97,17 @@ pub const VIEW_LOGS: StaticCommand = StaticCommand {
     argument: None,
 };
 
+/// Starts the headless TUI voice-input session.
+pub const VOICE: StaticCommand = StaticCommand {
+    name: "/voice",
+    description_key: "command-slash-voice-desc",
+    kind: SlashCommandKind::Voice,
+    supported_surfaces: SlashCommandSurfaces::TuiOnly,
+    availability: Availability::AI_ENABLED.union(Availability::NOT_CLOUD_AGENT),
+    auto_enter_ai_mode: false,
+    argument: None,
+};
+
 pub const NATURAL_LANGUAGE_DETECTION: StaticCommand = StaticCommand {
     name: "/natural-language-detection",
     description_key: "command-slash-natural-language-detection-desc",
@@ -87,6 +116,58 @@ pub const NATURAL_LANGUAGE_DETECTION: StaticCommand = StaticCommand {
     availability: Availability::AI_ENABLED,
     auto_enter_ai_mode: false,
     argument: None,
+};
+
+pub const API_KEYS: StaticCommand = StaticCommand {
+    name: "/api-keys",
+    description_key: "command-slash-api-keys-desc",
+    kind: SlashCommandKind::ApiKeys,
+    supported_surfaces: SlashCommandSurfaces::TuiOnly,
+    availability: Availability::AI_ENABLED,
+    auto_enter_ai_mode: false,
+    argument: None,
+};
+
+pub const CONNECT_GROK: StaticCommand = StaticCommand {
+    name: "/connect-grok",
+    description_key: "command-slash-connect-grok-desc",
+    kind: SlashCommandKind::ConnectGrok,
+    supported_surfaces: SlashCommandSurfaces::TuiOnly,
+    availability: Availability::AI_ENABLED,
+    auto_enter_ai_mode: false,
+    argument: None,
+};
+
+pub const MANAGE_BILLING: StaticCommand = StaticCommand {
+    name: "/manage-billing",
+    description_key: "command-slash-manage-billing-desc",
+    kind: SlashCommandKind::ManageBilling,
+    supported_surfaces: SlashCommandSurfaces::TuiOnly,
+    availability: Availability::ALWAYS,
+    auto_enter_ai_mode: false,
+    argument: None,
+};
+pub const UPGRADE: StaticCommand = StaticCommand {
+    name: "/upgrade",
+    description_key: "command-slash-upgrade-desc",
+    kind: SlashCommandKind::Upgrade,
+    supported_surfaces: SlashCommandSurfaces::TuiOnly,
+    availability: Availability::ALWAYS,
+    auto_enter_ai_mode: false,
+    argument: None,
+};
+pub const THEME: StaticCommand = StaticCommand {
+    name: "/theme",
+    description_key: "command-slash-theme-desc",
+    kind: SlashCommandKind::Theme,
+    supported_surfaces: SlashCommandSurfaces::TuiOnly,
+    availability: Availability::ALWAYS,
+    auto_enter_ai_mode: false,
+    argument: Some(Argument {
+        hint_text: Some("<auto|light|dark>"),
+        is_optional: false,
+        should_execute_on_selection: false,
+    }),
 };
 
 pub const EXIT: StaticCommand = StaticCommand {
@@ -99,10 +180,10 @@ pub const EXIT: StaticCommand = StaticCommand {
     argument: None,
 };
 
-pub const VERSION: StaticCommand = StaticCommand {
-    name: "/version",
-    description_key: "command-slash-version-desc",
-    kind: SlashCommandKind::Version,
+pub const STATUS: StaticCommand = StaticCommand {
+    name: "/status",
+    description_key: "command-slash-status-desc",
+    kind: SlashCommandKind::Status,
     supported_surfaces: SlashCommandSurfaces::TuiOnly,
     availability: Availability::ALWAYS,
     auto_enter_ai_mode: false,
@@ -279,7 +360,7 @@ pub static FORK: LazyLock<StaticCommand> = LazyLock::new(|| {
         name: "/fork",
         description_key: "command-slash-fork-desc",
         kind: SlashCommandKind::Fork,
-        supported_surfaces: SlashCommandSurfaces::GuiOnly {
+        supported_surfaces: SlashCommandSurfaces::GuiAndTui {
             icon_path: "bundled/svg/arrow-split.svg",
         },
         availability: Availability::AGENT_VIEW
@@ -295,7 +376,7 @@ pub static MOVE_TO_CLOUD: LazyLock<StaticCommand> = LazyLock::new(|| StaticComma
     name: "/handoff",
     description_key: "command-slash-handoff-desc",
     kind: SlashCommandKind::MoveToCloud,
-    supported_surfaces: SlashCommandSurfaces::GuiOnly {
+    supported_surfaces: SlashCommandSurfaces::GuiAndTui {
         icon_path: "bundled/svg/upload-cloud-01.svg",
     },
     availability: Availability::AGENT_VIEW
@@ -451,6 +532,22 @@ pub static NEW: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand {
     argument: Some(Argument::optional().with_execute_on_selection()),
 });
 
+pub const CLEAR: StaticCommand = StaticCommand {
+    name: "/clear",
+    description_key: "command-slash-clear-desc",
+    kind: SlashCommandKind::Clear,
+    supported_surfaces: SlashCommandSurfaces::TuiOnly,
+    availability: Availability::NO_LRC_CONTROL
+        .union(Availability::AI_ENABLED)
+        .union(Availability::NOT_CLOUD_AGENT),
+    auto_enter_ai_mode: false,
+    argument: Some(Argument {
+        hint_text: None,
+        is_optional: true,
+        should_execute_on_selection: true,
+    }),
+};
+
 pub static MODEL: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand {
     name: "/model",
     description_key: "command-slash-model-desc",
@@ -539,7 +636,7 @@ pub static ORCHESTRATE: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand
     name: ORCHESTRATE_NAME,
     description_key: "command-slash-orchestrate-desc",
     kind: SlashCommandKind::Orchestrate,
-    supported_surfaces: SlashCommandSurfaces::GuiOnly {
+    supported_surfaces: SlashCommandSurfaces::GuiAndTui {
         icon_path: "bundled/svg/oz.svg",
     },
     availability: Availability::LOCAL | Availability::AI_ENABLED,
@@ -761,6 +858,28 @@ pub static EXPORT_TO_FILE: LazyLock<StaticCommand> = LazyLock::new(|| StaticComm
     argument: Some(Argument::optional().with_hint_text("<optional filename>")),
 });
 
+pub const VIM_MODE: StaticCommand = StaticCommand {
+    name: "/vim-mode",
+    description_key: "command-slash-vim-mode-desc",
+    kind: SlashCommandKind::VimMode,
+    supported_surfaces: SlashCommandSurfaces::TuiOnly,
+    availability: Availability::ALWAYS,
+    auto_enter_ai_mode: false,
+    argument: None,
+};
+
+pub const COPY_DEBUGGING_ID: StaticCommand = StaticCommand {
+    name: "/copy-debugging-id",
+    description_key: "command-slash-copy-debugging-id-desc",
+    kind: SlashCommandKind::CopyDebuggingId,
+    supported_surfaces: SlashCommandSurfaces::GuiAndTui {
+        icon_path: "bundled/svg/copy.svg",
+    },
+    availability: Availability::ACTIVE_CONVERSATION,
+    auto_enter_ai_mode: false,
+    argument: None,
+};
+
 pub static COMMAND_REGISTRY: LazyLock<Registry> = LazyLock::new(Registry::new);
 
 /// A unique identifier for a static slash command.
@@ -792,7 +911,7 @@ impl Default for Registry {
 impl Registry {
     pub fn new() -> Self {
         let mut commands = HashMap::new();
-        for command in all_commands(settings::settings_mode()) {
+        for command in all_commands_for_all_surfaces() {
             debug_assert!(
                 !command
                     .availability
@@ -830,7 +949,15 @@ impl Registry {
     }
 }
 
+#[cfg(test)]
 fn all_commands(settings_mode: settings::SettingsMode) -> Vec<StaticCommand> {
+    all_commands_for_all_surfaces()
+        .into_iter()
+        .filter(|command| command.supports_surface(settings_mode))
+        .collect()
+}
+
+fn all_commands_for_all_surfaces() -> Vec<StaticCommand> {
     let mut commands = vec![
         ADD_MCP,
         ADD_PROMPT.clone(),
@@ -841,24 +968,35 @@ fn all_commands(settings_mode: settings::SettingsMode) -> Vec<StaticCommand> {
         FEEDBACK.clone(),
         INDEX,
         INIT,
+        API_KEYS,
+        CONNECT_GROK,
+        UPGRADE,
+        MANAGE_BILLING,
         LOGOUT,
         MCP,
         OPEN_PROJECT_RULES,
         OPEN_MCP_SERVERS,
         OPEN_RULES,
         AGENT.clone(),
+        CLEAR,
         NEW.clone(),
         PLAN.clone(),
         RENAME_CONVERSATION.clone(),
         RENAME_TAB.clone(),
         SET_TAB_COLOR.clone(),
+        STATUSLINE,
+        RESET_STATUSLINE,
         NATURAL_LANGUAGE_DETECTION,
+        THEME,
+        VIM_MODE,
         USAGE,
         CONVERSATIONS,
         EXPORT_TO_CLIPBOARD,
+        COPY_DEBUGGING_ID,
         MODEL.clone(),
-        VERSION,
+        STATUS,
         VIEW_LOGS,
+        VOICE,
     ];
 
     if FeatureFlag::LocalDockerSandbox.is_enabled() {
@@ -954,7 +1092,6 @@ fn all_commands(settings_mode: settings::SettingsMode) -> Vec<StaticCommand> {
         commands.push(HARNESS.clone());
         commands.push(ENVIRONMENT.clone());
     }
-    commands.retain(|command| command.supports_surface(settings_mode));
 
     commands
 }

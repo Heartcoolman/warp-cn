@@ -17,7 +17,7 @@ mod preprocess;
 pub(crate) mod recording_controller;
 #[cfg(not(target_family = "wasm"))]
 pub(crate) mod recording_finalize;
-
+pub(crate) mod recording_telemetry;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -42,6 +42,7 @@ use futures::future::{BoxFuture, join_all};
 use itertools::Itertools;
 use parking_lot::FairMutex;
 use preprocess::{PendingPreprocessedActions, PreprocessId};
+pub(crate) use recording_telemetry::RecordingTelemetryEvent;
 use warpui::{AppContext, Entity, EntityId, ModelContext, ModelHandle, SingletonEntity};
 
 use self::execute::search_codebase::SearchCodebaseExecutor;
@@ -60,6 +61,7 @@ use crate::ai::agent::{
     RequestCommandOutputResult,
 };
 use crate::ai::blocklist::action_model::execute::suggest_new_conversation::SuggestNewConversationExecutor;
+use crate::ai::blocklist::telemetry::send_run_agents_completed_telemetry;
 use crate::ai::document::ai_document_model::AIDocumentModel;
 use crate::ai::get_relevant_files::controller::GetRelevantFilesController;
 use crate::terminal::TerminalModel;
@@ -733,12 +735,15 @@ impl BlocklistAIActionModel {
             );
             return;
         };
+        let result =
+            AIAgentActionResultType::RunAgents(ai::agent::action_result::RunAgentsResult::Denied {
+                reason,
+            });
+        send_run_agents_completed_telemetry(conversation_id, &action.action, &result, ctx);
         let result = Arc::new(AIAgentActionResult {
             id: action.id,
             task_id: action.task_id,
-            result: AIAgentActionResultType::RunAgents(
-                ai::agent::action_result::RunAgentsResult::Denied { reason },
-            ),
+            result,
         });
         self.handle_action_result(conversation_id, result, None, ctx);
     }
@@ -956,7 +961,7 @@ impl BlocklistAIActionModel {
 
     /// Installs a front-of-queue confirmation action without preprocessing.
     #[cfg(all(feature = "tui", any(test, feature = "test-util")))]
-    pub(crate) fn queue_confirmation_action(
+    pub fn queue_confirmation_action(
         &mut self,
         action: AIAgentAction,
         conversation_id: AIConversationId,
@@ -1132,15 +1137,16 @@ impl BlocklistAIActionModel {
             // `should_upload = false`.
             if let Some(finalization) = finalize_recording_for_conversation(
                 conversation_id,
-                FinalizeReason::Cancelled,
+                FinalizeReason::RunCancelled,
                 false,
                 ctx,
             ) {
                 ctx.spawn(
                     async move { finalization.resolve().await },
-                    |_model, result, _ctx| {
+                    |_model, (result, actual_reason), _ctx| {
                         log::info!(
-                            "Recording finalization after conversation cancellation completed: {result:?}"
+                            "Recording finalization after conversation cancellation completed \
+                             (reason={actual_reason:?}): {result:?}"
                         );
                     },
                 );
@@ -1215,10 +1221,17 @@ impl BlocklistAIActionModel {
             );
         }
 
+        let cancelled_result = pending_action.action.cancelled_result();
+        send_run_agents_completed_telemetry(
+            conversation_id,
+            &pending_action.action,
+            &cancelled_result,
+            ctx,
+        );
         let result = Arc::new(AIAgentActionResult {
             id: pending_action.id,
             task_id: pending_action.task_id,
-            result: pending_action.action.cancelled_result(),
+            result: cancelled_result,
         });
         self.handle_action_result(conversation_id, result, reason, ctx);
     }

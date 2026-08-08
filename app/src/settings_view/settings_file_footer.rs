@@ -255,7 +255,7 @@ pub fn render_settings_error_alert(
             text_color,
             mouse_states.alert_fix_with_oz_button.clone(),
             warp_i18n::t_static!("settings-file-footer-alert-fix-with-oz"),
-            Some(Icon::Oz),
+            Some(Icon::Agent),
             /*bordered=*/ false,
             WorkspaceAction::FixSettingsWithOz { error_description },
         );

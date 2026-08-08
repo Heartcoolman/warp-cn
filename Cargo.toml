@@ -348,7 +348,7 @@ version-compare = "0.1"
 vte = { git = "https://github.com/warpdotdev/vte.git", rev = "4b399c87b63ba88f45709edaa6383fc519f6c900", default-features = false }
 walkdir = "2"
 warp-workflows = { git = "https://github.com/warpdotdev/workflows", rev = "793a98ddda6ef19682aed66364faebd2829f0e01" }
-warp_multi_agent_api = { git = "https://github.com/warpdotdev/warp-proto-apis.git", rev = "ba4ab14cf25987568414be89b7ec25b37a040bb6" }
+warp_multi_agent_api = { git = "https://github.com/warpdotdev/warp-proto-apis.git", rev = "b0886a9523e2e05d102f61bd0a212dc15ade4835" }
 wasm-bindgen = "0.2.89"
 wasm-bindgen-futures = "0.4.42"
 web-sys = { version = "0.3.69", features = [
@@ -392,7 +392,7 @@ dirs = "6.0.0"
 rayon = "1.10.0"
 sha2 = "0.10"
 shellexpand = "3.1.1"
-warp-command-signatures = { git = "https://github.com/warpdotdev/command-signatures.git", rev = "29cd61c3a9a96d8bde92e90f926e89d340e74cb6", default-features = false }
+warp-command-signatures = { git = "https://github.com/warpdotdev/command-signatures.git", rev = "fe3526693fe4ea3dc208ee5ef892b3aad2679af6", default-features = false }
 winit = { git = "https://github.com/warpdotdev/winit.git", rev = "a4e0ecb5f9626ccac9445a73dc28354b52423abc" }
 x11rb = "0.13.0"
 mockito = "1.7.0"
@@ -516,6 +516,12 @@ codegen-units = 1
 [profile.release-cli-debug_assertions]
 inherits = "release-cli"
 debug-assertions = true
+# Short aliases keep Windows build paths below the legacy MAX_PATH limit.
+[profile.rcli]
+inherits = "release-cli"
+
+[profile.rclida]
+inherits = "release-cli-debug_assertions"
 
 # Release profile for the standalone TUI. Strip debug-map entries while
 # retaining function symbols so local backtraces and profiles remain readable.

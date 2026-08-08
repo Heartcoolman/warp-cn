@@ -2446,7 +2446,7 @@ impl EditorModel {
         operand_count: u32,
         ctx: &mut ModelContext<Self>,
     ) {
-        let include_newline = *operator != VimOperator::Change;
+        let include_newline = operator.includes_trailing_newline();
         match motion {
             CharacterMotion::Down => {
                 self.extend_selection_below(operand_count, ctx);
@@ -2527,7 +2527,7 @@ impl EditorModel {
         operand_count: u32,
         ctx: &mut ModelContext<Self>,
     ) {
-        let include_newline = *operator != VimOperator::Change;
+        let include_newline = operator.includes_trailing_newline();
         match motion {
             FirstNonWhitespaceMotion::Down => {
                 self.extend_selection_below(operand_count, ctx);
@@ -2618,7 +2618,7 @@ impl EditorModel {
         };
         let _ = self.select_ranges_by_offset(new_selections, ctx);
         if let TextObjectType::Paragraph = object_type {
-            let include_newline = *operator != VimOperator::Change;
+            let include_newline = operator.includes_trailing_newline();
             self.extend_selection_linewise(include_newline, ctx);
         }
     }

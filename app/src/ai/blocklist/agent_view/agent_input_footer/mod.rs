@@ -25,7 +25,9 @@ use settings::ToggleableSetting;
 use tokio::fs;
 use toolbar_item::AgentToolbarItemKind;
 #[cfg(feature = "voice_input")]
-use voice_input::{StartListeningError, VoiceSessionResult};
+use voice_input::{
+    StartListeningError, VoiceInputLifecycle, VoiceInputLifecycleState, VoiceSessionResult,
+};
 use warp_cli::agent::Harness;
 use warp_core::context_flag::ContextFlag;
 use warp_core::ui::color::ContrastingColor;
@@ -48,8 +50,6 @@ use warpui::{
     ViewHandle,
 };
 
-#[cfg(feature = "local_fs")]
-pub(crate) use self::environment_selector::sort_environments_by_recency;
 pub(crate) use self::environment_selector::{
     EnvironmentSelector, EnvironmentSelectorEvent, EnvironmentSelectorTarget,
 };
@@ -121,18 +121,6 @@ const LIVE_REMOTE_VM_INDICATOR_TOOLTIP: &str = "Connected to a live cloud agent 
 const NEW_CLOUD_VM_INDICATOR_TOOLTIP: &str = "Not connected to cloud agent. Your next prompt starts a new cloud machine to continue this conversation.";
 
 const CLOUD_MODE_V2_FOOTER_GAP: f32 = 4.;
-
-/// Voice input state for the CLI agent footer. Unlike the editor-based voice
-/// flow (which goes through Input → EditorView), this state is self-contained
-/// so that transcribed text can be written directly to the PTY.
-#[cfg(feature = "voice_input")]
-#[derive(Debug, Default, Clone)]
-enum CLIVoiceInputState {
-    #[default]
-    Stopped,
-    Listening,
-    Transcribing,
-}
 
 /// How long to wait after session creation before showing the install chip.
 /// Gives the plugin time to connect and send its `SessionStart` event.
@@ -241,7 +229,9 @@ pub struct AgentInputFooter {
 
     // CLI agent voice input state (self-contained, bypasses editor voice flow).
     #[cfg(feature = "voice_input")]
-    cli_voice_input_state: CLIVoiceInputState,
+    cli_voice_input_lifecycle: VoiceInputLifecycle,
+    #[cfg(feature = "voice_input")]
+    cli_recording_handle: Option<SpawnedFutureHandle>,
     #[cfg(feature = "voice_input")]
     cli_transcription_handle: Option<SpawnedFutureHandle>,
     v2_model_selector: Option<ViewHandle<ModelSelector>>,
@@ -925,7 +915,9 @@ impl AgentInputFooter {
             fast_forward_button,
             handoff_to_cloud_button,
             #[cfg(feature = "voice_input")]
-            cli_voice_input_state: CLIVoiceInputState::default(),
+            cli_voice_input_lifecycle: VoiceInputLifecycle::default(),
+            #[cfg(feature = "voice_input")]
+            cli_recording_handle: None,
             #[cfg(feature = "voice_input")]
             cli_transcription_handle: None,
             v2_model_selector,
@@ -1745,28 +1737,27 @@ impl AgentInputFooter {
 
     #[cfg(feature = "voice_input")]
     fn stop_cli_voice_and_reset(&mut self, ctx: &mut ViewContext<Self>) {
-        if matches!(self.cli_voice_input_state, CLIVoiceInputState::Stopped) {
+        let lifecycle_state = self.cli_voice_input_lifecycle.state();
+        if lifecycle_state == VoiceInputLifecycleState::Idle
+            && self.cli_recording_handle.is_none()
+            && self.cli_transcription_handle.is_none()
+        {
             return;
         }
-
-        if matches!(self.cli_voice_input_state, CLIVoiceInputState::Listening) {
-            voice_input::VoiceInput::handle(ctx).update(ctx, |voice_input, _| {
+        if let Some(handle) = self.cli_recording_handle.take() {
+            handle.abort();
+        }
+        if let Some(handle) = self.cli_transcription_handle.take() {
+            handle.abort();
+        }
+        voice_input::VoiceInput::handle(ctx).update(ctx, |voice_input, _| {
+            if voice_input.is_listening() {
                 voice_input.abort_listening();
-            });
-        }
-
-        if matches!(self.cli_voice_input_state, CLIVoiceInputState::Transcribing) {
-            if let Some(handle) = self.cli_transcription_handle.take() {
-                handle.abort();
             }
+            voice_input.set_transcribing_active(false);
+        });
 
-            voice_input::VoiceInput::handle(ctx).update(ctx, |voice, _| {
-                voice.set_transcribing_active(false);
-            });
-        }
-
-        self.cli_voice_input_state = CLIVoiceInputState::Stopped;
-        self.cli_transcription_handle = None;
+        self.cli_voice_input_lifecycle.cancel();
         self.update_cli_mic_button_state(ctx);
     }
 
@@ -1790,15 +1781,15 @@ impl AgentInputFooter {
 
         // For key-based toggling, validate the key state against current voice state.
         if let voice_input::VoiceInputToggledFrom::Key { state } = source {
-            match (&self.cli_voice_input_state, state) {
-                (CLIVoiceInputState::Stopped, warpui::event::KeyState::Released) => return,
-                (CLIVoiceInputState::Listening, warpui::event::KeyState::Pressed) => return,
+            match (self.cli_voice_input_lifecycle.state(), state) {
+                (VoiceInputLifecycleState::Idle, warpui::event::KeyState::Released) => return,
+                (VoiceInputLifecycleState::Listening, warpui::event::KeyState::Pressed) => return,
                 _ => {}
             }
         }
 
-        match &self.cli_voice_input_state {
-            CLIVoiceInputState::Stopped => {
+        match self.cli_voice_input_lifecycle.state() {
+            VoiceInputLifecycleState::Idle => {
                 if !crate::ai::AIRequestUsageModel::as_ref(ctx).can_request_voice() {
                     self.show_cli_voice_error_toast("Voice input limit reached", ctx);
                     return;
@@ -1811,7 +1802,9 @@ impl AgentInputFooter {
 
                 match session_result {
                     Ok(session) => {
-                        self.cli_voice_input_state = CLIVoiceInputState::Listening;
+                        if !self.cli_voice_input_lifecycle.start() {
+                            return;
+                        }
                         self.update_cli_mic_button_state(ctx);
 
                         if let Some(agent) = self.cli_agent(ctx) {
@@ -1827,10 +1820,10 @@ impl AgentInputFooter {
                             self.maybe_show_first_time_cli_voice_toast(ctx);
                         }
 
-                        ctx.spawn(
+                        self.cli_recording_handle = Some(ctx.spawn(
                             async move { session.await_result().await },
-                            Self::handle_cli_voice_session_result,
-                        );
+                            AgentInputFooter::handle_cli_voice_session_result,
+                        ));
                     }
                     Err(StartListeningError::AccessDenied) => {
                         self.show_cli_microphone_access_toast(ctx);
@@ -1842,7 +1835,7 @@ impl AgentInputFooter {
                     }
                 }
             }
-            CLIVoiceInputState::Listening => {
+            VoiceInputLifecycleState::Listening => {
                 voice_input::VoiceInput::handle(ctx).update(ctx, |voice_input, ctx| {
                     if let Err(e) = anyhow::Context::context(
                         voice_input.stop_listening(ctx),
@@ -1852,7 +1845,7 @@ impl AgentInputFooter {
                     }
                 });
             }
-            CLIVoiceInputState::Transcribing => {
+            VoiceInputLifecycleState::Transcribing => {
                 // Don't allow toggling while transcribing.
             }
         }
@@ -1866,6 +1859,7 @@ impl AgentInputFooter {
         ctx: &mut ViewContext<Self>,
     ) {
         use crate::editor::VoiceTranscriber;
+        self.cli_recording_handle = None;
 
         match result {
             VoiceSessionResult::Audio {
@@ -1878,7 +1872,9 @@ impl AgentInputFooter {
                     let language = AISettings::as_ref(ctx)
                         .voice_input_language_code()
                         .map(str::to_owned);
-                    self.cli_voice_input_state = CLIVoiceInputState::Transcribing;
+                    if !self.cli_voice_input_lifecycle.begin_transcribing() {
+                        return;
+                    }
 
                     voice_input::VoiceInput::handle(ctx).update(ctx, |voice, _| {
                         voice.set_transcribing_active(true);
@@ -1886,14 +1882,14 @@ impl AgentInputFooter {
 
                     self.cli_transcription_handle = Some(ctx.spawn(
                         async move { transcriber.transcribe(wav_base64, language).await },
-                        Self::apply_cli_transcribed_voice_input,
+                        AgentInputFooter::apply_cli_transcribed_voice_input,
                     ));
                 } else {
-                    self.cli_voice_input_state = CLIVoiceInputState::Stopped;
+                    self.cli_voice_input_lifecycle.fail();
                 }
             }
             VoiceSessionResult::Aborted { .. } => {
-                self.cli_voice_input_state = CLIVoiceInputState::Stopped;
+                self.cli_voice_input_lifecycle.fail();
             }
         }
         self.update_cli_mic_button_state(ctx);
@@ -1906,6 +1902,10 @@ impl AgentInputFooter {
         result: Result<String, TranscribeError>,
         ctx: &mut ViewContext<Self>,
     ) {
+        if !self.cli_voice_input_lifecycle.complete() {
+            return;
+        }
+
         voice_input::VoiceInput::handle(ctx).update(ctx, |voice, _| {
             voice.set_transcribing_active(false);
         });
@@ -1918,7 +1918,7 @@ impl AgentInputFooter {
                             transcribed_text,
                         ));
                     } else {
-                        ctx.emit(AgentInputFooterEvent::WriteToPty(transcribed_text));
+                        ctx.emit(AgentInputFooterEvent::InsertIntoCLIPty(transcribed_text));
                     }
                 }
             }
@@ -1935,7 +1935,6 @@ impl AgentInputFooter {
             },
         }
 
-        self.cli_voice_input_state = CLIVoiceInputState::Stopped;
         self.cli_transcription_handle = None;
         self.update_cli_mic_button_state(ctx);
         ctx.notify();
@@ -1943,13 +1942,15 @@ impl AgentInputFooter {
 
     #[cfg(feature = "voice_input")]
     fn update_cli_mic_button_state(&self, ctx: &mut ViewContext<Self>) {
-        let icon = match &self.cli_voice_input_state {
-            CLIVoiceInputState::Stopped => Icon::Microphone,
-            CLIVoiceInputState::Listening => Icon::Stop,
-            CLIVoiceInputState::Transcribing => Icon::DotsHorizontal,
+        let icon = match self.cli_voice_input_lifecycle.state() {
+            VoiceInputLifecycleState::Idle => Icon::Microphone,
+            VoiceInputLifecycleState::Listening => Icon::Stop,
+            VoiceInputLifecycleState::Transcribing => Icon::DotsHorizontal,
         };
-        let is_transcribing =
-            matches!(self.cli_voice_input_state, CLIVoiceInputState::Transcribing);
+        let is_transcribing = matches!(
+            self.cli_voice_input_lifecycle.state(),
+            VoiceInputLifecycleState::Transcribing
+        );
 
         self.mic_button.update(ctx, |button, ctx| {
             button.set_icon(Some(icon), ctx);
@@ -2652,6 +2653,8 @@ pub enum AgentInputFooterEvent {
     ToggleVoiceInput(voice_input::VoiceInputToggledFrom),
     SelectFile,
     WriteToPty(String),
+    /// Insert text into the CLI agent's PTY input using its paste strategy.
+    InsertIntoCLIPty(String),
     /// Insert text into the CLI agent rich input.
     InsertIntoCLIRichInput(String),
     ToggleCodeReviewPane(CLIAgent),

@@ -22,6 +22,7 @@ fn workspace_metadata(path: impl Into<PathBuf>) -> WorkspaceMetadata {
         navigated_ts: None,
         modified_ts: None,
         queried_ts: None,
+        ..Default::default()
     }
 }
 

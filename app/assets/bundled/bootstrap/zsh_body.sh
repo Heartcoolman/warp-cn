@@ -978,7 +978,7 @@ if [[ -z $WARP_BOOTSTRAPPED ]]; then
           # Hex-encode the ZSH environment script we use to bootstrap remote zsh b/c it contains control characters
           # We decode on the SSH server using xxd if its available, otherwise fall back to a for-loop over each byte
           # and use printf to convert back to plaintext
-          local zsh_env_script=$(printf '%s' 'unsetopt ZLE; unset RCS; unset GLOBAL_RCS; WARP_SESSION_ID='$remote_session_id'; WARP_USING_WINDOWS_CON_PTY=@@USING_CON_PTY_BOOLEAN@@; _hostname=$(command -pv hostname >/dev/null 2>&1 && command -p hostname 2>/dev/null || command -p uname -n); _user=$(command -pv whoami >/dev/null 2>&1 && command -p whoami 2>/dev/null || echo $USER); _msg=$(printf "{\"hook\": \"InitShell\", \"value\": {\"session_id\": $WARP_SESSION_ID, \"shell\": \"zsh\", \"user\": \"%s\", \"hostname\": \"%s\"}}" "$_user" "$_hostname" | command -p od -An -v -tx1 | command -p tr -d '"'"' \n'"'"'); printf '"'"'\e]9278;d;%s\x07'"'"' $_msg; unset _hostname _user _msg' | command -p od -An -v -tx1 | command -p tr -d ' \n')
+          local zsh_env_script=$(printf '%s' 'unsetopt ZLE RCS GLOBAL_RCS; WARP_SESSION_ID='$remote_session_id'; WARP_USING_WINDOWS_CON_PTY=@@USING_CON_PTY_BOOLEAN@@; _hostname=$(command -pv hostname >/dev/null 2>&1 && command -p hostname 2>/dev/null || command -p uname -n); _user=$(command -pv whoami >/dev/null 2>&1 && command -p whoami 2>/dev/null || echo $USER); _msg=$(printf "{\"hook\": \"InitShell\", \"value\": {\"session_id\": $WARP_SESSION_ID, \"shell\": \"zsh\", \"user\": \"%s\", \"hostname\": \"%s\"}}" "$_user" "$_hostname" | command -p od -An -v -tx1 | command -p tr -d '"'"' \n'"'"'); printf '"'"'\e]9278;d;%s\x07'"'"' $_msg; unset _hostname _user _msg' | command -p od -An -v -tx1 | command -p tr -d ' \n')
 
           # Optionally attach to an existing ControlMaster the user already
           # runs for this destination instead of creating our own. Resolve
@@ -1176,26 +1176,26 @@ esac
 
   # If this is a subshell, the user and system RC files have already been sourced.
   if [[ -z $WARP_IS_SUBSHELL ]]; then
-      if [[ -e ${ZDOTDIR:-$HOME}/.zshenv ]]; then
-          source ${ZDOTDIR:-$HOME}/.zshenv;
+      if [[ -e "${ZDOTDIR:-$HOME}/.zshenv" ]]; then
+          source "${ZDOTDIR:-$HOME}/.zshenv";
       fi
       if [[ -e /etc/zprofile ]]; then
           source /etc/zprofile;
       fi
-      if [[ -e ${ZDOTDIR:-$HOME}/.zprofile ]]; then
-          source ${ZDOTDIR:-$HOME}/.zprofile;
+      if [[ -e "${ZDOTDIR:-$HOME}/.zprofile" ]]; then
+          source "${ZDOTDIR:-$HOME}/.zprofile";
       fi
       if [[ -e /etc/zshrc ]]; then
           source /etc/zshrc;
       fi
-      if [[ -e ${ZDOTDIR:-$HOME}/.zshrc ]]; then
-          source ${ZDOTDIR:-$HOME}/.zshrc;
+      if [[ -e "${ZDOTDIR:-$HOME}/.zshrc" ]]; then
+          source "${ZDOTDIR:-$HOME}/.zshrc";
       fi
       if [[ -e /etc/zlogin ]]; then
           source /etc/zlogin;
       fi
-      if [[ -e ${ZDOTDIR:-$HOME}/.zlogin ]]; then
-          source ${ZDOTDIR:-$HOME}/.zlogin;
+      if [[ -e "${ZDOTDIR:-$HOME}/.zlogin" ]]; then
+          source "${ZDOTDIR:-$HOME}/.zlogin";
       fi
   fi
 

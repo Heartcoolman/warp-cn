@@ -1,4 +1,5 @@
 use std::future::Future;
+use std::path::Path;
 use std::time::Duration;
 
 use ai::agent::action_result::{RecordingStopped, StopRecordingResult};
@@ -6,9 +7,12 @@ use futures::channel::oneshot;
 use warpui::r#async::Timer;
 use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
 
+pub(crate) use super::recording_controller::FinalizeReason;
 use super::recording_controller::{
-    ActiveRecording, FinalizationClaim, RecordingController, StopRecordingControllerError,
+    ActiveRecording, FinalizationClaim, FinalizedRecording, RecordingController,
+    StopRecordingControllerError,
 };
+use crate::ai::agent::api::ServerConversationToken;
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::agent_sdk::artifact_upload::{FileArtifactUploadRequest, FileArtifactUploader};
 use crate::ai::blocklist::BlocklistAIHistoryModel;
@@ -16,64 +20,33 @@ use crate::server::server_api::ServerApiProvider;
 
 const EXIT_POLL_INTERVAL: Duration = Duration::from_millis(250);
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub(crate) enum FinalizeReason {
-    StoppedByAgent,
-    AgentFinished,
-    LimitReached,
-    FfmpegExited,
-    Cancelled,
-}
-
-impl FinalizeReason {
-    fn termination_reason(
-        self,
-        completion_status: computer_use::RecordingCompletionStatus,
-    ) -> String {
-        match self {
-            FinalizeReason::StoppedByAgent => match completion_status {
-                computer_use::RecordingCompletionStatus::Completed => {
-                    "Stopped by agent".to_string()
-                }
-                computer_use::RecordingCompletionStatus::StoppedEarly => {
-                    "Recording stopped before the agent requested it".to_string()
-                }
-            },
-            FinalizeReason::AgentFinished => {
-                "Finalized because the agent finished without stopping the recording".to_string()
-            }
-            FinalizeReason::LimitReached => {
-                "Stopped at the configured duration or size limit".to_string()
-            }
-            FinalizeReason::FfmpegExited => {
-                "Capture process exited before the recording was stopped".to_string()
-            }
-            FinalizeReason::Cancelled => {
-                "Recording was interrupted when the conversation was cancelled".to_string()
-            }
-        }
-    }
-}
-
 /// A handle to the canonical result owned by `RecordingController`.
 ///
 /// `Pending` subscribes to work already owned by the controller; dropping the
 /// receiver does not cancel stop or upload. `Ready` exposes the retained result
-/// after that work has completed.
+/// after that work has completed. Both variants carry the *actual*
+/// [`FinalizeReason`] that drove the work — callers that only joined an
+/// in-progress finalization still learn why it ran, rather than the reason
+/// they claimed when joining.
 pub(crate) enum RecordingFinalization {
-    Pending(oneshot::Receiver<StopRecordingResult>),
-    Ready(StopRecordingResult),
+    Pending(oneshot::Receiver<FinalizedRecording>),
+    Ready(FinalizedRecording),
 }
 
 impl RecordingFinalization {
-    pub(crate) async fn resolve(self) -> StopRecordingResult {
+    pub(crate) async fn resolve(self) -> FinalizedRecording {
         match self {
             RecordingFinalization::Pending(receiver) => receiver.await.unwrap_or_else(|_| {
-                StopRecordingResult::Error(
-                    "Recording finalization ended without producing a result.".to_string(),
+                (
+                    StopRecordingResult::Error(
+                        "Recording finalization ended without producing a result.".to_string(),
+                    ),
+                    // The result channel closed before delivering a result, so the
+                    // real trigger is unknown and distinct from an ffmpeg crash.
+                    FinalizeReason::FinalizationDropped,
                 )
             }),
-            RecordingFinalization::Ready(result) => result,
+            RecordingFinalization::Ready(ready) => ready,
         }
     }
 }
@@ -85,6 +58,43 @@ fn format_upload_error(err: &anyhow::Error) -> String {
     } else {
         error_chain
     }
+}
+
+/// Best-effort PR video thumbnail upload.
+///
+/// Generates a thumbnail PNG from the finalized `video_path` (a representative,
+/// downscaled frame with a play-button glyph burned in), then uploads it as a
+/// separate `FILE` artifact. The server links the thumbnail to its video by the
+/// `{video_artifact_uid}-thumb.png` filename convention rather than a schema
+/// back-reference. The local thumbnail file is removed whether the upload
+/// succeeds or fails.
+///
+/// Any error is returned to the caller, which logs and discards it so the video
+/// upload and PR creation are never blocked by a missing or failed thumbnail.
+async fn upload_recording_thumbnail(
+    video_path: &Path,
+    video_artifact_uid: &str,
+    uploader: &FileArtifactUploader,
+    conversation_id: Option<ServerConversationToken>,
+) -> anyhow::Result<()> {
+    let thumbnail_path =
+        computer_use::generate_video_thumbnail(video_path, video_artifact_uid).await?;
+    let upload_result = async {
+        let request = FileArtifactUploadRequest {
+            path: thumbnail_path.clone(),
+            run_id: None,
+            conversation_id,
+            title: None,
+            description: None,
+        };
+        let association = uploader.resolve_upload_association(&request).await?;
+        uploader.upload_with_association(request, association).await
+    }
+    .await;
+    // The thumbnail file is ephemeral regardless of upload outcome.
+    let _ = std::fs::remove_file(&thumbnail_path);
+    upload_result?;
+    Ok(())
 }
 
 /// Stops capture, uploads the finalized file, and produces the result retained
@@ -165,10 +175,14 @@ async fn finalize_recording(
         }
     };
 
+    // Keep a handle on the finalized video path for thumbnail extraction before
+    // it is moved into the upload request; the thumbnail reads this file with
+    // ffmpeg after the video upload resolves.
+    let thumbnail_source_path = upload_path.clone();
     let request = FileArtifactUploadRequest {
         path: upload_path,
         run_id: None,
-        conversation_id: server_conversation_token,
+        conversation_id: server_conversation_token.clone(),
         title: recording.summary.clone(),
         description: recording.description.clone(),
     };
@@ -177,6 +191,24 @@ async fn finalize_recording(
         uploader.upload_with_association(request, association).await
     }
     .await;
+    // Best-effort PR video thumbnail: after a successful non-discard video
+    // upload, extract a representative frame, composite a play-button glyph, and
+    // upload it as a separate PNG file artifact linked to the video by the
+    // `{video_uuid}-thumb.png` filename convention. Capture is unconditional; the
+    // team setting and feature flag are consulted only at server render time. A
+    // missing/failed thumbnail must never block the video upload or PR creation,
+    // so any error is logged and dropped.
+    if let Ok(upload) = &upload_result
+        && let Err(error) = upload_recording_thumbnail(
+            &thumbnail_source_path,
+            &upload.artifact.artifact_uid,
+            &uploader,
+            server_conversation_token.clone(),
+        )
+        .await
+    {
+        log::warn!("PR video thumbnail capture failed; video upload unaffected: {error}");
+    }
     // Local files are ephemeral regardless of upload outcome. Retrying failed
     // uploads or retaining their files requires a separate persistence policy.
     let _ = std::fs::remove_file(&local_path);
@@ -232,7 +264,9 @@ fn build_finalize_future(
 }
 
 /// Runs finalization independently of any action future and stores its result
-/// on the controller before waking subscribers.
+/// on the controller before waking subscribers. The `reason` is forwarded to
+/// [`RecordingController::complete_finalization`] so waiters that only joined
+/// this work receive the actual reason it ran, not the reason they claimed.
 fn spawn_finalize(
     recording: ActiveRecording,
     reason: FinalizeReason,
@@ -241,7 +275,7 @@ fn spawn_finalize(
 ) {
     let (recording_id, future) = build_finalize_future(recording, reason, should_upload, ctx);
     ctx.spawn(future, move |controller, result, _ctx| {
-        controller.complete_finalization(&recording_id, result);
+        controller.complete_finalization(&recording_id, result, reason);
     });
 }
 

@@ -92,7 +92,7 @@ static DEFAULT_TIPS: LazyLock<Vec<AgentTip>> = LazyLock::new(|| {
     vec![
         AgentTip {
             description_key: "ai-ui-agent-tip-slash-menu",
-            link: Some("https://docs.warp.dev/agent-platform/capabilities/slash-commands".to_string()),
+            link: Some("https://docs.warp.dev/agents/capabilities/slash-commands".to_string()),
             binding_name: None,
             action: None,
             kind: AgentTipKind::SlashCommands,
@@ -106,7 +106,7 @@ static DEFAULT_TIPS: LazyLock<Vec<AgentTip>> = LazyLock::new(|| {
         },
         AgentTip {
             description_key: "ai-ui-agent-tip-plan",
-            link: Some("https://docs.warp.dev/agent-platform/capabilities/planning".to_string()),
+            link: Some("https://docs.warp.dev/agents/capabilities/planning".to_string()),
             binding_name: None,
             action: None,
             kind: AgentTipKind::SlashCommands,
@@ -138,35 +138,35 @@ static DEFAULT_TIPS: LazyLock<Vec<AgentTip>> = LazyLock::new(|| {
         },
         AgentTip {
             description_key: "ai-ui-agent-tip-at-context",
-            link: Some("https://docs.warp.dev/agent-platform/local-agents/agent-context/using-to-add-context".to_string()),
+            link: Some("https://docs.warp.dev/agents/local-agents/agent-context/using-to-add-context".to_string()),
             binding_name: None,
             action: None,
             kind: AgentTipKind::Context,
         },
         AgentTip {
             description_key: "ai-ui-agent-tip-prior-output-context",
-            link: Some("https://docs.warp.dev/agent-platform/local-agents/agent-context/blocks-as-context#attaching-blocks-as-context".to_string()),
+            link: Some("https://docs.warp.dev/agents/local-agents/agent-context/blocks-as-context#attaching-blocks-as-context".to_string()),
             binding_name: Some(SELECT_PREVIOUS_BLOCK_ACTION_NAME),
             action: None,
             kind: AgentTipKind::Context,
         },
         AgentTip {
             description_key: "ai-ui-agent-tip-init-index",
-            link: Some("https://docs.warp.dev/agent-platform/capabilities/codebase-context".to_string()),
+            link: Some("https://docs.warp.dev/agents/capabilities/codebase-context".to_string()),
             binding_name: None,
             action: None,
             kind: AgentTipKind::CodebaseContext,
         },
         AgentTip {
             description_key: "ai-ui-agent-tip-agent-profiles",
-            link: Some("https://docs.warp.dev/agent-platform/capabilities/agent-profiles-permissions".to_string()),
+            link: Some("https://docs.warp.dev/agents/capabilities/agent-profiles-permissions".to_string()),
             binding_name: None,
             action: None,
             kind: AgentTipKind::General,
         },
         AgentTip {
             description_key: "ai-ui-agent-tip-fork-block",
-            link: Some("https://docs.warp.dev/agent-platform/local-agents/interacting-with-agents/conversation-forking".to_string()),
+            link: Some("https://docs.warp.dev/agents/local-agents/interacting-with-agents/conversation-forking".to_string()),
             binding_name: None,
             action: None,
             kind: AgentTipKind::General,
@@ -180,14 +180,14 @@ static DEFAULT_TIPS: LazyLock<Vec<AgentTip>> = LazyLock::new(|| {
         },
         AgentTip {
             description_key: "ai-ui-agent-tip-drag-image",
-            link: Some("https://docs.warp.dev/agent-platform/local-agents/agent-context/images-as-context".to_string()),
+            link: Some("https://docs.warp.dev/agents/local-agents/agent-context/images-as-context".to_string()),
             binding_name: None,
             action: None,
             kind: AgentTipKind::Context,
         },
         AgentTip {
             description_key: "ai-ui-agent-tip-interactive-tools",
-            link: Some("https://docs.warp.dev/agent-platform/capabilities/full-terminal-use".to_string()),
+            link: Some("https://docs.warp.dev/agents/capabilities/full-terminal-use".to_string()),
             binding_name: None,
             action: None,
             kind: AgentTipKind::General,
@@ -201,7 +201,7 @@ static DEFAULT_TIPS: LazyLock<Vec<AgentTip>> = LazyLock::new(|| {
         },
         AgentTip {
             description_key: "ai-ui-agent-tip-add-mcp",
-            link: Some("https://docs.warp.dev/agent-platform/capabilities/mcp".to_string()),
+            link: Some("https://docs.warp.dev/agents/capabilities/mcp".to_string()),
             binding_name: None,
             action: None,
             kind: AgentTipKind::Mcp,
@@ -229,14 +229,14 @@ static DEFAULT_TIPS: LazyLock<Vec<AgentTip>> = LazyLock::new(|| {
         },
         AgentTip {
             description_key: "ai-ui-agent-tip-add-rule",
-            link: Some("https://docs.warp.dev/agent-platform/capabilities/rules".to_string()),
+            link: Some("https://docs.warp.dev/agents/capabilities/rules".to_string()),
             binding_name: None,
             action: None,
             kind: AgentTipKind::Context,
         },
         AgentTip {
             description_key: "ai-ui-agent-tip-fork-command",
-            link: Some("https://docs.warp.dev/agent-platform/local-agents/interacting-with-agents/conversation-forking".to_string()),
+            link: Some("https://docs.warp.dev/agents/local-agents/interacting-with-agents/conversation-forking".to_string()),
             binding_name: None,
             action: None,
             kind: AgentTipKind::SlashCommands,
@@ -250,7 +250,7 @@ static DEFAULT_TIPS: LazyLock<Vec<AgentTip>> = LazyLock::new(|| {
         },
         AgentTip {
             description_key: "ai-ui-agent-tip-new-conversation",
-            link: Some("https://docs.warp.dev/agent-platform/local-agents/interacting-with-agents".to_string()),
+            link: Some("https://docs.warp.dev/agents/local-agents/interacting-with-agents".to_string()),
             binding_name: None,
             action: None,
             kind: AgentTipKind::SlashCommands,
@@ -278,21 +278,21 @@ static DEFAULT_TIPS: LazyLock<Vec<AgentTip>> = LazyLock::new(|| {
         },
         AgentTip {
             description_key: "ai-ui-agent-tip-selected-text-context",
-            link: Some("https://docs.warp.dev/agent-platform/local-agents/agent-context/blocks-as-context#attaching-blocks-as-context".to_string()),
+            link: Some("https://docs.warp.dev/agents/local-agents/agent-context/blocks-as-context#attaching-blocks-as-context".to_string()),
             binding_name: None,
             action: None,
             kind: AgentTipKind::Context,
         },
         AgentTip {
             description_key: "ai-ui-agent-tip-project-rules",
-            link: Some("https://docs.warp.dev/agent-platform/capabilities/rules#project-rules-1".to_string()),
+            link: Some("https://docs.warp.dev/agents/capabilities/rules#project-rules-1".to_string()),
             binding_name: None,
             action: None,
             kind: AgentTipKind::Context,
         },
         AgentTip {
             description_key: "ai-ui-agent-tip-url-context",
-            link: Some("https://docs.warp.dev/agent-platform/local-agents/agent-context/urls-as-context".to_string()),
+            link: Some("https://docs.warp.dev/agents/local-agents/agent-context/urls-as-context".to_string()),
             binding_name: None,
             action: None,
             kind: AgentTipKind::Context,
@@ -306,21 +306,21 @@ static DEFAULT_TIPS: LazyLock<Vec<AgentTip>> = LazyLock::new(|| {
         },
         AgentTip {
             description_key: "ai-ui-agent-tip-switch-profiles",
-            link: Some("https://docs.warp.dev/agent-platform/capabilities/agent-profiles-permissions".to_string()),
+            link: Some("https://docs.warp.dev/agents/capabilities/agent-profiles-permissions".to_string()),
             binding_name: None,
             action: None,
             kind: AgentTipKind::General,
         },
         AgentTip {
             description_key: "ai-ui-agent-tip-init-rules",
-            link: Some("https://docs.warp.dev/agent-platform/capabilities/rules".to_string()),
+            link: Some("https://docs.warp.dev/agents/capabilities/rules".to_string()),
             binding_name: None,
             action: None,
             kind: AgentTipKind::SlashCommands,
         },
         AgentTip {
             description_key: "ai-ui-agent-tip-auto-approve-session",
-            link: Some("https://docs.warp.dev/agent-platform/capabilities/full-terminal-use#session-level-approvals".to_string()),
+            link: Some("https://docs.warp.dev/agents/capabilities/full-terminal-use#session-level-approvals".to_string()),
             binding_name: Some(TOGGLE_AUTOEXECUTE_MODE_KEYBINDING),
             action: None,
             kind: AgentTipKind::General,
@@ -334,7 +334,7 @@ static DEFAULT_TIPS: LazyLock<Vec<AgentTip>> = LazyLock::new(|| {
         },
         AgentTip {
             description_key: "ai-ui-agent-tip-desktop-notifications",
-            link: Some("https://docs.warp.dev/agent-platform/cloud-agents/managing-cloud-agents#in-app-agent-notifications".to_string()),
+            link: Some("https://docs.warp.dev/platform/managing-cloud-agents#in-app-agent-notifications".to_string()),
             binding_name: None,
             action: None,
             kind: AgentTipKind::General,
@@ -468,7 +468,7 @@ pub fn get_agent_tips(ctx: &AppContext) -> Vec<AgentTip> {
         tips.push(AgentTip {
             description_key: "ai-ui-agent-tip-voice-input",
             link: Some(
-                "https://docs.warp.dev/agent-platform/local-agents/interacting-with-agents/voice"
+                "https://docs.warp.dev/agents/local-agents/interacting-with-agents/voice"
                     .to_string(),
             ),
             binding_name: Some("FN"),

@@ -818,7 +818,7 @@ impl SettingsWidget for ShowBlocksWidget {
             appearance,
         );
         let col = Flex::column()
-            .with_child(Container::new(header).with_margin_bottom(24.).finish())
+            .with_child(header)
             .with_child(Expanded::new(1., stack.finish()).finish());
 
         col.finish()

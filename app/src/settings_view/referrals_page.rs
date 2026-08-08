@@ -654,11 +654,7 @@ impl ReferralsWidget {
     ) -> Box<dyn Element> {
         Flex::column()
             .with_child(
-                Container::new(
-                    self.render_label(warp_i18n::t!("settings-referrals-label-link"), appearance),
-                )
-                .with_padding_top(PAGE_PADDING)
-                .finish(),
+                self.render_label(warp_i18n::t!("settings-referrals-label-link"), appearance),
             )
             .with_child(self.render_link_row(view, appearance))
             .with_child(

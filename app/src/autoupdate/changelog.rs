@@ -154,5 +154,6 @@ async fn fetch_changelog_from_github_releases() -> Result<Option<Changelog>> {
         markdown_sections,
         image_url: None,
         oz_updates: Vec::new(),
+        tui_updates: Vec::new(),
     }))
 }

@@ -8,6 +8,7 @@ fn workspace_metadata(path: impl Into<PathBuf>) -> WorkspaceMetadata {
         navigated_ts: None,
         modified_ts: Some(Utc::now()),
         queried_ts: None,
+        ..Default::default()
     }
 }
 

@@ -1,7 +1,7 @@
 use ai::skills::SkillReference;
 use warp::appearance::Appearance;
 use warp::editor::CodeEditorModel;
-use warp::settings::AISettings;
+use warp::settings::{AISettings, TuiTheme, TuiThemeSettings};
 use warp::tui_export::{
     AcceptSlashCommandOrSavedPrompt, DetectedCommand, DetectedSkillCommand,
     ParsedSlashCommandInput, SlashCommandId, SlashCommandMixer,
@@ -31,6 +31,51 @@ fn parsed_skill(argument: Option<&str>) -> ParsedSlashCommandInput {
         name: "write-product-spec".to_owned(),
         argument: argument.map(str::to_owned),
     })
+}
+
+#[test]
+fn slash_command_menu_renders_voice_row() {
+    App::test((), |mut app| async move {
+        app.update(|ctx| {
+            ctx.add_singleton_model(|_| Appearance::mock());
+            let input_editor = ctx.add_model(|ctx| CodeEditorModel::new_tui(80, ctx));
+            let suggestions_mode = ctx.add_model(|_| TuiInputSuggestionsModeModel::new());
+            suggestions_mode.update(ctx, |mode, ctx| {
+                mode.set_mode(TuiInputSuggestionsMode::SlashCommands, ctx);
+            });
+            let mixer = ctx.add_model(|_| SlashCommandMixer::new());
+            let conversation_selection = add_test_conversation_selection(ctx);
+            let model = ctx.add_model(|_| {
+                TuiSlashCommandModel::new_for_test(
+                    input_editor,
+                    suggestions_mode,
+                    mixer,
+                    conversation_selection,
+                    vec![TuiSlashCommandRow {
+                        title: slash_commands::VOICE.name.to_owned(),
+                        description: Some(slash_commands::VOICE.description()),
+                        action: AcceptSlashCommandOrSavedPrompt::SlashCommand {
+                            id: SlashCommandId::new(),
+                        },
+                    }],
+                    0,
+                )
+            });
+            let menu = TuiInlineMenu::new(model);
+            let lines = render_menu_lines(
+                menu.render(ctx)
+                    .expect("voice slash command menu should render"),
+                ctx,
+            );
+
+            assert!(lines.iter().any(|line| line.contains("/voice")));
+            assert!(
+                lines
+                    .iter()
+                    .any(|line| line.contains("Start voice input (Ctrl-S)"))
+            );
+        });
+    });
 }
 
 #[test]
@@ -97,7 +142,7 @@ fn slash_command_menu_renders_auto_approve_row() {
                     conversation_selection.clone(),
                     vec![TuiSlashCommandRow {
                         title: slash_commands::AUTO_APPROVE.name.to_owned(),
-                        description: Some(slash_commands::AUTO_APPROVE.description.to_owned()),
+                        description: Some(slash_commands::AUTO_APPROVE.description()),
                         action: AcceptSlashCommandOrSavedPrompt::SlashCommand {
                             id: SlashCommandId::new(),
                         },
@@ -150,11 +195,7 @@ fn slash_command_menu_renders_natural_language_detection_row() {
                     conversation_selection,
                     vec![TuiSlashCommandRow {
                         title: slash_commands::NATURAL_LANGUAGE_DETECTION.name.to_owned(),
-                        description: Some(
-                            slash_commands::NATURAL_LANGUAGE_DETECTION
-                                .description
-                                .to_owned(),
-                        ),
+                        description: Some(slash_commands::NATURAL_LANGUAGE_DETECTION.description()),
                         action: AcceptSlashCommandOrSavedPrompt::SlashCommand {
                             id: SlashCommandId::new(),
                         },
@@ -187,6 +228,68 @@ fn slash_command_menu_renders_natural_language_detection_row() {
                 lines.iter().any(|line| {
                     line.contains("Toggle natural language detection (currently on)")
                 })
+            );
+        });
+    });
+}
+
+#[test]
+fn slash_command_menu_renders_theme_row() {
+    App::test((), |mut app| async move {
+        register_tui_session_view_test_singletons(&mut app);
+        app.update(|ctx| {
+            let input_editor = ctx.add_model(|ctx| CodeEditorModel::new_tui(80, ctx));
+            let suggestions_mode = ctx.add_model(|_| TuiInputSuggestionsModeModel::new());
+            suggestions_mode.update(ctx, |mode, ctx| {
+                mode.set_mode(TuiInputSuggestionsMode::SlashCommands, ctx);
+            });
+            let mixer = ctx.add_model(|_| SlashCommandMixer::new());
+            let conversation_selection = add_test_conversation_selection(ctx);
+            let model = ctx.add_model(|_| {
+                TuiSlashCommandModel::new_for_test(
+                    input_editor,
+                    suggestions_mode,
+                    mixer,
+                    conversation_selection,
+                    vec![TuiSlashCommandRow {
+                        title: slash_commands::THEME.name.to_owned(),
+                        description: Some(slash_commands::THEME.description()),
+                        action: AcceptSlashCommandOrSavedPrompt::SlashCommand {
+                            id: SlashCommandId::new(),
+                        },
+                    }],
+                    0,
+                )
+            });
+            let menu = TuiInlineMenu::new(model);
+            let lines = render_menu_lines(
+                menu.render(ctx)
+                    .expect("theme slash command menu should render"),
+                ctx,
+            );
+
+            assert!(lines.iter().any(|line| line.contains("/theme")));
+            assert!(
+                lines
+                    .iter()
+                    .any(|line| line.contains("Set color theme (currently auto: dark)"))
+            );
+
+            TuiThemeSettings::handle(ctx).update(ctx, |settings, ctx| {
+                settings
+                    .theme
+                    .set_value(TuiTheme::Light, ctx)
+                    .expect("light theme should persist");
+            });
+            let lines = render_menu_lines(
+                menu.render(ctx)
+                    .expect("theme slash command menu should render"),
+                ctx,
+            );
+            assert!(
+                lines
+                    .iter()
+                    .any(|line| line.contains("Set color theme (currently light)"))
             );
         });
     });
@@ -231,6 +334,15 @@ fn argument_hint_uses_shared_static_command_placeholder() {
     assert_eq!(
         argument_hint_text_for_parsed_input(&parsed_skill(Some("")), "/write-product-spec "),
         None
+    );
+
+    let theme = ParsedSlashCommandInput::SlashCommand(DetectedCommand {
+        command: slash_commands::THEME.clone(),
+        argument: Some(String::new()),
+    });
+    assert_eq!(
+        argument_hint_text_for_parsed_input(&theme, "/theme "),
+        Some("<auto|light|dark>")
     );
 }
 
@@ -453,6 +565,10 @@ fn model_menu_blocks_slash_command_activation() {
 #[test]
 fn skill_menu_blocks_slash_command_activation() {
     assert_explicit_menu_blocks_slash_commands(TuiInputSuggestionsMode::SkillMenu);
+}
+#[test]
+fn mcp_install_flow_blocks_slash_command_activation() {
+    assert_explicit_menu_blocks_slash_commands(TuiInputSuggestionsMode::McpInstall);
 }
 
 #[test]
