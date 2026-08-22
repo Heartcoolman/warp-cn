@@ -547,7 +547,7 @@ impl TypedActionView for MCPServersSettingsPageView {
 
 impl SettingsPageMeta for MCPServersSettingsPageView {
     fn section() -> SettingsSection {
-        SettingsSection::MCPServers
+        SettingsSection::AgentMCPServers
     }
 
     fn should_render(&self, _ctx: &AppContext) -> bool {

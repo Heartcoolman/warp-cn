@@ -7,6 +7,7 @@ use warp_core::features::FeatureFlag;
 use warp_core::send_telemetry_from_ctx;
 use warp_core::ui::Icon;
 use warp_editor::editor::NavigationKey;
+use warp_i18n::{t, t_static};
 use warpui::elements::{
     Border, ChildAnchor, ChildView, Clipped, ConstrainedBox, Container, CornerRadius,
     CrossAxisAlignment, Element, Fill, Flex, FormattedTextElement, Hoverable, MainAxisAlignment,
@@ -52,7 +53,6 @@ use crate::workspace::view::conversation_list::item::{
     render_item, render_static_item,
 };
 use crate::workspace::{ToastStack, WorkspaceAction};
-use warp_i18n::{t, t_static};
 
 /// Maximum number of past items to show before the user toggles "view all".
 const INITIAL_MAX_PAST_ITEMS: usize = 10;

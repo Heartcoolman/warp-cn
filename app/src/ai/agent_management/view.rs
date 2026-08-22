@@ -594,6 +594,7 @@ impl AgentManagementView {
             AgentSource::WebApp => t!("ai-ui-agent-source-oz-web"),
             AgentSource::GitHubAction => t!("ai-ui-agent-source-github-action"),
             AgentSource::GitHubWebhook => t!("ai-ui-agent-source-github-webhook"),
+            AgentSource::Orchestration => t!("ai-ui-agent-source-orchestration"),
         }
     }
 

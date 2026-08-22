@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use ai::index::full_source_code_embedding::manager::CodebaseIndexManager;
 use instant::Instant;
+use serial_test::serial;
 use warp_core::ui::appearance::Appearance;
 use warpui::elements::Empty;
 use warpui::platform::WindowStyle;
@@ -137,8 +138,15 @@ fn empty_card_mouse_states() -> EmptyMouseStates {
     )
 }
 
+fn ensure_en() {
+    let _ = warp_i18n::init(warp_i18n::Locale::En);
+    warp_i18n::set_locale(warp_i18n::Locale::En);
+}
+
 #[test]
+#[serial]
 fn test_render_environments_list_with_single_environment() {
+    ensure_en();
     App::test((), |mut app| async move {
         app.add_singleton_model(|_| Appearance::mock());
 
@@ -193,7 +201,9 @@ fn test_render_environments_list_with_single_environment() {
 }
 
 #[test]
+#[serial]
 fn test_render_environments_list_with_multiple_environments() {
+    ensure_en();
     App::test((), |mut app| async move {
         app.add_singleton_model(|_| Appearance::mock());
 
@@ -260,7 +270,9 @@ fn test_render_environments_list_with_multiple_environments() {
 }
 
 #[test]
+#[serial]
 fn test_render_environment_card_with_minimal_config() {
+    ensure_en();
     App::test((), |mut app| async move {
         app.add_singleton_model(|_| Appearance::mock());
 
@@ -315,7 +327,9 @@ fn test_render_environment_card_with_minimal_config() {
 }
 
 #[test]
+#[serial]
 fn test_render_environment_card_with_github_repos() {
+    ensure_en();
     App::test((), |mut app| async move {
         app.add_singleton_model(|_| Appearance::mock());
 
@@ -382,7 +396,9 @@ fn test_render_environment_card_with_github_repos() {
 }
 
 #[test]
+#[serial]
 fn test_render_environment_card_with_setup_commands() {
+    ensure_en();
     App::test((), |mut app| async move {
         app.add_singleton_model(|_| Appearance::mock());
 
@@ -451,7 +467,9 @@ fn test_render_environment_card_with_setup_commands() {
 }
 
 #[test]
+#[serial]
 fn test_render_environment_card_with_all_features() {
+    ensure_en();
     App::test((), |mut app| async move {
         app.add_singleton_model(|_| Appearance::mock());
 
@@ -536,7 +554,9 @@ fn test_render_environment_card_with_all_features() {
 }
 
 #[test]
+#[serial]
 fn test_render_environment_card_with_empty_setup_commands() {
+    ensure_en();
     App::test((), |mut app| async move {
         app.add_singleton_model(|_| Appearance::mock());
 
@@ -595,7 +615,9 @@ fn test_render_environment_card_with_empty_setup_commands() {
 }
 
 #[test]
+#[serial]
 fn test_environments_page_widget_search_terms() {
+    ensure_en();
     let widget = EnvironmentsPageWidget;
     let search_terms = widget.search_terms();
 
@@ -611,7 +633,9 @@ fn test_environments_page_widget_search_terms() {
 // ============================================================================
 
 #[test]
+#[serial]
 fn test_render_list_page_with_no_environments_shows_empty_state() {
+    ensure_en();
     // Test that when there are no environments, the empty state is rendered
     App::test((), |mut app| async move {
         init_env_page_view_test_models(&mut app);
@@ -638,7 +662,9 @@ fn test_render_list_page_with_no_environments_shows_empty_state() {
 }
 
 #[test]
+#[serial]
 fn test_render_list_page_with_environments_shows_list() {
+    ensure_en();
     // Test that when there are environments, the list is rendered (not empty state)
     App::test((), |mut app| async move {
         init_env_page_view_test_models(&mut app);
@@ -684,7 +710,9 @@ fn test_render_list_page_with_environments_shows_list() {
 }
 
 #[test]
+#[serial]
 fn test_render_list_page_with_personal_and_team_environments_shows_section_headers() {
+    ensure_en();
     App::test((), |mut app| async move {
         init_env_page_view_test_models(&mut app);
         let window_id = create_test_window(&mut app);
@@ -767,7 +795,9 @@ fn test_render_list_page_with_personal_and_team_environments_shows_section_heade
 }
 
 #[test]
+#[serial]
 fn test_render_list_page_with_only_personal_environments_shows_personal_header() {
+    ensure_en();
     App::test((), |mut app| async move {
         init_env_page_view_test_models(&mut app);
         let window_id = create_test_window(&mut app);
@@ -809,7 +839,9 @@ fn test_render_list_page_with_only_personal_environments_shows_personal_header()
 }
 
 #[test]
+#[serial]
 fn test_set_github_auth_redirect_target_updates_form() {
+    ensure_en();
     App::test((), |mut app| async move {
         init_env_page_view_test_models(&mut app);
         let window_id = create_test_window(&mut app);
@@ -845,7 +877,9 @@ fn test_set_github_auth_redirect_target_updates_form() {
 }
 
 #[test]
+#[serial]
 fn test_render_empty_state_shows_github_remote_and_local_rows() {
+    ensure_en();
     // Empty-state UI should include GitHub-remote (suggested) and agent-assisted local repos paths.
     App::test((), |mut app| async move {
         init_env_page_view_test_models(&mut app);
@@ -912,7 +946,9 @@ fn test_render_empty_state_shows_github_remote_and_local_rows() {
 }
 
 #[test]
+#[serial]
 fn test_render_empty_state_github_card_loading_state() {
+    ensure_en();
     // This test verifies that the empty state renders without crashing.
     // The specific GitHub auth state (Loading, Authed, etc.) is asynchronous
     // and can't be reliably controlled in unit tests.
@@ -939,7 +975,9 @@ fn test_render_empty_state_github_card_loading_state() {
 }
 
 #[test]
+#[serial]
 fn test_render_empty_state_github_card_error_state_shows_retry() {
+    ensure_en();
     // This test verifies that the empty state renders without crashing.
     // The specific GitHub auth state (error, loading, etc.) is asynchronous
     // and can't be reliably controlled in unit tests.
@@ -966,7 +1004,9 @@ fn test_render_empty_state_github_card_error_state_shows_retry() {
 }
 
 #[test]
+#[serial]
 fn test_render_empty_state_github_card_unauthed_state_shows_authorize() {
+    ensure_en();
     // This test verifies that the empty state renders without crashing.
     // The specific GitHub auth state (unauthed, authed, etc.) is asynchronous
     // and can't be reliably controlled in unit tests.
@@ -997,7 +1037,9 @@ fn test_render_empty_state_github_card_unauthed_state_shows_authorize() {
 // ============================================================================
 
 #[test]
+#[serial]
 fn test_environment_setup_mode_selector_renders_options() {
+    ensure_en();
     App::test((), |mut app| async move {
         app.add_singleton_model(|_| Appearance::mock());
         let window_id = create_test_window(&mut app);
@@ -1022,7 +1064,9 @@ fn test_environment_setup_mode_selector_renders_options() {
 }
 
 #[test]
+#[serial]
 fn test_agent_assisted_modal_open_and_cancel_renders_and_hides() {
+    ensure_en();
     // Verifies the Environments page wires up the modal visibility and cancel event correctly.
     App::test((), |mut app| async move {
         init_env_page_view_test_models(&mut app);
@@ -1075,7 +1119,9 @@ fn test_agent_assisted_modal_open_and_cancel_renders_and_hides() {
 }
 
 #[test]
+#[serial]
 fn test_agent_assisted_modal_confirm_dispatches_root_view_action_and_hides_modal() {
+    ensure_en();
     // We treat the RootView action dispatch as the contract that a terminal tab + setup flow will start.
     // (The deeper terminal-tab assertions are better suited to integration tests.)
     App::test((), |mut app| async move {
@@ -1160,13 +1206,17 @@ fn test_agent_assisted_modal_confirm_dispatches_root_view_action_and_hides_modal
 // ============================================================================
 
 #[test]
+#[serial]
 fn test_environments_page_default_is_list() {
+    ensure_en();
     let page = EnvironmentsPage::default();
     assert!(matches!(page, EnvironmentsPage::List));
 }
 
 #[test]
+#[serial]
 fn test_environments_page_edit_variant() {
+    ensure_en();
     let env_id = SyncId::ClientId(ClientId::new());
     let page = EnvironmentsPage::Edit { env_id };
 
@@ -1182,20 +1232,26 @@ fn test_environments_page_edit_variant() {
 // ============================================================================
 
 #[test]
+#[serial]
 fn test_github_repo_new() {
+    ensure_en();
     let repo = GithubRepo::new("warpdotdev".to_string(), "warp-internal".to_string());
     assert_eq!(repo.owner, "warpdotdev");
     assert_eq!(repo.repo, "warp-internal");
 }
 
 #[test]
+#[serial]
 fn test_github_repo_display() {
+    ensure_en();
     let repo = GithubRepo::new("warpdotdev".to_string(), "warp-internal".to_string());
     assert_eq!(repo.to_string(), "warpdotdev/warp-internal");
 }
 
 #[test]
+#[serial]
 fn test_github_repo_equality() {
+    ensure_en();
     let repo1 = GithubRepo::new("owner".to_string(), "repo".to_string());
     let repo2 = GithubRepo::new("owner".to_string(), "repo".to_string());
     let repo3 = GithubRepo::new("other".to_string(), "repo".to_string());
@@ -1209,7 +1265,9 @@ fn test_github_repo_equality() {
 // ============================================================================
 
 #[test]
+#[serial]
 fn test_environment_matches_search_query_empty_query_matches_all() {
+    ensure_en();
     let environment = make_test_environment(
         "Searchable Environment",
         "ubuntu:latest",
@@ -1222,7 +1280,9 @@ fn test_environment_matches_search_query_empty_query_matches_all() {
 }
 
 #[test]
+#[serial]
 fn test_environment_matches_search_query_name_description_image_repos() {
+    ensure_en();
     let mut environment = make_test_environment(
         "Warp Env",
         "node:20-alpine",
@@ -1242,7 +1302,9 @@ fn test_environment_matches_search_query_name_description_image_repos() {
 }
 
 #[test]
+#[serial]
 fn test_environment_matches_search_query_env_id_substring() {
+    ensure_en();
     let environment = make_test_environment("Any", "ubuntu:latest", vec![], vec![]);
 
     let id_str = environment.id.to_string();
@@ -1253,7 +1315,9 @@ fn test_environment_matches_search_query_env_id_substring() {
 }
 
 #[test]
+#[serial]
 fn test_environment_matches_search_query_is_case_insensitive() {
+    ensure_en();
     let mut environment = make_test_environment(
         "warp-env",
         "ubuntu:latest",
@@ -1268,7 +1332,9 @@ fn test_environment_matches_search_query_is_case_insensitive() {
 }
 
 #[test]
+#[serial]
 fn test_toolbar_renders_search_editor_view() {
+    ensure_en();
     use pathfinder_geometry::vector::vec2f;
 
     App::test((), |mut app| async move {
@@ -1332,7 +1398,9 @@ fn test_toolbar_renders_search_editor_view() {
 // ============================================================================
 
 #[test]
+#[serial]
 fn test_render_environment_card_with_last_used_never() {
+    ensure_en();
     use chrono::{Duration, Utc};
     use warp_graphql::scalars::time::ServerTimestamp;
 
@@ -1403,7 +1471,9 @@ fn test_render_environment_card_with_last_used_never() {
 }
 
 #[test]
+#[serial]
 fn test_render_environment_card_with_last_used_timestamp() {
+    ensure_en();
     use chrono::{Duration, Utc};
     use warp_graphql::scalars::time::ServerTimestamp;
 

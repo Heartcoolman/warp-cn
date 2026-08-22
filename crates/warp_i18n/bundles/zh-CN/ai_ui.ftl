@@ -254,6 +254,7 @@ ai-ui-agent-source-warp-app = Warp 应用
 ai-ui-agent-source-oz-web = Oz 网页端
 ai-ui-agent-source-github-action = GitHub Action
 ai-ui-agent-source-github-webhook = GitHub Webhook
+ai-ui-agent-source-orchestration = 编排任务
 ai-ui-agent-copied-branch-name = 已复制分支名
 ai-ui-agent-session-expired = 会话已过期
 ai-ui-agent-session-expired-tooltip = 会话会在一周后过期，过期后无法打开。
@@ -283,6 +284,7 @@ ai-ui-orchestration-agent-location = 智能体位置
 ai-ui-orchestration-view-details = 查看详情
 # warp-cn: 2026-06 sync — 新增上游字符串汉化
 ai-ui-conversation-details-agent = 智能体
+ai-ui-conversation-details-initial-query = 初始提问
 ai-ui-orchestration-modal-title = 随时随地编排任意智能体
 ai-ui-orchestration-modal-description = 我们对 Warp 的云智能体编排平台 Oz 做了重大改进。
 ai-ui-openai-base-url-prompt = OpenAI base URL（可选，按回车跳过）：
