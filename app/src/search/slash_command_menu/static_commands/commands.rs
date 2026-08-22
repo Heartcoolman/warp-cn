@@ -15,7 +15,7 @@ pub static AGENT: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand {
     description_key: "command-slash-agent-desc",
     kind: SlashCommandKind::Agent,
     supported_surfaces: SlashCommandSurfaces::GuiAndTui {
-        icon_path: "bundled/svg/oz.svg",
+        icon_path: "bundled/svg/warp-3.svg",
     },
     availability: Availability::AI_ENABLED.union(Availability::NOT_CLOUD_AGENT),
     auto_enter_ai_mode: false,
@@ -27,7 +27,7 @@ pub static CLOUD_AGENT: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand
     description_key: "command-slash-cloud-agent-desc",
     kind: SlashCommandKind::CloudAgent,
     supported_surfaces: SlashCommandSurfaces::GuiOnly {
-        icon_path: "bundled/svg/oz-cloud.svg",
+        icon_path: "bundled/svg/warp-3.svg",
     },
     availability: Availability::AI_ENABLED.union(Availability::NOT_CLOUD_AGENT),
     auto_enter_ai_mode: false,
@@ -553,7 +553,7 @@ pub static MODEL: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand {
     description_key: "command-slash-model-desc",
     kind: SlashCommandKind::Model,
     supported_surfaces: SlashCommandSurfaces::GuiAndTui {
-        icon_path: "bundled/svg/oz.svg",
+        icon_path: "bundled/svg/warp-3.svg",
     },
     availability: Availability::AGENT_VIEW | Availability::AI_ENABLED,
     auto_enter_ai_mode: true,
@@ -565,7 +565,7 @@ pub static HOST: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand {
     description_key: "command-slash-host-desc",
     kind: SlashCommandKind::Host,
     supported_surfaces: SlashCommandSurfaces::GuiOnly {
-        icon_path: "bundled/svg/oz-cloud.svg",
+        icon_path: "bundled/svg/warp-3.svg",
     },
     availability: Availability::AGENT_VIEW
         | Availability::AI_ENABLED
@@ -579,7 +579,7 @@ pub static HARNESS: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand {
     description_key: "command-slash-harness-desc",
     kind: SlashCommandKind::Harness,
     supported_surfaces: SlashCommandSurfaces::GuiOnly {
-        icon_path: "bundled/svg/oz.svg",
+        icon_path: "bundled/svg/warp-3.svg",
     },
     availability: Availability::AGENT_VIEW
         | Availability::AI_ENABLED
@@ -637,7 +637,7 @@ pub static ORCHESTRATE: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand
     description_key: "command-slash-orchestrate-desc",
     kind: SlashCommandKind::Orchestrate,
     supported_surfaces: SlashCommandSurfaces::GuiAndTui {
-        icon_path: "bundled/svg/oz.svg",
+        icon_path: "bundled/svg/warp-3.svg",
     },
     availability: Availability::LOCAL | Availability::AI_ENABLED,
     auto_enter_ai_mode: true,

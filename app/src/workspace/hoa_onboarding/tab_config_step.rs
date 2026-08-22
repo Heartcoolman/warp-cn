@@ -1,7 +1,6 @@
 use std::path::Path;
 
 use warp_i18n::t;
-
 use warpui::elements::{
     Container, CrossAxisAlignment, Flex, MouseStateHandle, ParentElement, Text,
 };

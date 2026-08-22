@@ -40,15 +40,14 @@ pub use view::{
 };
 use warp_core::context_flag::ContextFlag;
 use warp_i18n::t;
-use warpui::AppContext;
-use warpui::SingletonEntity;
 use warpui::accessibility::AccessibilityVerbosity;
 use warpui::elements::DropTargetData;
 use warpui::keymap::{BindingDescription, EditableBinding, FixedBinding};
+use warpui::{AppContext, SingletonEntity};
 
+use crate::ai::AIRequestUsageModel;
 use crate::ai::blocklist::NEW_AGENT_PANE_LABEL;
 use crate::ai::skills::SkillManager;
-use crate::ai::AIRequestUsageModel;
 use crate::channel::{Channel, ChannelState};
 use crate::features::FeatureFlag;
 use crate::palette::PaletteMode;
@@ -380,7 +379,6 @@ pub fn init(app: &mut AppContext) {
             id!("Workspace"),
         )
         .with_enabled(|| ContextFlag::CreateNewSession.is_enabled()),
-
     ]);
 
     app.register_editable_bindings([EditableBinding::new(
@@ -1041,6 +1039,14 @@ pub fn init(app: &mut AppContext) {
         "workspace:rename_active_pane",
         "Rename the current pane",
         WorkspaceAction::RenameActivePane,
+    )
+    .with_group(bindings::BindingGroup::Settings.as_str())
+    .with_context_predicate(id!("Workspace"))]);
+
+    app.register_editable_bindings([EditableBinding::new(
+        "workspace:cycle_active_tab_color",
+        "Cycle current tab color",
+        WorkspaceAction::CycleActiveTabColor,
     )
     .with_group(bindings::BindingGroup::Settings.as_str())
     .with_context_predicate(id!("Workspace"))]);
@@ -1737,7 +1743,7 @@ fn add_open_setting_pages_as_editable_binding(app: &mut AppContext) {
         EditableBinding::new(
             "workspace:show_mcp_servers_settings_page",
             BindingDescription::new(t!("command-open-settings-mcp-servers")),
-            WorkspaceAction::ShowSettingsPage(SettingsSection::MCPServers),
+            WorkspaceAction::ShowSettingsPage(SettingsSection::AgentMCPServers),
         )
         .with_group(bindings::BindingGroup::Settings.as_str())
         .with_context_predicate(id!("Workspace")),
@@ -1779,8 +1785,7 @@ fn add_overflow_menu_items_as_editable_binding(app: &mut AppContext) {
         EditableBinding::new(
             "workspace:send_feedback",
             BindingDescription::new(t!("command-send-feedback")).with_dynamic_override(|ctx| {
-                is_feedback_skill_available(ctx)
-                    .then(|| t!("command-send-feedback-with-oz").into())
+                is_feedback_skill_available(ctx).then(|| t!("command-send-feedback-with-oz").into())
             }),
             WorkspaceAction::SendFeedback,
         )

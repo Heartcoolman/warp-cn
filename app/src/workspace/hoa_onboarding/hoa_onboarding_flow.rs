@@ -1,7 +1,5 @@
 use std::path::PathBuf;
 
-use warp_i18n::t;
-
 use markdown_parser::{
     FormattedText, FormattedTextFragment, FormattedTextLine, FormattedTextStyles, Hyperlink,
 };
@@ -9,6 +7,7 @@ use pathfinder_color::ColorU;
 use settings::Setting;
 use warp_core::ui::theme::Fill;
 use warp_core::ui::theme::phenomenon::PhenomenonStyle;
+use warp_i18n::t;
 use warpui::elements::{
     Align, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Empty, Flex,
     FormattedTextElement, MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement, Radius,

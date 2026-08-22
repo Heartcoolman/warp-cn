@@ -1,3 +1,4 @@
+use serial_test::serial;
 use url::Url;
 use warp_core::ui::appearance::Appearance;
 use warpui::elements::{Empty, MouseStateHandle};
@@ -29,8 +30,15 @@ use crate::workspaces::team_tester::TeamTesterStatus;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::workspaces::workspace::Workspace;
 
+fn ensure_en() {
+    let _ = warp_i18n::init(warp_i18n::Locale::En);
+    warp_i18n::set_locale(warp_i18n::Locale::En);
+}
+
 #[test]
+#[serial]
 fn test_parse_repo_input_owner_repo() {
+    ensure_en();
     let (owner, repo) = UpdateEnvironmentForm::parse_repo_input("owner/repo")
         .expect("expected owner/repo to parse");
     assert_eq!(owner, "owner");
@@ -38,7 +46,9 @@ fn test_parse_repo_input_owner_repo() {
 }
 
 #[test]
+#[serial]
 fn test_parse_repo_input_github_url() {
+    ensure_en();
     let (owner, repo) = UpdateEnvironmentForm::parse_repo_input("https://github.com/warp/warp.git")
         .expect("expected github url to parse");
     assert_eq!(owner, "warp");
@@ -46,7 +56,9 @@ fn test_parse_repo_input_github_url() {
 }
 
 #[test]
+#[serial]
 fn test_parse_repo_inputs_multiple_entries() {
+    ensure_en();
     let parsed = UpdateEnvironmentForm::parse_repo_inputs(
         "https://github.com/warp/warp, warp/warp-internal\n git@github.com:warp/warp-server",
     );
@@ -61,14 +73,18 @@ fn test_parse_repo_inputs_multiple_entries() {
 }
 
 #[test]
+#[serial]
 fn test_parse_repo_inputs_invalid_returns_empty() {
+    ensure_en();
     assert!(UpdateEnvironmentForm::parse_repo_inputs("not a repo").is_empty());
     assert!(UpdateEnvironmentForm::parse_repo_inputs("owner/").is_empty());
     assert!(UpdateEnvironmentForm::parse_repo_inputs("/repo").is_empty());
 }
 
 #[test]
+#[serial]
 fn test_build_auth_url_with_next_overrides_existing() {
+    ensure_en();
     let base_url =
         "https://example.com/oauth/connect/github?foo=bar&next=old://settings/environments";
     let result = UpdateEnvironmentForm::build_auth_url_with_next(
@@ -95,7 +111,9 @@ fn test_build_auth_url_with_next_overrides_existing() {
 }
 
 #[test]
+#[serial]
 fn test_build_auth_url_with_next_focus_cloud_mode() {
+    ensure_en();
     let base_url = "https://example.com/oauth/connect/github";
     let result = UpdateEnvironmentForm::build_auth_url_with_next(
         base_url,
@@ -114,7 +132,9 @@ fn test_build_auth_url_with_next_focus_cloud_mode() {
 }
 
 #[test]
+#[serial]
 fn test_build_auth_url_with_next_cloud_setup_source() {
+    ensure_en();
     let base_url = "https://example.com/oauth/connect/github";
     let result = github_auth_url::build_auth_url_with_next(
         base_url,
@@ -133,7 +153,9 @@ fn test_build_auth_url_with_next_cloud_setup_source() {
     );
 }
 #[test]
+#[serial]
 fn test_build_auth_url_with_next_uses_scheme_param() {
+    ensure_en();
     let base_url = "https://example.com/oauth/connect/github?scheme=warp";
     let result = UpdateEnvironmentForm::build_auth_url_with_next(
         base_url,
@@ -249,7 +271,7 @@ fn team_for_test() -> Team {
         uid: 123.into(),
         name: "test".to_string(),
         color: None,
-        invite_code: None,
+        invite_link: None,
         members: vec![],
         pending_email_invites: vec![],
         invite_link_domain_restrictions: vec![],
@@ -272,7 +294,6 @@ fn workspace_for_test(team: &Team) -> Workspace {
         billing_cycle_usage: None,
         has_billing_history: false,
         settings: Default::default(),
-        invite_code: None,
         invite_link_domain_restrictions: vec![],
         pending_email_invites: vec![],
         is_eligible_for_discovery: false,
@@ -282,7 +303,9 @@ fn workspace_for_test(team: &Team) -> Workspace {
 }
 
 #[test]
+#[serial]
 fn test_environment_form_values_default() {
+    ensure_en();
     let form_state = EnvironmentFormValues::default();
 
     assert!(form_state.name.is_empty());
@@ -293,7 +316,9 @@ fn test_environment_form_values_default() {
 }
 
 #[test]
+#[serial]
 fn test_edit_mode_initializes_form_state_from_initial_values() {
+    ensure_en();
     App::test((), |mut app| async move {
         init_update_environment_form_test_models(&mut app);
         let window_id = create_test_window(&mut app);
@@ -341,7 +366,9 @@ fn test_edit_mode_initializes_form_state_from_initial_values() {
 }
 
 #[test]
+#[serial]
 fn test_submit_button_disabled_until_required_fields_present() {
+    ensure_en();
     App::test((), |mut app| async move {
         init_update_environment_form_test_models(&mut app);
         let window_id = create_test_window(&mut app);
@@ -383,7 +410,9 @@ fn test_submit_button_disabled_until_required_fields_present() {
 }
 
 #[test]
+#[serial]
 fn test_is_valid_requires_only_name() {
+    ensure_en();
     let values = EnvironmentFormValues {
         name: "env".to_string(),
         description: String::new(),
@@ -404,7 +433,9 @@ fn test_is_valid_requires_only_name() {
 }
 
 #[test]
+#[serial]
 fn test_empty_docker_image_produces_none_base_image() {
+    ensure_en();
     let values = EnvironmentFormValues {
         name: "env".to_string(),
         description: String::new(),
@@ -425,7 +456,9 @@ fn test_empty_docker_image_produces_none_base_image() {
 }
 
 #[test]
+#[serial]
 fn test_edit_mode_allows_saving_environment_without_docker_image() {
+    ensure_en();
     App::test((), |mut app| async move {
         init_update_environment_form_test_models(&mut app);
         let window_id = create_test_window(&mut app);
@@ -463,7 +496,9 @@ fn test_edit_mode_allows_saving_environment_without_docker_image() {
 }
 
 #[test]
+#[serial]
 fn test_render_repos_field_loading_state() {
+    ensure_en();
     App::test((), |mut app| async move {
         init_update_environment_form_test_models(&mut app);
         let window_id = create_test_window(&mut app);
@@ -493,7 +528,9 @@ fn test_render_repos_field_loading_state() {
 }
 
 #[test]
+#[serial]
 fn test_render_repos_field_authed_state() {
+    ensure_en();
     App::test((), |mut app| async move {
         init_update_environment_form_test_models(&mut app);
         let window_id = create_test_window(&mut app);
@@ -523,7 +560,9 @@ fn test_render_repos_field_authed_state() {
 }
 
 #[test]
+#[serial]
 fn test_render_repos_field_auth_required() {
+    ensure_en();
     App::test((), |mut app| async move {
         init_update_environment_form_test_models(&mut app);
         let window_id = create_test_window(&mut app);
@@ -556,7 +595,9 @@ fn test_render_repos_field_auth_required() {
 }
 
 #[test]
+#[serial]
 fn test_render_repos_field_error_state() {
+    ensure_en();
     App::test((), |mut app| async move {
         init_update_environment_form_test_models(&mut app);
         let window_id = create_test_window(&mut app);
@@ -593,7 +634,9 @@ fn test_render_repos_field_error_state() {
 }
 
 #[test]
+#[serial]
 fn test_repos_field_error_state_allows_manual_repo_entry() {
+    ensure_en();
     App::test((), |mut app| async move {
         init_update_environment_form_test_models(&mut app);
         let window_id = create_test_window(&mut app);
@@ -629,7 +672,9 @@ fn test_repos_field_error_state_allows_manual_repo_entry() {
 }
 
 #[test]
+#[serial]
 fn test_render_repos_field_with_selected_repos() {
+    ensure_en();
     App::test((), |mut app| async move {
         init_update_environment_form_test_models(&mut app);
         let window_id = create_test_window(&mut app);
@@ -669,7 +714,9 @@ fn test_render_repos_field_with_selected_repos() {
 }
 
 #[test]
+#[serial]
 fn test_authed_repo_input_allows_arbitrary_repo() {
+    ensure_en();
     App::test((), |mut app| async move {
         init_update_environment_form_test_models(&mut app);
         let window_id = create_test_window(&mut app);
@@ -702,7 +749,9 @@ fn test_authed_repo_input_allows_arbitrary_repo() {
 }
 
 #[test]
+#[serial]
 fn test_selected_repos_as_remote_repo_args_formats_owner_repo_strings() {
+    ensure_en();
     App::test((), |mut app| async move {
         init_update_environment_form_test_models(&mut app);
         let window_id = create_test_window(&mut app);
@@ -733,7 +782,9 @@ fn test_selected_repos_as_remote_repo_args_formats_owner_repo_strings() {
 }
 
 #[test]
+#[serial]
 fn test_can_suggest_image_for_edit_requires_repos_modified() {
+    ensure_en();
     App::test((), |mut app| async move {
         init_update_environment_form_test_models(&mut app);
         let window_id = create_test_window(&mut app);
@@ -783,7 +834,9 @@ fn test_can_suggest_image_for_edit_requires_repos_modified() {
 }
 
 #[test]
+#[serial]
 fn test_can_suggest_image_for_create_does_not_require_repos_modified() {
+    ensure_en();
     App::test((), |mut app| async move {
         init_update_environment_form_test_models(&mut app);
         let window_id = create_test_window(&mut app);
@@ -812,7 +865,9 @@ fn test_can_suggest_image_for_create_does_not_require_repos_modified() {
 }
 
 #[test]
+#[serial]
 fn test_render_docker_image_field_shows_suggest_image_button_on_create() {
+    ensure_en();
     App::test((), |mut app| async move {
         init_update_environment_form_test_models(&mut app);
         let window_id = create_test_window(&mut app);
@@ -837,7 +892,9 @@ fn test_render_docker_image_field_shows_suggest_image_button_on_create() {
 }
 
 #[test]
+#[serial]
 fn test_render_docker_image_field_shows_suggest_image_button_on_edit() {
+    ensure_en();
     App::test((), |mut app| async move {
         init_update_environment_form_test_models(&mut app);
         let window_id = create_test_window(&mut app);
@@ -877,7 +934,9 @@ fn test_render_docker_image_field_shows_suggest_image_button_on_edit() {
 }
 
 #[test]
+#[serial]
 fn test_render_docker_image_field_shows_generating_state() {
+    ensure_en();
     App::test((), |mut app| async move {
         init_update_environment_form_test_models(&mut app);
         let window_id = create_test_window(&mut app);
@@ -912,7 +971,9 @@ fn test_render_docker_image_field_shows_generating_state() {
 }
 
 #[test]
+#[serial]
 fn test_render_docker_image_field_shows_custom_image_warning() {
+    ensure_en();
     App::test((), |mut app| async move {
         init_update_environment_form_test_models(&mut app);
         let window_id = create_test_window(&mut app);
@@ -959,7 +1020,9 @@ fn test_render_docker_image_field_shows_custom_image_warning() {
 }
 
 #[test]
+#[serial]
 fn test_render_docker_image_field_shows_github_auth_required_message() {
+    ensure_en();
     App::test((), |mut app| async move {
         init_update_environment_form_test_models(&mut app);
         let window_id = create_test_window(&mut app);
@@ -1003,8 +1066,10 @@ fn test_render_docker_image_field_shows_github_auth_required_message() {
 }
 
 #[test]
+#[serial]
 fn test_create_environment_form_with_team_can_toggle_share_with_team_and_renders_warning_when_disabled()
  {
+    ensure_en();
     App::test((), |mut app| async move {
         init_update_environment_form_test_models(&mut app);
         let window_id = create_test_window(&mut app);
@@ -1065,7 +1130,9 @@ fn test_create_environment_form_with_team_can_toggle_share_with_team_and_renders
 }
 
 #[test]
+#[serial]
 fn test_create_environment_form_without_team_does_not_render_checkbox_and_defaults_disabled() {
+    ensure_en();
     App::test((), |mut app| async move {
         init_update_environment_form_test_models(&mut app);
         let window_id = create_test_window(&mut app);
@@ -1091,7 +1158,9 @@ fn test_create_environment_form_without_team_does_not_render_checkbox_and_defaul
 }
 
 #[test]
+#[serial]
 fn test_environment_form_copy_orchestration_modal_overrides_settings_defaults() {
+    ensure_en();
     let default_copy = EnvironmentFormCopy::default();
     let orchestration_copy = EnvironmentFormCopy::orchestration_modal();
 
@@ -1121,7 +1190,9 @@ fn test_environment_form_copy_orchestration_modal_overrides_settings_defaults() 
 }
 
 #[test]
+#[serial]
 fn test_orchestration_modal_form_configuration_renders_footer_actions_without_team_controls() {
+    ensure_en();
     App::test((), |mut app| async move {
         init_update_environment_form_test_models(&mut app);
         let window_id = create_test_window(&mut app);
@@ -1197,7 +1268,9 @@ fn test_orchestration_modal_form_configuration_renders_footer_actions_without_te
 }
 
 #[test]
+#[serial]
 fn test_parse_docker_hub_url_bare_owner_repo() {
+    ensure_en();
     assert_eq!(
         UpdateEnvironmentForm::parse_docker_hub_url("warp/base-image"),
         Some("https://hub.docker.com/r/warp/base-image".to_string())
@@ -1205,7 +1278,9 @@ fn test_parse_docker_hub_url_bare_owner_repo() {
 }
 
 #[test]
+#[serial]
 fn test_parse_docker_hub_url_with_tag() {
+    ensure_en();
     assert_eq!(
         UpdateEnvironmentForm::parse_docker_hub_url("warp/base-image:latest"),
         Some("https://hub.docker.com/r/warp/base-image".to_string())
@@ -1217,7 +1292,9 @@ fn test_parse_docker_hub_url_with_tag() {
 }
 
 #[test]
+#[serial]
 fn test_parse_docker_hub_url_with_digest() {
+    ensure_en();
     assert_eq!(
         UpdateEnvironmentForm::parse_docker_hub_url("warp/base-image@sha256:abc123"),
         Some("https://hub.docker.com/r/warp/base-image".to_string())
@@ -1225,7 +1302,9 @@ fn test_parse_docker_hub_url_with_digest() {
 }
 
 #[test]
+#[serial]
 fn test_parse_docker_hub_url_explicit_docker_io() {
+    ensure_en();
     assert_eq!(
         UpdateEnvironmentForm::parse_docker_hub_url("docker.io/warp/base-image"),
         Some("https://hub.docker.com/r/warp/base-image".to_string())
@@ -1237,7 +1316,9 @@ fn test_parse_docker_hub_url_explicit_docker_io() {
 }
 
 #[test]
+#[serial]
 fn test_parse_docker_hub_url_explicit_index_docker_io() {
+    ensure_en();
     assert_eq!(
         UpdateEnvironmentForm::parse_docker_hub_url("index.docker.io/warp/base-image"),
         Some("https://hub.docker.com/r/warp/base-image".to_string())
@@ -1245,7 +1326,9 @@ fn test_parse_docker_hub_url_explicit_index_docker_io() {
 }
 
 #[test]
+#[serial]
 fn test_parse_docker_hub_url_official_image() {
+    ensure_en();
     assert_eq!(
         UpdateEnvironmentForm::parse_docker_hub_url("python"),
         Some("https://hub.docker.com/_/python".to_string())
@@ -1265,7 +1348,9 @@ fn test_parse_docker_hub_url_official_image() {
 }
 
 #[test]
+#[serial]
 fn test_parse_docker_hub_url_official_image_explicit_library_prefix() {
+    ensure_en();
     assert_eq!(
         UpdateEnvironmentForm::parse_docker_hub_url("docker.io/library/python"),
         Some("https://hub.docker.com/_/python".to_string())
@@ -1277,7 +1362,9 @@ fn test_parse_docker_hub_url_official_image_explicit_library_prefix() {
 }
 
 #[test]
+#[serial]
 fn test_parse_docker_hub_url_other_registry_returns_none() {
+    ensure_en();
     assert_eq!(
         UpdateEnvironmentForm::parse_docker_hub_url("ghcr.io/warp/base-image"),
         None
@@ -1293,13 +1380,17 @@ fn test_parse_docker_hub_url_other_registry_returns_none() {
 }
 
 #[test]
+#[serial]
 fn test_parse_docker_hub_url_empty_or_whitespace() {
+    ensure_en();
     assert_eq!(UpdateEnvironmentForm::parse_docker_hub_url(""), None);
     assert_eq!(UpdateEnvironmentForm::parse_docker_hub_url("   "), None);
 }
 
 #[test]
+#[serial]
 fn test_parse_docker_hub_url_trims_whitespace() {
+    ensure_en();
     assert_eq!(
         UpdateEnvironmentForm::parse_docker_hub_url("  warp/base-image  "),
         Some("https://hub.docker.com/r/warp/base-image".to_string())

@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use ai::index::full_source_code_embedding::manager::CodebaseIndexManager;
+use serial_test::serial;
 use warp_core::ui::appearance::Appearance;
 use warpui::elements::{ChildView, Empty};
 use warpui::platform::WindowStyle;
@@ -10,6 +11,11 @@ use super::*;
 use crate::server::server_api::ServerApiProvider;
 use crate::test_util::settings::initialize_settings_for_tests;
 use crate::workspace::ToastStack;
+
+fn ensure_en() {
+    let _ = warp_i18n::init(warp_i18n::Locale::En);
+    warp_i18n::set_locale(warp_i18n::Locale::En);
+}
 
 fn init_modal_test_models(app: &mut App) {
     initialize_settings_for_tests(app);
@@ -96,7 +102,9 @@ fn test_modal_default_render_is_empty() {
 }
 
 #[test]
+#[serial]
 fn test_modal_show_renders_expected_copy_with_empty_repos_message() {
+    ensure_en();
     // We validate the copy via the section renderers (selected/available) rather than the full dialog,
     // because the dialog includes icons/buttons that may rely on asset providers in unit tests.
     App::test((), |mut app| async move {
