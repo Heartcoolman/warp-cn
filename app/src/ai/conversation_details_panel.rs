@@ -1632,7 +1632,7 @@ impl ConversationDetailsPanel {
         let ui_font_size = appearance.ui_font_size();
 
         let label_text = Text::new(
-            "Initial query".to_string(),
+            t!("ai-ui-conversation-details-initial-query"),
             appearance.ui_font_family(),
             ui_font_size,
         )

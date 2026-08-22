@@ -284,6 +284,7 @@ ai-ui-orchestration-agent-location = Agent location
 ai-ui-orchestration-view-details = View details
 # warp-cn: 2026-06 sync — newly localized upstream strings
 ai-ui-conversation-details-agent = Agent
+ai-ui-conversation-details-initial-query = Initial query
 ai-ui-orchestration-modal-title = Orchestrate any agent, anywhere
 ai-ui-orchestration-modal-description = We've made major improvements to Warp's cloud agent orchestration platform, Oz.
 ai-ui-openai-base-url-prompt = OpenAI base URL (optional, press Enter to skip):
