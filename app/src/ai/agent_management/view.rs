@@ -595,6 +595,11 @@ impl AgentManagementView {
             AgentSource::GitHubAction => t!("ai-ui-agent-source-github-action"),
             AgentSource::GitHubWebhook => t!("ai-ui-agent-source-github-webhook"),
             AgentSource::Orchestration => t!("ai-ui-agent-source-orchestration"),
+            AgentSource::Jira => t!("ai-ui-agent-source-jira"),
+            AgentSource::GitLabWebhook => t!("ai-ui-agent-source-gitlab"),
+            AgentSource::RunScorer => t!("ai-ui-agent-source-run-scorer"),
+            AgentSource::Autofix => t!("ai-ui-agent-source-autofix"),
+            AgentSource::BenchmarkTrial => t!("ai-ui-agent-source-benchmark"),
         }
     }
 

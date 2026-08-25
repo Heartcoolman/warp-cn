@@ -32,7 +32,7 @@ settings-subpage-third-party-cli-agents = 第三方 CLI 智能体
 settings-subpage-code-indexing = 索引与项目
 settings-subpage-editor-code-review = 编辑器与代码审查
 settings-subpage-cloud-environments = 环境
-settings-subpage-oz-cloud-api-keys = Oz Cloud API 密钥
+settings-subpage-warp-cloud-agent-api-keys = API 密钥
 
 # 公共设置页 UI。
 settings-search-placeholder = 搜索设置

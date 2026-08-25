@@ -12,6 +12,14 @@ fn member(email: &str, role: MembershipRole) -> TeamMember {
         uid: UserUid::new(email),
         email: email.to_string(),
         role,
+        is_disabled: false,
+    }
+}
+
+fn disabled_member(email: &str, role: MembershipRole) -> TeamMember {
+    TeamMember {
+        is_disabled: true,
+        ..member(email, role)
     }
 }
 
@@ -37,6 +45,7 @@ fn team_with_members(members: Vec<TeamMember>, multi_admin_enabled: bool) -> Tea
         settings: Default::default(),
         is_eligible_for_discovery: false,
         has_billing_history: false,
+        visibility: Default::default(),
     }
 }
 
@@ -54,6 +63,7 @@ fn workspace_with_member(
         uid: UserUid::new(email),
         email: email.to_string(),
         role,
+        is_disabled: false,
         usage_info: WorkspaceMemberUsageInfo {
             is_unlimited: true,
             request_limit: 0,
@@ -176,7 +186,7 @@ fn workspace_admin_without_team_role_can_promote_demote_and_remove() {
 
 #[test]
 #[serial]
-fn workspace_admin_without_native_workspaces_policy_gets_no_member_actions() {
+fn workspace_admin_without_native_workspaces_policy_can_manage_members() {
     ensure_en();
     let team = team_with_members(
         vec![
@@ -189,8 +199,10 @@ fn workspace_admin_without_native_workspaces_policy_gets_no_member_actions() {
 
     let items = TeamsPageView::team_to_item_list(&team, MEMBER_EMAIL, &workspace);
 
-    // The override only applies to admins of native workspaces.
-    assert!(action_labels(&items, "other@example.com").is_empty());
+    assert_eq!(
+        action_labels(&items, "other@example.com"),
+        vec!["Promote to admin", "Remove from team"]
+    );
 }
 
 #[test]
@@ -255,18 +267,175 @@ fn current_user_gets_no_actions_against_their_own_row_as_workspace_admin() {
 
 #[test]
 #[serial]
-fn workspace_admin_does_not_get_pending_invite_cancellation() {
+fn non_native_workspace_keeps_create_team_ui() {
+    ensure_en();
+    let workspace = workspace_with_member(ADMIN_EMAIL, MembershipRole::Admin, false);
+
+    assert_eq!(
+        TeamsWidget::page_sections_for(Some(&workspace), Some(ADMIN_EMAIL), true),
+        vec![
+            TeamsPageSection::CreateTeam,
+            TeamsPageSection::JoinTeams {
+                header: or_join_team_header()
+            }
+        ]
+    );
+    assert_eq!(
+        TeamsWidget::page_sections_for(Some(&workspace), Some(ADMIN_EMAIL), false),
+        vec![TeamsPageSection::CreateTeam]
+    );
+}
+
+#[test]
+#[serial]
+fn unresolved_workspace_keeps_create_team_ui() {
+    ensure_en();
+    assert_eq!(
+        TeamsWidget::page_sections_for(None, Some(MEMBER_EMAIL), false),
+        vec![TeamsPageSection::CreateTeam]
+    );
+}
+
+#[test]
+#[serial]
+fn native_workspace_admin_gets_admin_panel_cta() {
+    ensure_en();
+    let workspace = admin_workspace(ADMIN_EMAIL);
+
+    assert_eq!(
+        TeamsWidget::page_sections_for(Some(&workspace), Some(ADMIN_EMAIL), true),
+        vec![
+            TeamsPageSection::JoinTeams {
+                header: join_team_header()
+            },
+            TeamsPageSection::AdminPanelCta
+        ]
+    );
+    assert_eq!(
+        TeamsWidget::page_sections_for(Some(&workspace), Some(ADMIN_EMAIL), false),
+        vec![TeamsPageSection::AdminPanelCta]
+    );
+}
+
+#[test]
+#[serial]
+fn native_workspace_member_gets_join_or_empty_state() {
+    ensure_en();
+    let workspace = workspace_with_member(MEMBER_EMAIL, MembershipRole::User, true);
+
+    assert_eq!(
+        TeamsWidget::page_sections_for(Some(&workspace), Some(MEMBER_EMAIL), true),
+        vec![TeamsPageSection::JoinTeams {
+            header: join_team_header()
+        }]
+    );
+    assert_eq!(
+        TeamsWidget::page_sections_for(Some(&workspace), Some(MEMBER_EMAIL), false),
+        vec![TeamsPageSection::NoTeamsToJoin]
+    );
+}
+
+#[test]
+#[serial]
+fn viewer_missing_from_the_workspace_roster_is_not_an_admin() {
+    ensure_en();
+    let workspace = admin_workspace(ADMIN_EMAIL);
+
+    assert_eq!(
+        TeamsWidget::page_sections_for(Some(&workspace), None, false),
+        vec![TeamsPageSection::NoTeamsToJoin]
+    );
+}
+
+#[test]
+#[serial]
+fn workspace_admin_can_cancel_pending_invite() {
     ensure_en();
     let mut team = team_with_members(vec![member(MEMBER_EMAIL, MembershipRole::User)], true);
     team.pending_email_invites.push(EmailInvite {
         invitee_email: "invitee@example.com".to_string(),
         expired: false,
+        team_uid: Some(1.into()),
     });
     let workspace = admin_workspace(MEMBER_EMAIL);
 
     let items = TeamsPageView::team_to_item_list(&team, MEMBER_EMAIL, &workspace);
 
-    // Cancelling a pending invite remains gated on team-admin permissions;
-    // it's out of scope for the workspace-admin override.
-    assert!(action_labels(&items, "invitee@example.com").is_empty());
+    assert_eq!(
+        action_labels(&items, "invitee@example.com"),
+        vec!["Cancel invite"]
+    );
+}
+
+#[test]
+fn disabled_member_is_flagged_but_keeps_removal_action() {
+    let team = team_with_members(
+        vec![
+            member(ADMIN_EMAIL, MembershipRole::Admin),
+            disabled_member(MEMBER_EMAIL, MembershipRole::User),
+        ],
+        true,
+    );
+    let workspace = workspace_with_member(ADMIN_EMAIL, MembershipRole::User, true);
+
+    let items = TeamsPageView::team_to_item_list(&team, ADMIN_EMAIL, &workspace);
+
+    let disabled_item = items
+        .iter()
+        .find(|item| item.text == MEMBER_EMAIL)
+        .expect("disabled member should still be listed");
+    assert!(
+        disabled_item.is_disabled,
+        "a member whose account is disabled should be flagged for the dimmed/tooltip treatment"
+    );
+    // Same action set as an equivalent active member (see
+    // `team_admin_can_promote_and_remove_without_workspace_admin_role`):
+    // disabling an account must not change which actions are offered.
+    assert_eq!(
+        action_labels(&items, MEMBER_EMAIL),
+        vec!["Promote to admin", "Remove from team"]
+    );
+}
+
+#[test]
+fn active_member_is_not_flagged_disabled() {
+    let team = team_with_members(
+        vec![
+            member(ADMIN_EMAIL, MembershipRole::Admin),
+            member(MEMBER_EMAIL, MembershipRole::User),
+        ],
+        true,
+    );
+    let workspace = workspace_with_member(ADMIN_EMAIL, MembershipRole::User, true);
+
+    let items = TeamsPageView::team_to_item_list(&team, ADMIN_EMAIL, &workspace);
+
+    let active_item = items
+        .iter()
+        .find(|item| item.text == MEMBER_EMAIL)
+        .expect("member should be listed");
+    assert!(
+        !active_item.is_disabled,
+        "an active member's account must not be flagged disabled"
+    );
+}
+
+#[test]
+fn disabled_row_renders_dimmed_and_tooltipped() {
+    let appearance = Appearance::mock();
+
+    assert_eq!(
+        item_row_text_color(&appearance, true),
+        appearance.theme().disabled_ui_text_color(),
+    );
+    assert_ne!(
+        item_row_text_color(&appearance, true),
+        item_row_text_color(&appearance, false),
+        "a disabled row must render in a visibly different color than an active row"
+    );
+    assert_eq!(
+        disabled_member_tooltip_text(true),
+        Some(DISABLED_MEMBER_TOOLTIP_TEXT)
+    );
+    assert_eq!(disabled_member_tooltip_text(false), None);
 }

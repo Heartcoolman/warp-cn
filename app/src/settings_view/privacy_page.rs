@@ -31,7 +31,7 @@ use warpui::{
 
 use super::privacy::{AddRegexModal, AddRegexModalEvent};
 use super::settings_page::{
-    HEADER_PADDING, LocalOnlyIconState, MatchData, PageType, SettingsPageMeta,
+    HEADER_PADDING, LocalOnlyIconState, MatchData, PageTitle, PageType, SettingsPageMeta,
     SettingsPageViewHandle, SettingsWidget, TOGGLE_BUTTON_RIGHT_PADDING, ToggleState,
     render_body_item, render_sub_header,
 };
@@ -82,8 +82,7 @@ fn telemetry_title() -> String {
 fn telemetry_description() -> String {
     warp_i18n::t!("settings-privacy-telemetry-description")
 }
-const TELEMETRY_DOCS_URL: &str =
-    "https://docs.warp.dev/support-and-community/privacy-and-security/privacy#what-telemetry-data-does-warp-collect-and-why";
+const TELEMETRY_DOCS_URL: &str = "https://docs.warp.dev/support-and-community/privacy-and-security/privacy#what-telemetry-data-does-warp-collect-and-why";
 
 fn data_management_title() -> String {
     warp_i18n::t!("settings-privacy-data-management-title")
@@ -250,7 +249,9 @@ impl PrivacyPageView {
         widgets.push(Box::new(PrivacyPolicyWidget::default()));
         PageType::new_uncategorized(
             widgets,
-            Some(warp_i18n::t_static!("settings-privacy-title")),
+            Some(PageTitle::new(warp_i18n::t_static!(
+                "settings-privacy-title"
+            ))),
         )
     }
 

@@ -117,8 +117,7 @@ const CLAIMED_REFERRAL_CLIP: usize = 999;
 fn terms_link_text() -> String {
     warp_i18n::t!("settings-referrals-terms-link")
 }
-const TERMS_URL: &str =
-    "https://docs.warp.dev/support-and-community/community/refer-a-friend#referral-program-terms-and-conditions";
+const TERMS_URL: &str = "https://docs.warp.dev/support-and-community/community/refer-a-friend#referral-program-terms-and-conditions";
 fn terms_contact_text() -> String {
     warp_i18n::t!("settings-referrals-terms-contact")
 }

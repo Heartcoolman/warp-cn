@@ -19,6 +19,7 @@ settings-code-warp-indexing-ignore-description = 若要将特定文件或目录�
 settings-code-auto-index-feature-name = 默认对新文件夹建立索引
 settings-code-auto-index-description = 启用后，Warp 会在你浏览代码仓库时自动建立索引，帮助 Agent 快速理解上下文并提供针对性的解决方案。
 settings-code-indexing-disabled-admin = 团队管理员已禁用代码库索引。
+settings-code-indexing-disabled-admin-team = 代码库索引不可用：{ $team } 已将其禁用。
 settings-code-indexing-workspace-enabled-admin = 团队管理员已启用代码库索引。
 settings-code-indexing-disabled-global-ai = 必须启用 AI 功能才能使用代码库索引。
 settings-code-index-limit-reached = 你已达到当前套餐允许的代码库索引数量上限。请删除已有索引后再为新代码库自动建立索引。

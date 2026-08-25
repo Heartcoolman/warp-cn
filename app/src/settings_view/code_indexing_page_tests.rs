@@ -188,3 +188,22 @@ mod i18n_tests {
         assert!(other_msg.contains("disk full"), "other reason: {other_msg}");
     }
 }
+
+#[test]
+fn current_team_disabling_indexing_uses_generic_tooltip_text() {
+    assert_eq!(
+        codebase_indexing_disabled_admin_text(Some("Team A"), true),
+        warp_i18n::t!("settings-code-indexing-disabled-admin")
+    );
+}
+
+#[test]
+fn other_team_disabling_indexing_names_that_team() {
+    assert_eq!(
+        codebase_indexing_disabled_admin_text(Some("Team A"), false),
+        warp_i18n::t!(
+            "settings-code-indexing-disabled-admin-team",
+            team = "Team A"
+        )
+    );
+}

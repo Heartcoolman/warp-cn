@@ -1079,14 +1079,18 @@ fn render_header(
             );
             row.add_child(Container::new(keycap).with_margin_left(4.).finish());
             row.add_child(
-                Text::new(warp_i18n::t!("ai-ui-queued-prompts-to-send"), ui_font_family, ui_font_size)
-                    .with_style(Properties {
-                        style: Style::Normal,
-                        weight: Weight::Normal,
-                    })
-                    .with_color(sub_text_color)
-                    .with_selectable(false)
-                    .finish(),
+                Text::new(
+                    warp_i18n::t!("ai-ui-queued-prompts-to-send"),
+                    ui_font_family,
+                    ui_font_size,
+                )
+                .with_style(Properties {
+                    style: Style::Normal,
+                    weight: Weight::Normal,
+                })
+                .with_color(sub_text_color)
+                .with_selectable(false)
+                .finish(),
             );
         }
         let row = row.finish();

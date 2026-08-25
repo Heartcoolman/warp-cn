@@ -29,7 +29,7 @@ settings-platform-api-key-agent-label = Agent
 settings-platform-api-key-expiration-label = Expiration
 settings-platform-no-agents-available = No agents available. Create one first.
 settings-platform-api-key-deleted = API key deleted
-settings-platform-create-api-key-help-line1 = Create and manage API keys to allow other Oz cloud agents to access your Warp account.
+settings-platform-create-api-key-help-line1 = Create and manage API keys to allow cloud agents to access your Warp account.
 settings-platform-create-api-key-help-line2-prefix = For more information, visit the
 
 # Update environment form

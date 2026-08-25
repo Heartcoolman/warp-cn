@@ -29,8 +29,8 @@ use warpui::{
 };
 
 use super::settings_page::{
-    AdditionalInfo, HEADER_PADDING, LocalOnlyIconState, MatchData, PageType, SettingsPageMeta,
-    SettingsPageViewHandle, SettingsWidget, ToggleState, render_body_item,
+    AdditionalInfo, HEADER_PADDING, LocalOnlyIconState, MatchData, PageTitle, PageType,
+    SettingsPageMeta, SettingsPageViewHandle, SettingsWidget, ToggleState, render_body_item,
     render_customer_type_badge,
 };
 use super::{
@@ -319,7 +319,9 @@ impl MainSettingsPageView {
 
         let page = PageType::new_uncategorized(
             widgets,
-            Some(warp_i18n::t_static!("settings-account-title")),
+            Some(PageTitle::new(warp_i18n::t_static!(
+                "settings-account-title"
+            ))),
         );
 
         MainSettingsPageView {

@@ -11,7 +11,7 @@ use super::*;
 use crate::server::server_api::ServerApiProvider;
 use crate::server::server_api::team::MockTeamClient;
 use crate::server::server_api::workspace::MockWorkspaceClient;
-use crate::workspaces::team::Team;
+use crate::workspaces::team::{Team, TeamVisibility};
 use crate::workspaces::workspace::{HostEnablementSetting, LlmHostSettings, Workspace};
 
 // ── pure helpers ────────────────────────────────────────────────
@@ -133,12 +133,6 @@ fn timer_delay_clamps_to_floor_when_near_or_past_expiry() {
     );
 }
 
-// The structured `LoadGeapCredentialsError` is intentionally not user-facing
-// (no `Display` prose, no truncation) — the UI layer owns turning a leg + HTTP
-// `status` + raw `detail` into actionable copy. Coverage that the structured
-// error round-trips into `Failed { error }` lives in the mint-completion tests
-// below.
-
 // ── refresh guard / safety net (app harness) ───────────────────
 
 fn team_for_test() -> Team {
@@ -155,6 +149,7 @@ fn team_for_test() -> Team {
         settings: Default::default(),
         is_eligible_for_discovery: false,
         has_billing_history: false,
+        visibility: TeamVisibility::Open,
     }
 }
 

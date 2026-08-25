@@ -19,6 +19,7 @@ settings-code-warp-indexing-ignore-description = To exclude specific files or di
 settings-code-auto-index-feature-name = Index new folders by default
 settings-code-auto-index-description = When set to true, Warp will automatically index code repositories as you navigate them - helping agents quickly understand context and provide targeted solutions.
 settings-code-indexing-disabled-admin = Team admins have disabled codebase indexing.
+settings-code-indexing-disabled-admin-team = Codebase indexing is unavailable because { $team } has disabled it.
 settings-code-indexing-workspace-enabled-admin = Team admins have enabled codebase indexing.
 settings-code-indexing-disabled-global-ai = AI Features must be enabled to use codebase indexing.
 settings-code-index-limit-reached = You have reached the maximum number of codebase indices for your plan. Delete existing indices to auto-index new codebases.

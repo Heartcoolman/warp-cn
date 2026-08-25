@@ -41,14 +41,14 @@ use warp_graphql::workspace::{
     InviteLinkDomainRestriction as GqlInviteLinkDomainRestriction,
     MembershipRole as GqlMembershipRole, StringListSettingInfo as GqlStringListSettingInfo,
     Team as GqlTeam, TeamByoSettings as GqlTeamByoSettings, TeamMember as GqlTeamMember,
-    TeamSettings as GqlTeamSettings,
+    TeamSettings as GqlTeamSettings, TeamVisibility as GqlTeamVisibility,
     UgcCollectionEnablementSetting as GqlUgcCollectionEnablementSetting, Workspace as GqlWorkspace,
     WorkspaceMember as GqlWorkspaceMember, WorkspaceMemberUsageInfo as GqlWorkspaceMemberUsageInfo,
     WorkspaceSettings as GqlWorkspaceSettings,
     WriteToPtyAutonomyValue as GqlWriteToPtyAutonomyValue,
 };
 
-use super::team::{DiscoverableTeam, MembershipRole, Team, TeamMember};
+use super::team::{DiscoverableTeam, MembershipRole, Team, TeamMember, TeamVisibility};
 use super::user_workspaces::WorkspacesMetadataResponse;
 use super::workspace::{
     AIAutonomyPolicy, AddonCreditsSettings, AdminEnablementSetting, AiAutonomySettings,
@@ -93,6 +93,7 @@ impl From<GqlTeamMember> for TeamMember {
             uid: UserUid::new(&gql_team_member.uid.into_inner()),
             email: gql_team_member.email,
             role: gql_team_member.role.into(),
+            is_disabled: gql_team_member.is_disabled,
         }
     }
 }
@@ -194,6 +195,26 @@ impl From<MembershipRole> for GqlMembershipRole {
     }
 }
 
+impl From<GqlTeamVisibility> for TeamVisibility {
+    fn from(visibility: GqlTeamVisibility) -> Self {
+        match visibility {
+            GqlTeamVisibility::Open => TeamVisibility::Open,
+            GqlTeamVisibility::Private => TeamVisibility::Private,
+            GqlTeamVisibility::Hidden => TeamVisibility::Hidden,
+            GqlTeamVisibility::Other(value) => {
+                report_error!(
+                    "Invalid TeamVisibility from server; treating as Private",
+                    extra: { "value" => %value },
+                    warp_errors::ReportErrorLogMode::OncePerRun
+                );
+                // Fail closed: an unrecognized value must not be treated as Open,
+                // since that would surface the invite-by-link control.
+                TeamVisibility::Private
+            }
+        }
+    }
+}
+
 impl From<GqlWorkspaceMemberUsageInfo> for WorkspaceMemberUsageInfo {
     fn from(
         gql_workspace_member_usage_info: GqlWorkspaceMemberUsageInfo,
@@ -214,6 +235,7 @@ impl From<GqlWorkspaceMember> for WorkspaceMember {
             uid: UserUid::new(&gql_workspace_member.uid.into_inner()),
             email: gql_workspace_member.email,
             role: gql_workspace_member.role.into(),
+            is_disabled: gql_workspace_member.is_disabled,
             usage_info: gql_workspace_member.usage_info.into(),
         }
     }
@@ -224,6 +246,9 @@ impl From<GqlEmailInvite> for EmailInvite {
         Self {
             invitee_email: gql_email_invite.email,
             expired: gql_email_invite.expired,
+            team_uid: gql_email_invite
+                .team_uid
+                .map(|uid| ServerId::from_string_lossy(uid.into_inner())),
         }
     }
 }
@@ -343,6 +368,13 @@ impl From<&gql_usage::ConversationUsage> for ConversationUsageInfo {
             lines_added: tool.apply_file_diff_stats.lines_added,
             lines_removed: tool.apply_file_diff_stats.lines_removed,
             commands_executed: tool.run_command_stats.commands_executed,
+            // GAP: the settings usage-history surface sources this view from
+            // a GraphQL query that does not yet expose a token count or
+            // per-category cost breakdown (Milestone 3 / vertical B).
+            total_tokens: None,
+            total_cost_in_cents: None,
+            tokens_for_last_block: None,
+            cost_in_cents_for_last_block: None,
         }
     }
 }
@@ -389,25 +421,37 @@ impl From<&GqlAiPermissionsSettings> for AiPermissionsSettings {
     fn from(gql_ai_permissions_settings: &GqlAiPermissionsSettings) -> AiPermissionsSettings {
         Self {
             allow_ai_in_remote_sessions: gql_ai_permissions_settings.allow_ai_in_remote_sessions,
-            remote_session_regex_list: gql_ai_permissions_settings
-                .remote_session_regex_list
-                .iter()
-                .filter_map(|r| {
-                    let regex = Regex::new(r);
-                    match regex {
-                        Ok(regex) => Some(regex),
-                        Err(_) => {
-                            report_error!(
-                                "Invalid regex pattern for remote session detection",
-                                extra: { "pattern" => %r }
-                            );
-                            None
-                        }
-                    }
-                })
-                .collect(),
+            remote_session_regex_list: compile_remote_session_regex_list(
+                gql_ai_permissions_settings
+                    .remote_session_regex_list
+                    .clone(),
+            ),
         }
     }
+}
+
+/// Compiles each remote-session command pattern into a [`Regex`], dropping (and reporting) any
+/// pattern that fails to compile so one bad entry in an org's configuration cannot suppress the
+/// rest of the list.
+///
+/// Throttled to once per run: an uncompilable pattern is a static configuration problem that
+/// does not resolve itself between polls of the workspaces-metadata query, so reporting it every
+/// time would page the same broken pattern at the poll rate for every affected user.
+fn compile_remote_session_regex_list(patterns: impl IntoIterator<Item = String>) -> Vec<Regex> {
+    patterns
+        .into_iter()
+        .filter_map(|pattern| match Regex::new(&pattern) {
+            Ok(regex) => Some(regex),
+            Err(_) => {
+                report_error!(
+                    "Invalid regex pattern for remote session detection",
+                    extra: { "pattern" => %pattern },
+                    warp_errors::ReportErrorLogMode::OncePerRun
+                );
+                None
+            }
+        })
+        .collect()
 }
 
 impl From<GqlUgcDataCollectionPolicy> for UgcDataCollectionPolicy {
@@ -854,7 +898,7 @@ fn convert_gql_computer_use_autonomy_value_to_computer_use_permission(
     }
 }
 
-trait ToAgentModeCommandExecutionPredicates {
+pub(crate) trait ToAgentModeCommandExecutionPredicates {
     fn to_predicates(self) -> Vec<AgentModeCommandExecutionPredicate>;
 }
 
@@ -876,7 +920,7 @@ impl ToAgentModeCommandExecutionPredicates for Vec<String> {
     }
 }
 
-trait ToPathBufs {
+pub(crate) trait ToPathBufs {
     fn to_path_bufs(self) -> Vec<PathBuf>;
 }
 
@@ -962,24 +1006,11 @@ impl From<GqlWorkspaceSettings> for WorkspaceSettings {
                 allow_ai_in_remote_sessions: gql_workspace_settings
                     .ai_permissions_settings
                     .allow_ai_in_remote_sessions,
-                remote_session_regex_list: gql_workspace_settings
-                    .ai_permissions_settings
-                    .remote_session_regex_list
-                    .iter()
-                    .filter_map(|r| {
-                        let regex = Regex::new(r);
-                        match regex {
-                            Ok(regex) => Some(regex),
-                            Err(_) => {
-                                report_error!(
-                                    "Invalid regex pattern for remote session detection",
-                                    extra: { "pattern" => %r }
-                                );
-                                None
-                            }
-                        }
-                    })
-                    .collect(),
+                remote_session_regex_list: compile_remote_session_regex_list(
+                    gql_workspace_settings
+                        .ai_permissions_settings
+                        .remote_session_regex_list,
+                ),
             },
             link_sharing_settings: LinkSharingSettings {
                 anyone_with_link_sharing_enabled: gql_workspace_settings
@@ -1131,8 +1162,11 @@ impl From<GqlTeamSettings> for TeamSettings {
                         .allow_ai_in_remote_sessions
                         .is_enforced_by_workspace,
                 },
-                remote_session_regex_list: split_string_list(
-                    gql_team_settings.ai_permissions.remote_session_regex_list,
+                remote_session_regex_list: compile_remote_session_regex_list(
+                    gql_team_settings
+                        .ai_permissions
+                        .remote_session_regex_list
+                        .values,
                 ),
             },
             secret_redaction: TeamSecretRedactionSettings {
@@ -1293,6 +1327,18 @@ pub(crate) fn team_settings_from_gql(team_settings: GqlTeamSettings) -> TeamSett
     team_settings.into()
 }
 
+pub(crate) fn team_pending_email_invites_from_gql(
+    workspace_pending_email_invites: &[GqlEmailInvite],
+    team_uid: &cynic::Id,
+) -> Vec<EmailInvite> {
+    workspace_pending_email_invites
+        .iter()
+        .filter(|invite| invite.team_uid.as_ref() == Some(team_uid))
+        .cloned()
+        .map(Into::into)
+        .collect()
+}
+
 impl Team {
     pub fn from_gql(gql_workspace: GqlWorkspace, gql_team: GqlTeam) -> Team {
         Self {
@@ -1306,12 +1352,10 @@ impl Team {
                 .map(|gql_member| gql_member.into())
                 .collect(),
             invite_link: gql_team.invite_link.clone(),
-            pending_email_invites: gql_workspace
-                .pending_email_invites
-                .clone()
-                .into_iter()
-                .map(|gql_email_invite| gql_email_invite.into())
-                .collect(),
+            pending_email_invites: team_pending_email_invites_from_gql(
+                &gql_workspace.pending_email_invites,
+                &gql_team.uid,
+            ),
             invite_link_domain_restrictions: gql_workspace
                 .invite_link_domain_restrictions
                 .clone()
@@ -1328,6 +1372,7 @@ impl Team {
             settings: team_settings_from_gql(gql_team.settings),
             is_eligible_for_discovery: gql_workspace.is_eligible_for_discovery,
             has_billing_history: gql_workspace.has_billing_history,
+            visibility: gql_team.visibility.into(),
         }
     }
 }

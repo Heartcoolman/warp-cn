@@ -124,6 +124,8 @@ mod warp_agent_page;
 mod warp_drive_page;
 mod warpify_page;
 
+#[cfg(feature = "tui")]
+pub(crate) use billing_and_usage::billing_cycle_usage_common::{format_cost_cents, format_credits};
 pub use billing_and_usage_page::create_discount_badge;
 #[cfg(not(target_family = "wasm"))]
 pub use cli_agents_page::cli_agent_settings_widget_id;
@@ -331,7 +333,7 @@ pub enum SettingsSection {
     EditorAndCodeReview,
     // ── Cloud platform umbrella subpages ──
     CloudEnvironments,
-    OzCloudAPIKeys,
+    WarpCloudAgentAPIKeys,
 }
 
 use std::fmt::{self, Display};
@@ -400,9 +402,11 @@ impl Display for SettingsSection {
                 "{}",
                 warp_i18n::t!("settings-subpage-cloud-environments")
             ),
-            SettingsSection::OzCloudAPIKeys => {
-                write!(f, "{}", warp_i18n::t!("settings-subpage-oz-cloud-api-keys"))
-            }
+            SettingsSection::WarpCloudAgentAPIKeys => write!(
+                f,
+                "{}",
+                warp_i18n::t!("settings-subpage-warp-cloud-agent-api-keys")
+            ),
         }
     }
 }
@@ -444,7 +448,9 @@ impl SettingsSection {
             Self::CodeIndexing => "Indexing and projects",
             Self::EditorAndCodeReview => "Editor and Code Review",
             Self::CloudEnvironments => "Environments",
-            Self::OzCloudAPIKeys => "Oz Cloud API Keys",
+            // Keeps the "Oz" spelling the slug was seeded from; only the
+            // Display label above dropped it.
+            Self::WarpCloudAgentAPIKeys => "Oz Cloud API Keys",
         }
     }
 
@@ -482,7 +488,7 @@ impl SettingsSection {
             "Indexing and projects" | "CodeIndexing" | "Code" => Self::CodeIndexing,
             "Editor and Code Review" | "EditorAndCodeReview" => Self::EditorAndCodeReview,
             "Environments" | "CloudEnvironments" => Self::CloudEnvironments,
-            "Oz Cloud API Keys" | "OzCloudAPIKeys" => Self::OzCloudAPIKeys,
+            "Oz Cloud API Keys" | "OzCloudAPIKeys" => Self::WarpCloudAgentAPIKeys,
             _ => return None,
         };
         Some(section)
@@ -633,6 +639,7 @@ pub mod flags {
         "Preserve_Input_Focus_On_Block_Selection";
     pub const SLASH_COMMANDS_IN_TERMINAL_FLAG: &str = "Slash_Commands_In_Terminal";
     pub const AT_CONTEXT_MENU_IN_TERMINAL_FLAG: &str = "At_Context_Menu_In_Terminal";
+    pub const AI_COMMAND_SEARCH_HASH_TRIGGER_FLAG: &str = "AI_Command_Search_Hash_Trigger";
     pub const OUTLINE_CODEBASE_SYMBOLS_FOR_AT_CONTEXT_MENU_FLAG: &str =
         "Outline_Codebase_Symbols_For_At_Context_Menu";
     pub const AUTOSUGGESTIONS_ENABLED_FLAG: &str = "Autosuggestions_Enabled";
@@ -1188,7 +1195,9 @@ macro_rules! update_page {
             SettingsPageViewHandle::Keybindings(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Teams(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Warpify(handle) => $ctx.update_view(handle, $update),
-            SettingsPageViewHandle::OzCloudAPIKeys(handle) => $ctx.update_view(handle, $update),
+            SettingsPageViewHandle::WarpCloudAgentAPIKeys(handle) => {
+                $ctx.update_view(handle, $update)
+            }
             SettingsPageViewHandle::Privacy(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Referrals(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Scripting(handle) => $ctx.update_view(handle, $update),
@@ -1466,7 +1475,7 @@ impl SettingsView {
                 warp_i18n::t!("settings-umbrella-cloud-platform"),
                 vec![
                     SettingsSection::CloudEnvironments,
-                    SettingsSection::OzCloudAPIKeys,
+                    SettingsSection::WarpCloudAgentAPIKeys,
                 ],
             )),
             SettingsNavItem::Page(SettingsSection::Teams),
@@ -2176,7 +2185,7 @@ impl SettingsView {
             SettingsPageViewHandle::Appearance(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::BillingAndUsage(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::About(v) => v.as_ref(app).should_render(app),
-            SettingsPageViewHandle::OzCloudAPIKeys(v) => v.as_ref(app).should_render(app),
+            SettingsPageViewHandle::WarpCloudAgentAPIKeys(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Privacy(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Warpify(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Referrals(v) => v.as_ref(app).should_render(app),
@@ -2400,7 +2409,7 @@ impl SettingsView {
             SettingsPageViewHandle::Privacy(view) => {
                 view.read(app, |view, _| view.get_modal_content())
             }
-            SettingsPageViewHandle::OzCloudAPIKeys(view) => {
+            SettingsPageViewHandle::WarpCloudAgentAPIKeys(view) => {
                 view.read(app, |view, _| view.get_modal_content())
             }
             SettingsPageViewHandle::MCPServers(view) => {
@@ -2692,7 +2701,7 @@ impl View for SettingsView {
                     })
                     .finish(),
             )
-            .on_right_mouse_down(|event, _app, position| {
+            .on_right_mouse_down(|event, _app, position, _| {
                 let Some(parent_bounds) = event.element_position_by_id(POSITION_ID) else {
                     return DispatchEventResult::PropagateToParent;
                 };

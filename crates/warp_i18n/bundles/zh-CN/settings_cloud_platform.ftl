@@ -29,7 +29,7 @@ settings-platform-api-key-agent-label = 智能体
 settings-platform-api-key-expiration-label = 过期时间
 settings-platform-no-agents-available = 暂无可用智能体，请先创建一个。
 settings-platform-api-key-deleted = API 密钥已删除
-settings-platform-create-api-key-help-line1 = 创建并管理 API 密钥，以允许其他 Oz cloud 智能体访问你的 Warp 账户。
+settings-platform-create-api-key-help-line1 = 创建并管理 API 密钥，以允许云端智能体访问你的 Warp 账户。
 settings-platform-create-api-key-help-line2-prefix = 详细信息请见
 
 # 环境表单

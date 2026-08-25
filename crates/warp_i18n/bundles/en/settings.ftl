@@ -32,7 +32,7 @@ settings-subpage-third-party-cli-agents = Third party CLI agents
 settings-subpage-code-indexing = Indexing and projects
 settings-subpage-editor-code-review = Editor and Code Review
 settings-subpage-cloud-environments = Environments
-settings-subpage-oz-cloud-api-keys = Oz Cloud API Keys
+settings-subpage-warp-cloud-agent-api-keys = API keys
 
 # Shared settings UI.
 settings-search-placeholder = Search settings

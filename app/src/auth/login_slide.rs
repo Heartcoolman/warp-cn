@@ -411,7 +411,6 @@ impl LoginSlideView {
             send_telemetry_from_ctx!(
                 OnboardingEvent::SlideViewed {
                     slide_name: "create_account".to_string(),
-                    experiment_arm: None,
                 },
                 ctx
             );
@@ -462,7 +461,6 @@ impl LoginSlideView {
                     slide_name: slide_name.to_string(),
                     action: action.to_string(),
                     account_class: None,
-                    experiment_arm: None,
                 },
                 ctx
             );
@@ -526,7 +524,6 @@ impl LoginSlideView {
             send_telemetry_from_ctx!(
                 OnboardingEvent::SlideViewed {
                     slide_name: "browser_auth".to_string(),
-                    experiment_arm: None,
                 },
                 ctx
             );

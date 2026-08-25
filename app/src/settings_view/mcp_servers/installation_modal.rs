@@ -75,9 +75,11 @@ pub struct InstallationModalBody {
 impl InstallationModalBody {
     pub fn new(ctx: &mut ViewContext<Self>) -> Self {
         let cancel_button = ctx.add_typed_action_view(|_ctx| {
-            ActionButton::new(warp_i18n::t!("settings-mcp-install-cancel"), NakedTheme).on_click(|ctx| {
-                ctx.dispatch_typed_action(InstallationModalBodyAction::Cancel);
-            })
+            ActionButton::new(warp_i18n::t!("settings-mcp-install-cancel"), NakedTheme).on_click(
+                |ctx| {
+                    ctx.dispatch_typed_action(InstallationModalBodyAction::Cancel);
+                },
+            )
         });
 
         let enter_keystroke = Keystroke::parse("enter").expect("valid keystroke");

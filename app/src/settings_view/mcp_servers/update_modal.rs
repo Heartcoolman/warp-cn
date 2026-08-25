@@ -57,18 +57,21 @@ pub struct UpdateModalBody {
 impl UpdateModalBody {
     pub fn new(ctx: &mut ViewContext<Self>) -> Self {
         let cancel_button = ctx.add_typed_action_view(|_ctx| {
-            ActionButton::new(warp_i18n::t!("settings-mcp-update-cancel"), NakedTheme).on_click(|ctx| {
-                ctx.dispatch_typed_action(UpdateModalBodyAction::Cancel);
-            })
+            ActionButton::new(warp_i18n::t!("settings-mcp-update-cancel"), NakedTheme).on_click(
+                |ctx| {
+                    ctx.dispatch_typed_action(UpdateModalBodyAction::Cancel);
+                },
+            )
         });
 
         let enter_keystroke = Keystroke::parse("enter").expect("valid keystroke");
         let update_button = ctx.add_typed_action_view(|ctx| {
-            let mut button = ActionButton::new(warp_i18n::t!("settings-mcp-update-confirm"), PrimaryTheme)
-                .with_keybinding(KeystrokeSource::Fixed(enter_keystroke), ctx)
-                .on_click(|ctx| {
-                    ctx.dispatch_typed_action(UpdateModalBodyAction::Update);
-                });
+            let mut button =
+                ActionButton::new(warp_i18n::t!("settings-mcp-update-confirm"), PrimaryTheme)
+                    .with_keybinding(KeystrokeSource::Fixed(enter_keystroke), ctx)
+                    .on_click(|ctx| {
+                        ctx.dispatch_typed_action(UpdateModalBodyAction::Update);
+                    });
             // Initial state has no rows selected, so the button starts disabled.
             button.set_disabled(true, ctx);
             button

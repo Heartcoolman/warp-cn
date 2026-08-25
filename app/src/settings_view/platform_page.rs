@@ -470,7 +470,7 @@ impl SettingsWidget for PlatformPageWidget {
     type View = PlatformPageView;
 
     fn search_terms(&self) -> &str {
-        "oz cloud platform api keys authentication"
+        "cloud agents platform api keys authentication"
     }
 
     fn render(
@@ -536,7 +536,7 @@ impl PlatformPageWidget {
                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
                 .with_child(
                     Text::new_inline(
-                        warp_i18n::t!("settings-subpage-oz-cloud-api-keys"),
+                        warp_i18n::t!("settings-subpage-warp-cloud-agent-api-keys"),
                         appearance.ui_font_family(),
                         16.,
                     )
@@ -952,7 +952,7 @@ impl PlatformPageWidget {
 
 impl SettingsPageMeta for PlatformPageView {
     fn section() -> SettingsSection {
-        SettingsSection::OzCloudAPIKeys
+        SettingsSection::WarpCloudAgentAPIKeys
     }
 
     fn should_render(&self, ctx: &AppContext) -> bool {
@@ -983,7 +983,7 @@ impl SettingsPageMeta for PlatformPageView {
 
 impl From<ViewHandle<PlatformPageView>> for SettingsPageViewHandle {
     fn from(view_handle: ViewHandle<PlatformPageView>) -> Self {
-        SettingsPageViewHandle::OzCloudAPIKeys(view_handle)
+        SettingsPageViewHandle::WarpCloudAgentAPIKeys(view_handle)
     }
 }
 
