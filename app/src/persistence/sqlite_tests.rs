@@ -1122,11 +1122,13 @@ fn team_member_is_disabled_round_trips_through_sqlite_cache() {
                 is_disabled: true,
             },
         ]),
+        None,
     );
     let workspace = Workspace::from_local_cache(
         format!("{:0>22}", "workspace").into(),
         "Workspace".to_string(),
         Some(vec![team]),
+        None,
     );
 
     let writer = start_writer(conn, database_path.clone()).expect("writer should start");

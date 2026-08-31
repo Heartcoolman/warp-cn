@@ -34,6 +34,10 @@ use crate::terminal::model::block::{BlockId, BlockMetadata};
 use crate::terminal::model::session::Sessions;
 use crate::terminal::model_events::{ModelEvent, ModelEventDispatcher};
 use crate::util::git::{PrInfo, RepositoryInfo};
+<<<<<<< ours
+=======
+use crate::workspaces::user_workspaces::{TeamContextResolver, UserWorkspaces};
+>>>>>>> theirs
 
 /// A non-image file picked via the "attach file" button, stored until query submission.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -79,6 +83,7 @@ impl PendingAttachment {
         }
     }
 }
+
 /// Model responsible for keeping track of session context to be attached to the next AI query.
 pub struct BlocklistAIContextModel {
     terminal_model: Arc<FairMutex<TerminalModel>>,
@@ -101,6 +106,8 @@ pub struct BlocklistAIContextModel {
 
     /// The ID of the terminal surface this model is associated with.
     terminal_surface_id: EntityId,
+
+    team_context_resolver: TeamContextResolver,
 
     /// AI document ID to be included as context with the next AI query.
     /// When set, the document content will be attached as plain text context.
@@ -152,6 +159,7 @@ impl BlocklistAIContextModel {
         model_event_dispatcher: &ModelHandle<ModelEventDispatcher>,
         terminal_model: Arc<FairMutex<TerminalModel>>,
         terminal_surface_id: EntityId,
+        team_context_resolver: TeamContextResolver,
         conversation_selection: ConversationSelectionHandle,
         ctx: &mut ModelContext<Self>,
     ) -> Self {
@@ -196,9 +204,11 @@ impl BlocklistAIContextModel {
 
         ctx.subscribe_to_model(&LLMPreferences::handle(ctx), |me, _, event, ctx| {
             if let LLMPreferencesEvent::UpdatedActiveAgentModeLLM = event {
-                let llm_prefs = LLMPreferences::as_ref(ctx);
-                let vision_supported =
-                    llm_prefs.vision_supported(ctx, Some(me.terminal_surface_id));
+                let vision_supported = LLMPreferences::as_ref(ctx).vision_supported(
+                    &(me.team_context_resolver)(ctx),
+                    ctx,
+                    Some(me.terminal_surface_id),
+                );
                 if !vision_supported {
                     me.clear_pending_images(ctx);
                 }
@@ -224,6 +234,7 @@ impl BlocklistAIContextModel {
             pending_attachments: Default::default(),
             conversation_selection,
             terminal_surface_id,
+            team_context_resolver,
             pending_inline_diff_hunk_attachments: Default::default(),
             pending_document_id: None,
             auto_attached_agent_view_user_block_ids: Vec::new(),
@@ -246,6 +257,7 @@ impl BlocklistAIContextModel {
             pending_attachments: Default::default(),
             conversation_selection,
             terminal_surface_id,
+            team_context_resolver: UserWorkspaces::teamless_context_resolver_for_test(),
             pending_inline_diff_hunk_attachments: Default::default(),
             pending_document_id: None,
             auto_attached_agent_view_user_block_ids: Vec::new(),
