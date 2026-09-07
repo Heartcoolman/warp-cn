@@ -52,6 +52,7 @@ use autoupdate::AutoupdateStage;
 #[cfg(target_os = "macos")]
 use command::blocking::Command;
 use futures::Future;
+use instant::Instant;
 use itertools::Itertools;
 use lazy_static::lazy_static;
 pub(crate) use onboarding::OnboardingTutorial;
@@ -402,6 +403,7 @@ use crate::terminal::ligature_settings::should_use_ligature_rendering;
 #[cfg(feature = "local_tty")]
 use crate::terminal::local_tty::docker_sandbox::resolve_sbx_path_from_user_shell;
 use crate::terminal::model::blockgrid::BlockGrid;
+use crate::terminal::model::escape_sequences::C0;
 #[cfg(feature = "local_fs")]
 use crate::terminal::model::session::Session;
 use crate::terminal::model::session::SessionId;
@@ -538,7 +540,8 @@ use crate::workspace::view::orchestration_launch_modal::{
 };
 use crate::workspace::view::right_panel::{RightPanelEvent, RightPanelView};
 use crate::workspace::{ForkFromExchange, ForkedConversationDestination};
-use crate::workspaces::user_workspaces::UserWorkspaces;
+use crate::workspaces::update_manager::TeamUpdateManager;
+use crate::workspaces::user_workspaces::{ResolvedTeamScope, UserWorkspaces};
 use crate::workspaces::workspace::AdminEnablementSetting;
 use crate::{
     AgentNotificationsModel, BlocklistAIHistoryModel, GlobalResourceHandles, TelemetryEvent,
@@ -665,6 +668,7 @@ pub(crate) const TOGGLE_CONVERSATION_LIST_VIEW_BINDING_NAME: &str =
 pub(crate) const NEW_TAB_BINDING_NAME: &str = "workspace:new_tab";
 pub(crate) const NEW_TERMINAL_TAB_BINDING_NAME: &str = "workspace:new_terminal_tab";
 pub(crate) const NEW_FILE_BINDING_NAME: &str = "workspace:new_file";
+pub(crate) const NEW_WINDOW_BINDING_NAME: &str = "workspace:new_window";
 pub(crate) const NEW_AGENT_TAB_BINDING_NAME: &str = "workspace:new_agent_tab";
 pub(crate) const NEW_AMBIENT_AGENT_TAB_BINDING_NAME: &str = "workspace:new_ambient_agent_tab";
 pub(crate) const TOGGLE_TAB_CONFIGS_MENU_BINDING_NAME: &str = "workspace:toggle_tab_configs_menu";
@@ -1065,6 +1069,7 @@ pub struct Workspace {
     import_modal: ViewHandle<ImportModal>,
     theme_chooser_view: ViewHandle<ThemeChooser>,
     previous_theme: Option<ThemeKind>,
+    background_image_animation_start_time: Instant,
     reward_modal: ViewHandle<Modal<RewardView>>,
     reward_modal_pending: Option<RewardKind>,
     pub(crate) current_workspace_state: WorkspaceState,
@@ -1176,6 +1181,10 @@ pub struct Workspace {
     /// Pinned position for the vertical tabs callout so it doesn't move when
     /// the user toggles between vertical and horizontal tabs.
     hoa_vtabs_callout_pinned_position: Option<Vector2F>,
+    /// When true, this workspace was opened directly against a specific piece of content
+    /// (e.g. a shared session or a cloud conversation) rather than as a general-purpose
+    /// window. Such workspaces must not be retroactively wrapped in product onboarding.
+    opened_from_content_deep_link: bool,
     /// When true, this workspace was created to receive a transferred PaneGroup.
     /// The placeholder tab will be replaced when adopt_transferred_pane_group is called.
     pending_pane_group_transfer: bool,
@@ -1237,6 +1246,12 @@ fn whats_new_dot_visible(app: &AppContext) -> bool {
 }
 
 impl Workspace {
+    /// Whether this workspace was opened directly against a shared session, cloud
+    /// conversation, or similar deep-linked content.
+    pub(crate) fn opened_from_content_deep_link(&self) -> bool {
+        self.opened_from_content_deep_link
+    }
+
     pub fn is_tab_drag_preview(&self) -> bool {
         self.is_tab_drag_preview
     }
@@ -2887,6 +2902,7 @@ impl Workspace {
         let resizable_data = ResizableData::handle(ctx);
         let window_id = ctx.window_id();
         let has_horizontal_split = workspace_setting.has_horizontal_split();
+        let opened_from_content_deep_link = workspace_setting.is_content_deep_link();
 
         let (left_panel_size, right_panel_size) =
             compute_default_panel_widths(ctx, window_id, has_horizontal_split);
@@ -3450,6 +3466,7 @@ impl Workspace {
             ctrl_tab_palette,
             mouse_states: Default::default(),
             previous_theme: None,
+            background_image_animation_start_time: Instant::now(),
             settings_pane,
             theme_chooser_view,
             reward_modal,
@@ -3550,6 +3567,7 @@ impl Workspace {
             lightbox_view: None,
             hoa_onboarding_flow: None,
             hoa_vtabs_callout_pinned_position: None,
+            opened_from_content_deep_link,
             pending_pane_group_transfer: false,
             suppress_detach_panes_on_window_close: false,
             is_tab_drag_preview: false,
@@ -4695,7 +4713,6 @@ impl Workspace {
     }
 
     /// Returns the type of simplified WASM tab bar content to display, if any.
-    /// Used to determine whether to show the simplified tab bar layout on WASM.
     #[cfg(target_family = "wasm")]
     fn get_simplified_wasm_tab_bar_content(
         &self,
@@ -4703,26 +4720,38 @@ impl Workspace {
     ) -> Option<SimplifiedWasmTabBarContent> {
         let pane_group = self.active_tab_pane_group().as_ref(ctx);
 
-        // Check if focused pane is a terminal with special state
         if let Some(terminal_view) = pane_group.focused_session_view(ctx) {
-            let model = terminal_view.as_ref(ctx).model.lock();
+            let view = terminal_view.as_ref(ctx);
+            let (is_transcript_viewer, is_sharer_or_viewer, model_task_id) = {
+                let model = view.model.lock();
+                (
+                    model.is_conversation_transcript_viewer(),
+                    model.shared_session_status().is_sharer_or_viewer(),
+                    model.ambient_agent_task_id(),
+                )
+            };
 
-            // Conversation transcript viewer takes priority
-            if model.is_conversation_transcript_viewer() {
+            if is_transcript_viewer {
                 return Some(SimplifiedWasmTabBarContent::ConversationTranscript {
-                    task_id: model.ambient_agent_task_id(),
+                    task_id: model_task_id,
                 });
             }
 
-            // Check for shared session (viewer or writer)
-            if model.shared_session_status().is_sharer_or_viewer() {
+            if is_sharer_or_viewer {
                 return Some(SimplifiedWasmTabBarContent::SharedSession {
-                    task_id: model.ambient_agent_task_id(),
+                    task_id: model_task_id,
+                });
+            }
+
+            // Owned HandoffCloudCloud restores leave NotShared without transcript-viewer
+            // status; deep-linked WASM workspaces still need the web conversation chrome.
+            if self.opened_from_content_deep_link {
+                return Some(SimplifiedWasmTabBarContent::ConversationTranscript {
+                    task_id: view.ambient_agent_task_id_for_details_panel(ctx),
                 });
             }
         }
 
-        // Check if focused pane is a Warp Drive object
         let focused_pane_id = pane_group.focused_pane_id(ctx);
         if focused_pane_id.is_warp_drive_object_pane() {
             return Some(SimplifiedWasmTabBarContent::WarpDriveObject);
@@ -15922,8 +15951,12 @@ impl Workspace {
             ctx,
         );
         let handoff_terminal_view_id = model_handle.as_ref(ctx).terminal_view_id();
+        let scope = ResolvedTeamScope::from_scope(
+            &UserWorkspaces::as_ref(ctx).team_context_for_window(source_view.window_id(ctx)),
+        );
         LLMPreferences::handle(ctx).update(ctx, |preferences, ctx| {
             preferences.update_preferred_agent_mode_llm(
+                &scope,
                 &HandoffLLMId::from(presentation.model_id.as_str()),
                 handoff_terminal_view_id,
                 ctx,
@@ -17354,6 +17387,15 @@ impl Workspace {
             return;
         }
 
+        if query_filter.is_none()
+            && let Some(terminal_view_handle) = self.active_session_view(ctx)
+            && terminal_view_handle.update(ctx, |terminal_view, ctx| {
+                terminal_view.maybe_trigger_external_ctrl_r_history_search(ctx)
+            })
+        {
+            return;
+        }
+
         // Close all overlays including chip menus before opening command search
         self.close_all_overlays(ctx);
 
@@ -17428,6 +17470,21 @@ impl Workspace {
             ctx.focus(&self.command_search_view);
         } else {
             report_error!("Command search keybinding triggered but no session is active!");
+        }
+    }
+
+    /// If the active session's shell has rebound ctrl-t to an external file-search widget
+    /// (e.g. fzf), hands the keypress off to it.
+    fn trigger_external_ctrl_t_file_search(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.is_readonly_shared_session_active(ctx) {
+            return;
+        }
+        if let Some(terminal_view_handle) = self.active_session_view(ctx) {
+            terminal_view_handle.update(ctx, |terminal_view, ctx| {
+                if !terminal_view.maybe_trigger_external_ctrl_t_file_search(ctx) {
+                    terminal_view.write_user_bytes_to_pty(vec![C0::DC4], ctx);
+                }
+            });
         }
     }
 
@@ -18156,14 +18213,6 @@ impl Workspace {
                             input.user_replace_editor_text(content.as_str(), ctx);
                             ctx.notify();
                         });
-                    }
-                    AcceptNotebook(sync_id) => {
-                        self.open_notebook(
-                            &NotebookSource::Existing(*sync_id),
-                            &OpenWarpDriveObjectSettings::default(),
-                            ctx,
-                            true,
-                        );
                     }
                     AcceptEnvVarCollection(env_var_collection) => {
                         self.invoke_environment_variables(
@@ -19271,6 +19320,12 @@ impl Workspace {
     }
 
     pub fn open_prompt_suggestions_unavailable_modal(&mut self, ctx: &mut ViewContext<Self>) {
+        // Same free-AI-removal messaging as the startup notice, so it's equally
+        // out of place on WASM (e.g. an executor-role shared-session viewer).
+        if cfg!(target_family = "wasm") {
+            return;
+        }
+
         self.current_workspace_state
             .is_prompt_suggestions_unavailable_modal_open = true;
         send_telemetry_from_ctx!(
@@ -19316,8 +19371,12 @@ impl Workspace {
                     return;
                 };
 
+                let scope = ResolvedTeamScope::from_scope(
+                    &UserWorkspaces::as_ref(ctx)
+                        .team_context_for_window(terminal_view.window_id(ctx)),
+                );
                 let Some(codex_model_id) = LLMPreferences::as_ref(ctx)
-                    .get_preferred_codex_model()
+                    .get_preferred_codex_model(&scope, ctx)
                     .map(|info| info.id.clone())
                 else {
                     report_error!("No preferred codex model found");
@@ -23064,6 +23123,16 @@ impl Workspace {
                 .insert(flags::COMPLETIONS_OPEN_WHILE_TYPING_CONTEXT_FLAG);
         }
 
+        if *input_settings.warp_completions_enabled.value() {
+            context.set.insert(flags::WARP_COMPLETIONS_CONTEXT_FLAG);
+        }
+
+        if *input_settings.native_shell_completions_enabled.value() {
+            context
+                .set
+                .insert(flags::NATIVE_SHELL_COMPLETIONS_CONTEXT_FLAG);
+        }
+
         if *input_settings.command_corrections.value() {
             context.set.insert(flags::COMMAND_CORRECTIONS_CONTEXT_FLAG);
         }
@@ -24459,6 +24528,7 @@ impl TypedActionView for Workspace {
                 filter,
                 init_content,
             }) => self.show_command_search(*filter, init_content, ctx),
+            TriggerExternalCtrlTFileSearch => self.trigger_external_ctrl_t_file_search(ctx),
             ImportToPersonalDrive => {
                 if let Some(personal_drive) = UserWorkspaces::as_ref(ctx).personal_drive(ctx) {
                     self.open_import_modal(personal_drive, &None, ctx);
@@ -26317,22 +26387,37 @@ impl TypedActionView for Workspace {
             }
             OpenNewWindowForTeam { team_uid } => {
                 let team_uid = *team_uid;
-                let existing_window_id = ctx
-                    .windows()
-                    .ordered_window_ids()
-                    .into_iter()
-                    .chain(ctx.window_ids())
-                    .find(|window_id| {
-                        UserWorkspaces::as_ref(ctx).team_uid_for_window(*window_id)
-                            == Some(team_uid)
+                TeamUpdateManager::handle(ctx).update(ctx, |manager, ctx| {
+                    std::mem::drop(manager.refresh_workspace_metadata(ctx));
+                });
+                #[cfg(target_family = "wasm")]
+                {
+                    // WASM hosts a single window; creating another replaces #wasm-container
+                    // and orphans the live session.
+                    UserWorkspaces::handle(ctx).update(ctx, |user_workspaces, ctx| {
+                        user_workspaces.switch_window_to_team(self.window_id, team_uid, ctx);
                     });
-                if let Some(window_id) = existing_window_id {
-                    ctx.windows().show_window_and_focus_app(window_id);
-                } else {
-                    crate::root_view::open_new_with_workspace_source(
-                        NewWorkspaceSource::TeamSwitched { team_uid },
-                        ctx,
-                    );
+                    ctx.notify();
+                }
+                #[cfg(not(target_family = "wasm"))]
+                {
+                    let existing_window_id = ctx
+                        .windows()
+                        .ordered_window_ids()
+                        .into_iter()
+                        .chain(ctx.window_ids())
+                        .find(|window_id| {
+                            UserWorkspaces::as_ref(ctx).team_uid_for_window(*window_id)
+                                == Some(team_uid)
+                        });
+                    if let Some(window_id) = existing_window_id {
+                        ctx.windows().show_window_and_focus_app(window_id);
+                    } else {
+                        crate::root_view::open_new_with_workspace_source(
+                            NewWorkspaceSource::TeamSwitched { team_uid },
+                            ctx,
+                        );
+                    }
                 }
             }
             ShowTeamSwitcherMenu => {
@@ -26573,7 +26658,10 @@ impl View for Workspace {
         }
 
         #[cfg(target_family = "wasm")]
-        if self.is_conversation_transcript_viewer_focused(app) {
+        if matches!(
+            self.get_simplified_wasm_tab_bar_content(app),
+            Some(SimplifiedWasmTabBarContent::ConversationTranscript { .. })
+        ) {
             context.set.insert("Workspace_CloudConversationWebViewer");
         }
 
@@ -27690,6 +27778,9 @@ impl View for Workspace {
                             .cover()
                             .with_opacity(opacity_ratio)
                             .with_corner_radius(window_corner_radius)
+                            .enable_animation_with_start_time(
+                                self.background_image_animation_start_time,
+                            )
                             .finish(),
                     )
                     .finish(),
