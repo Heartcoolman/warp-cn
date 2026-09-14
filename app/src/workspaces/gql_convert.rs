@@ -37,7 +37,7 @@ use warp_graphql::workspace::{
     ByoEndpointModelMetadata as GqlByoEndpointModelMetadata,
     ByoFirstPartyKey as GqlByoFirstPartyKey,
     ComputerUseAutonomyValue as GqlComputerUseAutonomyValue, EmailInvite as GqlEmailInvite,
-    HostEnablementSetting as GqlHostEnablementSetting,
+    FeatureModelChoice, HostEnablementSetting as GqlHostEnablementSetting,
     InviteLinkDomainRestriction as GqlInviteLinkDomainRestriction,
     MembershipRole as GqlMembershipRole, StringListSettingInfo as GqlStringListSettingInfo,
     Team as GqlTeam, TeamByoSettings as GqlTeamByoSettings, TeamMember as GqlTeamMember,
@@ -70,6 +70,7 @@ use crate::ai::blocklist::usage::conversation_usage_view::ConversationUsageInfo;
 use crate::ai::execution_profiles::{
     ActionPermission, ComputerUsePermission, WriteToPtyPermission,
 };
+use crate::ai::llms::ModelsByFeature;
 use crate::ai::{BonusGrant, BonusGrantScope};
 use crate::auth::UserUid;
 use crate::convert_to_server_experiment;
@@ -105,7 +106,19 @@ impl From<GqlTeamMember> for TeamMember {
 /// they can operate as in the client. Filtering here keeps every consumer of
 /// `Workspace::teams` (team switcher, team spaces, warp drive teams, ...)
 /// scoped to real memberships.
-fn retain_authenticated_teams(workspace: &mut Workspace, user_uid: UserUid) {
+///
+/// Service accounts are never recorded as a human `TeamMember` (that list only tracks
+/// user-role memberships), so this membership check cannot recognize them and would strip
+/// every team out from under any service account. Skip it in that case and trust the server
+/// to have already scoped `teams` to the service account's own team.
+fn retain_authenticated_teams(
+    workspace: &mut Workspace,
+    user_uid: UserUid,
+    is_service_account: bool,
+) {
+    if is_service_account {
+        return;
+    }
     workspace
         .teams
         .retain(|team| team.members.iter().any(|member| member.uid == user_uid));
@@ -1327,6 +1340,16 @@ pub(crate) fn team_settings_from_gql(team_settings: GqlTeamSettings) -> TeamSett
     team_settings.into()
 }
 
+fn feature_model_choice_from_gql(choice: FeatureModelChoice) -> ModelsByFeature {
+    choice.try_into().unwrap_or_else(|e: anyhow::Error| {
+        report_error!(
+            e.context("Failed to convert FeatureModelChoice from server"),
+            ReportErrorLogMode::OncePerRun
+        );
+        ModelsByFeature::default()
+    })
+}
+
 pub(crate) fn team_pending_email_invites_from_gql(
     workspace_pending_email_invites: &[GqlEmailInvite],
     team_uid: &cynic::Id,
@@ -1370,6 +1393,7 @@ impl Team {
             // Team-effective settings come from the team payload, not from a
             // clone of the workspace settings.
             settings: team_settings_from_gql(gql_team.settings),
+            feature_model_choice: feature_model_choice_from_gql(gql_team.feature_model_choice),
             is_eligible_for_discovery: gql_workspace.is_eligible_for_discovery,
             has_billing_history: gql_workspace.has_billing_history,
             visibility: gql_team.visibility.into(),
@@ -1392,6 +1416,12 @@ impl From<GqlWorkspace> for Workspace {
                 .into_iter()
                 .map(|gql_team| Team::from_gql(gql_workspace.clone(), gql_team))
                 .collect(),
+            open_teams: gql_workspace
+                .open_teams
+                .clone()
+                .into_iter()
+                .map(Into::into)
+                .collect(),
             billing_metadata: gql_workspace.billing_metadata.clone().into(),
             bonus_grants_purchased_this_month: gql_workspace
                 .bonus_grants_info
@@ -1406,6 +1436,9 @@ impl From<GqlWorkspace> for Workspace {
                 .map(convert_billing_cycle_usage),
             has_billing_history: gql_workspace.has_billing_history,
             settings: gql_workspace.settings.clone().into(),
+            feature_model_choice: feature_model_choice_from_gql(
+                gql_workspace.feature_model_choice.clone(),
+            ),
             invite_link_domain_restrictions: gql_workspace
                 .invite_link_domain_restrictions
                 .clone()
@@ -1431,60 +1464,61 @@ impl From<GqlWorkspace> for Workspace {
     }
 }
 
-impl From<GqlUser> for WorkspacesMetadataResponse {
-    fn from(gql_user: GqlUser) -> WorkspacesMetadataResponse {
-        let user_uid = UserUid::new(&gql_user.profile.uid);
-        let feature_model_choices = gql_user
-            .workspaces
-            .first()
-            .map(|gql_workspace| gql_workspace.feature_model_choice.clone());
+/// Converts the `GetWorkspacesMetadataForUser` response into [`WorkspacesMetadataResponse`].
+///
+/// `is_service_account` controls whether [`retain_authenticated_teams`] filters each
+/// workspace's teams down to the caller's own human memberships; see that function's doc
+/// comment for why service accounts must skip it.
+pub fn workspaces_metadata_response_from_gql(
+    gql_user: GqlUser,
+    is_service_account: bool,
+) -> WorkspacesMetadataResponse {
+    let user_uid = UserUid::new(&gql_user.profile.uid);
 
-        let workspaces: Vec<Workspace> = gql_user
-            .workspaces
-            .clone()
-            .into_iter()
-            .filter(|gql_workspace| {
-                // TODO(skambashi): REV-717: Clean up this code once every user always has
-                // a workspace, and the server no longer returns a placeholder workspace.
-                gql_workspace.uid != PLACEHOLDER_WORKSPACE_UID.into()
-            })
-            .map(|gql_workspace| {
-                let mut workspace = gql_workspace.into();
-                retain_authenticated_teams(&mut workspace, user_uid);
-                workspace
-            })
-            .collect();
+    let workspaces: Vec<Workspace> = gql_user
+        .workspaces
+        .clone()
+        .into_iter()
+        .filter(|gql_workspace| {
+            // TODO(skambashi): REV-717: Clean up this code once every user always has
+            // a workspace, and the server no longer returns a placeholder workspace.
+            gql_workspace.uid != PLACEHOLDER_WORKSPACE_UID.into()
+        })
+        .map(|gql_workspace| {
+            let mut workspace = gql_workspace.into();
+            retain_authenticated_teams(&mut workspace, user_uid, is_service_account);
+            workspace
+        })
+        .collect();
 
-        let joinable_teams = gql_user
-            .discoverable_teams
-            .clone()
-            .into_iter()
-            .map(|gql_joinable_team| gql_joinable_team.into())
-            .collect();
+    let joinable_teams = gql_user
+        .discoverable_teams
+        .clone()
+        .into_iter()
+        .map(|gql_joinable_team| gql_joinable_team.into())
+        .collect();
 
-        let experiments = gql_user
-            .experiments
-            .and_then(|experiments| convert_to_server_experiment!(experiments));
+    let experiments = gql_user
+        .experiments
+        .and_then(|experiments| convert_to_server_experiment!(experiments));
 
-        // A teamless user's only workspace is the placeholder filtered out
-        // above, so the user-level policy is the only place their add-on
-        // credits purchase policy — gating and premium pricing alike —
-        // survives (see
-        // [`crate::workspaces::user_workspaces::UserWorkspaces::purchase_policy`]).
-        let user_purchase_policy = gql_user
-            .billing_metadata
-            .and_then(|billing_metadata| billing_metadata.tier.purchase_add_on_credits_policy)
-            .map(Into::into);
+    // A teamless user's only workspace is the placeholder filtered out
+    // above, so the user-level policy is the only place their add-on
+    // credits purchase policy — gating and premium pricing alike —
+    // survives (see
+    // [`crate::workspaces::user_workspaces::UserWorkspaces::purchase_policy`]).
+    let user_purchase_policy = gql_user
+        .billing_metadata
+        .and_then(|billing_metadata| billing_metadata.tier.purchase_add_on_credits_policy)
+        .map(Into::into);
 
-        // TODO(skambashi) refactor to return back workspaces, and not teams
-        WorkspacesMetadataResponse {
-            workspaces,
-            joinable_teams,
-            experiments,
-            feature_model_choices,
-            ai_credit_availability: Some(gql_user.ai_credit_availability.into()),
-            user_purchase_policy,
-        }
+    // TODO(skambashi) refactor to return back workspaces, and not teams
+    WorkspacesMetadataResponse {
+        workspaces,
+        joinable_teams,
+        experiments,
+        ai_credit_availability: Some(gql_user.ai_credit_availability.into()),
+        user_purchase_policy,
     }
 }
 

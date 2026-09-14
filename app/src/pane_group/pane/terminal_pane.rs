@@ -32,9 +32,14 @@ use crate::ai::ambient_agents::task::normalize_orchestrator_agent_name;
 use crate::ai::blocklist::BlocklistAIHistoryEvent;
 use crate::ai::blocklist::agent_view::{AgentViewControllerEvent, AgentViewEntryOrigin};
 use crate::ai::blocklist::orchestration_event_streamer::OrchestrationEventStreamer;
-use crate::ai::blocklist::{BlocklistAIHistoryModel, StartAgentRequest};
+use crate::ai::blocklist::{
+    BlocklistAIHistoryModel, StartAgentRequest, TEAM_CHANGED_DURING_CHILD_LAUNCH_ERROR,
+};
 #[cfg(not(target_family = "wasm"))]
-use crate::ai::blocklist::{apply_child_agent_model_override, prepare_local_oz_child_launch};
+use crate::ai::blocklist::{
+    apply_child_agent_model_override, finish_local_oz_child_conversation,
+    prepare_local_oz_child_launch,
+};
 use crate::ai::conversation_utils;
 use crate::ai::llms::LLMPreferences;
 use crate::ai::orchestration::{RemoteChildLaunchConfig, prepare_remote_child_launch};
@@ -51,6 +56,7 @@ use crate::pane_group::{self, Direction, PaneGroup};
 use crate::persistence::{BlockCompleted, ModelEvent};
 #[cfg(not(target_family = "wasm"))]
 use crate::server::server_api::ServerApiProvider;
+use crate::server::team_scope::RequestTeamScope;
 use crate::session_management::SessionNavigationData;
 use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
 use crate::terminal::general_settings::GeneralSettings;
@@ -64,6 +70,9 @@ use crate::terminal::{TerminalManager, TerminalView};
 use crate::view_components::ToastFlavor;
 use crate::workspace::sync_inputs::SyncedInputState;
 use crate::workspace::{PaneViewLocator, WorkspaceRegistry};
+#[cfg(not(target_family = "wasm"))]
+use crate::workspaces::user_workspaces::TeamContextForOperation;
+use crate::workspaces::user_workspaces::UserWorkspaces;
 #[cfg(not(target_family = "wasm"))]
 use crate::{
     pane_group::child_agent::{
@@ -936,13 +945,15 @@ fn handle_terminal_view_event(
                 }
             }
             Event::ShareModalOpened(block_id) => {
+                let Some(session) = group.terminal_view_from_pane_id(pane_id, ctx) else {
+                    return;
+                };
+                let model = session.read(ctx, |view, _| view.model.clone());
+
                 group.terminal_with_open_share_block_modal = Some(terminal_pane_id);
                 group.share_block_modal.update(ctx, |share_modal, ctx| {
-                    if let Some(session) = group.terminal_view_from_pane_id(pane_id, ctx) {
-                        let model = session.read(ctx, |view, _| view.model.clone());
-                        share_modal.open_with_model_update(model, *block_id, ctx);
-                        ctx.notify();
-                    }
+                    share_modal.open_with_model_update(model, *block_id, ctx);
+                    ctx.notify();
                 });
                 ctx.notify();
             }
@@ -1522,13 +1533,36 @@ fn dispatch_start_agent_conversation(
     request: StartAgentRequest,
     ctx: &mut ViewContext<PaneGroup>,
 ) {
+    let team_context = UserWorkspaces::as_ref(ctx).team_context_for_operation(ctx);
+    if !request.request_team_scope.matches_scope(&team_context) {
+        let _ = create_error_child_agent_conversation(
+            group,
+            ErrorChildAgentConversationRequest {
+                parent_pane_id,
+                name: request.name,
+                parent_conversation_id: request.parent_conversation_id,
+                request_id: Some(request.id),
+                orchestration_harness: None,
+                error_message: TEAM_CHANGED_DURING_CHILD_LAUNCH_ERROR.to_string(),
+            },
+            ctx,
+        );
+        return;
+    }
     match request.execution_mode.clone() {
         #[cfg(not(target_family = "wasm"))]
         StartAgentExecutionMode::Local {
             harness_type: None,
             model_id,
         } => {
-            launch_local_no_harness_child(group, parent_pane_id, request, model_id, ctx);
+            launch_local_no_harness_child(
+                group,
+                parent_pane_id,
+                request,
+                model_id,
+                team_context,
+                ctx,
+            );
         }
         #[cfg(not(target_family = "wasm"))]
         StartAgentExecutionMode::Local {
@@ -1542,6 +1576,7 @@ fn dispatch_start_agent_conversation(
                 request,
                 harness_type,
                 model_id,
+                team_context,
                 ctx,
             );
         }
@@ -1573,6 +1608,7 @@ fn dispatch_start_agent_conversation(
             runner_id,
             agent_identity_uid,
         } => {
+            let request_team_scope = request.request_team_scope;
             let working_dir = group
                 .terminal_view_from_pane_id(parent_pane_id, ctx)
                 .and_then(|view| view.as_ref(ctx).pwd_if_local(ctx))
@@ -1595,6 +1631,7 @@ fn dispatch_start_agent_conversation(
                     runner_id,
                     agent_identity_uid,
                 },
+                request_team_scope,
                 ctx,
             );
         }
@@ -1621,6 +1658,7 @@ fn launch_local_no_harness_child(
     parent_pane_id: PaneId,
     request: StartAgentRequest,
     model_id: Option<String>,
+    team_context: TeamContextForOperation,
     ctx: &mut ViewContext<PaneGroup>,
 ) {
     let request_id = request.id;
@@ -1633,11 +1671,13 @@ fn launch_local_no_harness_child(
     let host_source = group
         .terminal_view_from_pane_id(parent_pane_id, ctx)
         .and_then(|view| host_terminal_shared_session_source_type(&view, ctx));
+    let request_team_scope = request.request_team_scope;
 
     let launch = prepare_local_oz_child_launch(
         &request.name,
         &request.prompt,
         request.parent_run_id.as_deref(),
+        request_team_scope,
         ctx,
     );
     let _ = ctx.spawn(launch, move |group, result, ctx| match result {
@@ -1660,6 +1700,7 @@ fn launch_local_no_harness_child(
                     }),
                     is_shared_session_creator,
                 },
+                &team_context,
                 ctx,
             ) {
                 Some(HiddenChildAgentConversation {
@@ -1668,24 +1709,19 @@ fn launch_local_no_harness_child(
                     conversation_id,
                     ..
                 }) => {
-                    apply_child_agent_model_override(terminal_view_id, model_id.as_deref(), ctx);
-
-                    // Stamp the task id on the child conversation directly
-                    // so the share-reporter in
-                    // `local_tty/terminal_manager.rs` can resolve it from
-                    // the selected conversation when the share handshake
-                    // succeeds. Mirrors how `OrchestrationViewerModel`
-                    // stamps run/task ids onto viewer child placeholders.
-                    BlocklistAIHistoryModel::handle(ctx).update(ctx, |model, ctx| {
-                        if let Some(conversation) = model.conversation_mut(&conversation_id) {
-                            conversation.set_task_id(child_task_id);
-                        }
-                        model.record_new_conversation_request_complete(
-                            request_id,
-                            conversation_id,
-                            ctx,
-                        );
-                    });
+                    apply_child_agent_model_override(
+                        &team_context,
+                        terminal_view_id,
+                        model_id.as_deref(),
+                        ctx,
+                    );
+                    finish_local_oz_child_conversation(
+                        conversation_id,
+                        terminal_view_id,
+                        child_task_id,
+                        request_id,
+                        ctx,
+                    );
 
                     new_terminal_view.update(ctx, |terminal_view, ctx| {
                         terminal_view
@@ -1752,6 +1788,7 @@ fn launch_local_harness_child(
     request: StartAgentRequest,
     harness_type: String,
     model_id: Option<String>,
+    team_context: TeamContextForOperation,
     ctx: &mut ViewContext<PaneGroup>,
 ) {
     let startup_directory = group.startup_path_for_new_session(Some(terminal_pane_id), ctx);
@@ -1776,6 +1813,7 @@ fn launch_local_harness_child(
 
     let model_id_for_harness_env = model_id.clone();
     let agent_name_for_task = agent_name.clone();
+    let request_team_scope = request.request_team_scope;
     let _ = ctx.spawn(
         async move {
             prepare_local_harness_child_launch(
@@ -1787,6 +1825,7 @@ fn launch_local_harness_child(
                 shell_type,
                 startup_directory,
                 ai_client,
+                request_team_scope,
             )
             .await
         },
@@ -1800,6 +1839,7 @@ fn launch_local_harness_child(
                 } = launch;
                 let is_shared_session_creator =
                     inherit_share_for_local_child(host_source.as_ref(), task_id);
+
                 match create_hidden_child_agent_conversation(
                     group,
                     HiddenChildAgentConversationRequest {
@@ -1811,6 +1851,7 @@ fn launch_local_harness_child(
                         task_context: None,
                         is_shared_session_creator,
                     },
+                    &team_context,
                     ctx,
                 ) {
                     Some(HiddenChildAgentConversation {
@@ -1820,6 +1861,7 @@ fn launch_local_harness_child(
                         ..
                     }) => {
                         apply_child_agent_model_override(
+                            &team_context,
                             terminal_view_id,
                             model_id.as_deref(),
                             ctx,
@@ -1907,6 +1949,7 @@ fn launch_remote_child(
     parent_pane_id: PaneId,
     request: StartAgentRequest,
     config: RemoteChildLaunchConfig,
+    team_scope: RequestTeamScope,
     ctx: &mut ViewContext<PaneGroup>,
 ) -> Option<AIConversationId> {
     let request_id = request.id;
@@ -1956,7 +1999,7 @@ fn launch_remote_child(
         model.record_new_conversation_request_complete(request_id, conversation_id, ctx);
     });
 
-    let prepared = match prepare_remote_child_launch(&request, config, ctx) {
+    let prepared = match prepare_remote_child_launch(&request, config, team_scope, ctx) {
         Ok(prepared) => prepared,
         Err(error) => {
             let error_message = error.user_message();
@@ -1987,7 +2030,7 @@ fn launch_remote_child(
         if let Some(ambient_agent_view_model) = terminal_view.ambient_agent_view_model() {
             ambient_agent_view_model.update(ctx, |model, ctx| {
                 model.set_conversation_id(Some(conversation_id));
-                model.spawn_agent_with_request(prepared.spawn_request, ctx);
+                model.spawn_agent_with_request(prepared.spawn_request, team_scope, ctx);
             });
         } else {
             report_error!("Remote StartAgent child pane missing ambient agent view model");

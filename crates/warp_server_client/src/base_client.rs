@@ -22,6 +22,13 @@ pub const CLOUD_AGENT_ID_HEADER: &str = "X-Warp-Cloud-Agent-ID";
 /// Header used to communicate the source of an agent run.
 pub const AGENT_SOURCE_HEADER: &str = "X-Oz-Api-Source";
 
+/// Header carrying the request-local team scope for an operation whose team is inferred
+/// from the current window rather than named explicitly in the request body. See
+/// `specs/multi-team-api-context/TECH.md`. The server authenticates membership and rejects
+/// a header that disagrees with the request body or an existing resource; adding this header
+/// is not itself proof of membership.
+pub const TEAM_UID_HEADER: &str = "X-Warp-Team-Uid";
+
 /// IDs in the staging database that were created specifically for evals.
 ///
 /// Keep this list in sync with `script/populate_agent_mode_eval_user.sql` in warp-server.
@@ -185,6 +192,7 @@ impl BaseClient {
             AMBIENT_WORKLOAD_TOKEN_HEADER,
             CLOUD_AGENT_ID_HEADER,
             AGENT_SOURCE_HEADER,
+            TEAM_UID_HEADER,
         ]
         .iter()
         .any(|reserved| name.eq_ignore_ascii_case(reserved))
@@ -210,6 +218,11 @@ impl BaseClient {
 
     pub fn user_id(&self) -> Option<UserUid> {
         self.auth_state.user_id()
+    }
+
+    /// Returns whether the authenticated principal is a service account.
+    pub fn is_service_account(&self) -> bool {
+        self.auth_state.is_service_account()
     }
 
     pub fn access_token_ignoring_validity(&self) -> Option<String> {
@@ -243,6 +256,13 @@ impl BaseClient {
     /// Sets the default cloud-agent identifier inherited by subsequent requests.
     pub fn set_ambient_agent_task_id(&self, task_id: Option<String>) {
         *self.ambient_agent_task_id.write() = task_id;
+    }
+    #[cfg(any(test, feature = "test-util"))]
+    pub fn set_ambient_workload_token_for_test(&self, token: String) {
+        *self.ambient_workload_token.lock() = Some(warp_isolation_platform::WorkloadToken {
+            token,
+            expires_at: None,
+        });
     }
 
     /// Returns an ambient agent workload token when the current runtime can issue one.

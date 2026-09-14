@@ -52,6 +52,7 @@ use autoupdate::AutoupdateStage;
 #[cfg(target_os = "macos")]
 use command::blocking::Command;
 use futures::Future;
+use instant::Instant;
 use itertools::Itertools;
 use lazy_static::lazy_static;
 pub(crate) use onboarding::OnboardingTutorial;
@@ -209,7 +210,7 @@ use crate::ai::blocklist::{
     BlocklistAIHistoryEvent, FORK_PREFIX, PendingAttachment, PendingQueryState, QueuedQueryOrigin,
     SerializedBlockListItem, SlashCommandRequest,
 };
-use crate::ai::cloud_agent_settings::CloudAgentSettings;
+use crate::ai::cloud_agent_settings::{AuthSecretPreference, CloudAgentSettings};
 #[cfg(target_family = "wasm")]
 use crate::ai::conversation_details_panel::ConversationDetailsPanel;
 use crate::ai::conversation_utils;
@@ -402,6 +403,7 @@ use crate::terminal::ligature_settings::should_use_ligature_rendering;
 #[cfg(feature = "local_tty")]
 use crate::terminal::local_tty::docker_sandbox::resolve_sbx_path_from_user_shell;
 use crate::terminal::model::blockgrid::BlockGrid;
+use crate::terminal::model::escape_sequences::C0;
 #[cfg(feature = "local_fs")]
 use crate::terminal::model::session::Session;
 use crate::terminal::model::session::SessionId;
@@ -538,7 +540,8 @@ use crate::workspace::view::orchestration_launch_modal::{
 };
 use crate::workspace::view::right_panel::{RightPanelEvent, RightPanelView};
 use crate::workspace::{ForkFromExchange, ForkedConversationDestination};
-use crate::workspaces::user_workspaces::UserWorkspaces;
+use crate::workspaces::update_manager::TeamUpdateManager;
+use crate::workspaces::user_workspaces::{ResolvedTeamScope, UserWorkspaces};
 use crate::workspaces::workspace::AdminEnablementSetting;
 use crate::{
     AgentNotificationsModel, BlocklistAIHistoryModel, GlobalResourceHandles, TelemetryEvent,
@@ -597,6 +600,27 @@ const THEME_CHOOSER_RATIO: f32 = 3.5;
 pub(crate) const TAB_BAR_POSITION_ID: &str = "workspace_view:tab_bar";
 const TEAM_SWITCHER_PILL_POSITION_ID: &str = "workspace_view:team_switcher_pill";
 const TEAM_SWITCHER_DOT_ALPHA: u8 = 204;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TeamNavigationMode {
+    Hidden,
+    BrowseTeams,
+    TeamSwitcher,
+}
+
+fn team_navigation_mode(
+    has_current_team: bool,
+    has_teams: bool,
+    can_switch_teams: bool,
+    has_joinable_teams: bool,
+) -> TeamNavigationMode {
+    if has_current_team && (can_switch_teams || has_joinable_teams) {
+        TeamNavigationMode::TeamSwitcher
+    } else if !has_teams && has_joinable_teams {
+        TeamNavigationMode::BrowseTeams
+    } else {
+        TeamNavigationMode::Hidden
+    }
+}
 
 /// Save position for the vertical tabs panel.
 /// HOA onboarding callouts anchor relative to this position, so whichever code
@@ -665,6 +689,7 @@ pub(crate) const TOGGLE_CONVERSATION_LIST_VIEW_BINDING_NAME: &str =
 pub(crate) const NEW_TAB_BINDING_NAME: &str = "workspace:new_tab";
 pub(crate) const NEW_TERMINAL_TAB_BINDING_NAME: &str = "workspace:new_terminal_tab";
 pub(crate) const NEW_FILE_BINDING_NAME: &str = "workspace:new_file";
+pub(crate) const NEW_WINDOW_BINDING_NAME: &str = "workspace:new_window";
 pub(crate) const NEW_AGENT_TAB_BINDING_NAME: &str = "workspace:new_agent_tab";
 pub(crate) const NEW_AMBIENT_AGENT_TAB_BINDING_NAME: &str = "workspace:new_ambient_agent_tab";
 pub(crate) const TOGGLE_TAB_CONFIGS_MENU_BINDING_NAME: &str = "workspace:toggle_tab_configs_menu";
@@ -1065,6 +1090,7 @@ pub struct Workspace {
     import_modal: ViewHandle<ImportModal>,
     theme_chooser_view: ViewHandle<ThemeChooser>,
     previous_theme: Option<ThemeKind>,
+    background_image_animation_start_time: Instant,
     reward_modal: ViewHandle<Modal<RewardView>>,
     reward_modal_pending: Option<RewardKind>,
     pub(crate) current_workspace_state: WorkspaceState,
@@ -1176,6 +1202,10 @@ pub struct Workspace {
     /// Pinned position for the vertical tabs callout so it doesn't move when
     /// the user toggles between vertical and horizontal tabs.
     hoa_vtabs_callout_pinned_position: Option<Vector2F>,
+    /// When true, this workspace was opened directly against a specific piece of content
+    /// (e.g. a shared session or a cloud conversation) rather than as a general-purpose
+    /// window. Such workspaces must not be retroactively wrapped in product onboarding.
+    opened_from_content_deep_link: bool,
     /// When true, this workspace was created to receive a transferred PaneGroup.
     /// The placeholder tab will be replaced when adopt_transferred_pane_group is called.
     pending_pane_group_transfer: bool,
@@ -1237,6 +1267,12 @@ fn whats_new_dot_visible(app: &AppContext) -> bool {
 }
 
 impl Workspace {
+    /// Whether this workspace was opened directly against a shared session, cloud
+    /// conversation, or similar deep-linked content.
+    pub(crate) fn opened_from_content_deep_link(&self) -> bool {
+        self.opened_from_content_deep_link
+    }
+
     pub fn is_tab_drag_preview(&self) -> bool {
         self.is_tab_drag_preview
     }
@@ -1526,10 +1562,15 @@ impl Workspace {
             .is_any_tab_group_being_renamed()
         {
             match event {
-                EditorEvent::Blurred | EditorEvent::Enter => {
+                EditorEvent::Enter => {
                     self.finish_tab_group_rename(ctx);
                 }
-                EditorEvent::Escape => {
+                // Blur discards rather than commits. Focus can leave this editor without
+                // the user ever ending the rename — #14241 is one such case — and
+                // committing then writes a half-typed fragment as the group's real,
+                // persisted name. Discarding loses nothing the user cannot retype, and
+                // Enter remains the way to confirm.
+                EditorEvent::Blurred | EditorEvent::Escape => {
                     self.cancel_tab_group_rename(ctx);
                 }
                 _ => {}
@@ -2887,6 +2928,7 @@ impl Workspace {
         let resizable_data = ResizableData::handle(ctx);
         let window_id = ctx.window_id();
         let has_horizontal_split = workspace_setting.has_horizontal_split();
+        let opened_from_content_deep_link = workspace_setting.is_content_deep_link();
 
         let (left_panel_size, right_panel_size) =
             compute_default_panel_widths(ctx, window_id, has_horizontal_split);
@@ -3450,6 +3492,7 @@ impl Workspace {
             ctrl_tab_palette,
             mouse_states: Default::default(),
             previous_theme: None,
+            background_image_animation_start_time: Instant::now(),
             settings_pane,
             theme_chooser_view,
             reward_modal,
@@ -3550,6 +3593,7 @@ impl Workspace {
             lightbox_view: None,
             hoa_onboarding_flow: None,
             hoa_vtabs_callout_pinned_position: None,
+            opened_from_content_deep_link,
             pending_pane_group_transfer: false,
             suppress_detach_panes_on_window_close: false,
             is_tab_drag_preview: false,
@@ -4049,7 +4093,7 @@ impl Workspace {
                 self.open_launch_config_window(window_template, ctx);
                 self.check_and_trigger_onboarding(ctx);
             }
-            NewWorkspaceSource::Session { options } => {
+            NewWorkspaceSource::Session { options, .. } => {
                 self.add_tab_with_pane_layout(
                     PanesLayout::SingleTerminal(options),
                     Arc::new(HashMap::new()),
@@ -4695,7 +4739,6 @@ impl Workspace {
     }
 
     /// Returns the type of simplified WASM tab bar content to display, if any.
-    /// Used to determine whether to show the simplified tab bar layout on WASM.
     #[cfg(target_family = "wasm")]
     fn get_simplified_wasm_tab_bar_content(
         &self,
@@ -4703,26 +4746,38 @@ impl Workspace {
     ) -> Option<SimplifiedWasmTabBarContent> {
         let pane_group = self.active_tab_pane_group().as_ref(ctx);
 
-        // Check if focused pane is a terminal with special state
         if let Some(terminal_view) = pane_group.focused_session_view(ctx) {
-            let model = terminal_view.as_ref(ctx).model.lock();
+            let view = terminal_view.as_ref(ctx);
+            let (is_transcript_viewer, is_sharer_or_viewer, model_task_id) = {
+                let model = view.model.lock();
+                (
+                    model.is_conversation_transcript_viewer(),
+                    model.shared_session_status().is_sharer_or_viewer(),
+                    model.ambient_agent_task_id(),
+                )
+            };
 
-            // Conversation transcript viewer takes priority
-            if model.is_conversation_transcript_viewer() {
+            if is_transcript_viewer {
                 return Some(SimplifiedWasmTabBarContent::ConversationTranscript {
-                    task_id: model.ambient_agent_task_id(),
+                    task_id: model_task_id,
                 });
             }
 
-            // Check for shared session (viewer or writer)
-            if model.shared_session_status().is_sharer_or_viewer() {
+            if is_sharer_or_viewer {
                 return Some(SimplifiedWasmTabBarContent::SharedSession {
-                    task_id: model.ambient_agent_task_id(),
+                    task_id: model_task_id,
+                });
+            }
+
+            // Owned HandoffCloudCloud restores leave NotShared without transcript-viewer
+            // status; deep-linked WASM workspaces still need the web conversation chrome.
+            if self.opened_from_content_deep_link {
+                return Some(SimplifiedWasmTabBarContent::ConversationTranscript {
+                    task_id: view.ambient_agent_task_id_for_details_panel(ctx),
                 });
             }
         }
 
-        // Check if focused pane is a Warp Drive object
         let focused_pane_id = pane_group.focused_pane_id(ctx);
         if focused_pane_id.is_warp_drive_object_pane() {
             return Some(SimplifiedWasmTabBarContent::WarpDriveObject);
@@ -6168,18 +6223,28 @@ impl Workspace {
     fn show_team_switcher_dropdown(&mut self, ctx: &mut ViewContext<Self>) {
         let window_id = self.window_id;
         let user_workspaces = UserWorkspaces::as_ref(ctx);
-        // Only meaningful when the user can switch teams.
-        if !user_workspaces.can_switch_teams() {
-            return;
-        }
         let Some(workspace) = user_workspaces.current_workspace() else {
             return;
         };
+        let joinable_team_count = if workspace.is_native_workspaces_enabled() {
+            workspace.joinable_teams().count()
+        } else {
+            0
+        };
+        if !user_workspaces.can_switch_teams() && joinable_team_count == 0 {
+            return;
+        }
+        if user_workspaces.team_for_window(window_id).is_none() {
+            return;
+        }
         let current_team_uid = user_workspaces.team_uid_for_window(window_id);
         let mut items: Vec<MenuItem<WorkspaceAction>> = vec![
-            MenuItemFields::new("Switch team")
-                .with_disabled(true)
-                .into_item(),
+            MenuItem::Header {
+                fields: MenuItemFields::new("Teams"),
+                clickable: false,
+                right_side_fields: None,
+            },
+            MenuItem::Separator,
         ];
         items.extend(workspace.teams.iter().map(|team| {
             let uid = team.uid;
@@ -6192,6 +6257,19 @@ impl Workspace {
             };
             fields.into_item()
         }));
+        if joinable_team_count > 0 {
+            items.push(MenuItem::Separator);
+            items.push(
+                MenuItemFields::new("Browse teams")
+                    .with_icon(icons::Icon::Search)
+                    .with_right_side_label(
+                        format!("{joinable_team_count} available"),
+                        Properties::default(),
+                    )
+                    .with_on_select_action(WorkspaceAction::BrowseTeams)
+                    .into_item(),
+            );
+        }
         self.team_switcher_menu
             .update(ctx, |menu, ctx| menu.set_items(items, ctx));
         self.show_team_switcher_menu = true;
@@ -6199,47 +6277,57 @@ impl Workspace {
         ctx.notify();
     }
 
-    /// Renders the team-switcher pill shown in the title-bar top-right, to the
-    /// left of the right-side toolbar actions
     fn render_team_switcher_pill(
         &self,
         appearance: &Appearance,
         ctx: &AppContext,
     ) -> Option<Box<dyn Element>> {
         let user_workspaces = UserWorkspaces::as_ref(ctx);
-        // Only show when the user has access to more than one team available to them.
-        if !user_workspaces.can_switch_teams() {
-            return None;
-        }
-        let current_team = user_workspaces.team_for_window(self.window_id)?;
-        let team_name = current_team.name.clone();
-        let team_color_hex = current_team.color.clone();
+        let current_team = user_workspaces.team_for_window(self.window_id);
+        let has_joinable_teams = user_workspaces
+            .current_workspace()
+            .is_some_and(|workspace| {
+                workspace.is_native_workspaces_enabled()
+                    && workspace.joinable_teams().next().is_some()
+            });
+        let mode = team_navigation_mode(
+            current_team.is_some(),
+            user_workspaces.has_teams(),
+            user_workspaces.can_switch_teams(),
+            has_joinable_teams,
+        );
         let theme = appearance.theme();
         let text_color = theme.foreground();
         let pill_bg_normal = internal_colors::fg_overlay_1(theme);
         let pill_bg_hover = internal_colors::fg_overlay_2(theme);
-
-        // Parse the team color for the dot; fall back to a neutral theme grey
-        // (matching the server contract / admin UI default) if invalid/missing.
-        let mut dot_color = team_color_hex
-            .as_deref()
-            .and_then(|hex| warp_core::ui::color::hex_color::coloru_from_hex_string(hex).ok())
-            .unwrap_or_else(|| internal_colors::neutral_5(theme));
-        dot_color.a = TEAM_SWITCHER_DOT_ALPHA;
+        let (label, dot_color, action) = match mode {
+            TeamNavigationMode::Hidden => return None,
+            TeamNavigationMode::BrowseTeams => (
+                "Browse teams".to_string(),
+                None,
+                WorkspaceAction::BrowseTeams,
+            ),
+            TeamNavigationMode::TeamSwitcher => {
+                let current_team = current_team?;
+                let mut dot_color = current_team
+                    .color
+                    .as_deref()
+                    .and_then(|hex| {
+                        warp_core::ui::color::hex_color::coloru_from_hex_string(hex).ok()
+                    })
+                    .unwrap_or_else(|| internal_colors::neutral_5(theme));
+                dot_color.a = TEAM_SWITCHER_DOT_ALPHA;
+                (
+                    current_team.name.clone(),
+                    Some(dot_color),
+                    WorkspaceAction::ShowTeamSwitcherMenu,
+                )
+            }
+        };
 
         let pill = Hoverable::new(self.mouse_states.team_switcher_pill.clone(), move |state| {
-            let dot = ConstrainedBox::new(
-                Rect::new()
-                    .with_background(Fill::Solid(dot_color))
-                    .with_corner_radius(CornerRadius::with_all(Radius::Percentage(50.)))
-                    .finish(),
-            )
-            .with_width(8.)
-            .with_height(8.)
-            .finish();
-
             let name_text = Text::new_inline(
-                team_name.clone(),
+                label.clone(),
                 appearance.ui_font_family(),
                 appearance.ui_font_size(),
             )
@@ -6247,14 +6335,25 @@ impl Workspace {
             .with_clip(ClipConfig::ellipsis())
             .finish();
 
-            let row = Flex::row()
+            let mut row = Flex::row()
                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                .with_spacing(4.)
-                .with_child(dot)
-                .with_child(ConstrainedBox::new(name_text).with_max_width(120.).finish())
-                .finish();
+                .with_spacing(4.);
+            if let Some(dot_color) = dot_color {
+                row.add_child(
+                    ConstrainedBox::new(
+                        Rect::new()
+                            .with_background(Fill::Solid(dot_color))
+                            .with_corner_radius(CornerRadius::with_all(Radius::Percentage(50.)))
+                            .finish(),
+                    )
+                    .with_width(8.)
+                    .with_height(8.)
+                    .finish(),
+                );
+            }
+            row.add_child(ConstrainedBox::new(name_text).with_max_width(120.).finish());
 
-            Container::new(row)
+            Container::new(row.finish())
                 .with_background(if state.is_hovered() {
                     pill_bg_hover
                 } else {
@@ -6268,8 +6367,8 @@ impl Workspace {
                 .finish()
         })
         .with_cursor(Cursor::PointingHand)
-        .on_click(|ctx, _, _| {
-            ctx.dispatch_typed_action(WorkspaceAction::ShowTeamSwitcherMenu);
+        .on_click(move |ctx, _, _| {
+            ctx.dispatch_typed_action(action.clone());
         })
         .finish();
 
@@ -7362,6 +7461,18 @@ impl Workspace {
         if let Some(group) = self.tab_groups.get_mut(&group_id) {
             group.collapsed = false;
             ctx.notify();
+        }
+    }
+
+    pub(crate) fn is_inline_rename_editor_focused(&self, ctx: &AppContext) -> bool {
+        match ctx.focused_view_id(self.window_id) {
+            Some(id) if id == self.tab_rename_editor.id() => {
+                self.current_workspace_state.is_tab_being_renamed()
+            }
+            Some(id) if id == self.tab_group_rename_editor.id() => self
+                .current_workspace_state
+                .is_any_tab_group_being_renamed(),
+            _ => false,
         }
     }
 
@@ -9454,9 +9565,11 @@ impl Workspace {
         self.current_workspace_state.is_agent_management_view_open = is_open;
         let window_id = self.window_id;
         let view_id = self.agent_management_view.id();
-        AgentConversationsModel::handle(ctx).update(ctx, |model, ctx| {
+        let team_context_resolver =
+            UserWorkspaces::team_context_resolver(self.agent_management_view.downgrade());
+        AgentConversationsModel::handle(ctx).update(ctx, move |model, ctx| {
             if is_open {
-                model.register_view_open(window_id, view_id, ctx);
+                model.register_view_open(window_id, view_id, team_context_resolver, ctx);
             } else {
                 model.register_view_closed(window_id, view_id, ctx);
             }
@@ -15461,11 +15574,15 @@ impl Workspace {
             | AuthSecretFtuxViewEvent::Created { harness, name } => {
                 let harness = *harness;
                 let name = name.clone();
+                let team_scope = UserWorkspaces::as_ref(ctx).team_context_for_operation(ctx);
                 CloudAgentSettings::handle(ctx).update(ctx, |settings, ctx| {
                     settings.mark_harness_auth_ftux_completed(harness, ctx);
-                    let mut map = settings.last_selected_auth_secret.value().clone();
-                    map.insert(harness.config_name().to_string(), name);
-                    let _ = settings.last_selected_auth_secret.set_value(map, ctx);
+                    settings.persist_auth_secret_preference(
+                        &team_scope,
+                        harness,
+                        Some(AuthSecretPreference::Named(name)),
+                        ctx,
+                    );
                 });
                 me.dismiss_create_auth_secret_modal(ctx);
             }
@@ -15894,6 +16011,7 @@ impl Workspace {
             forked_conversation_id,
             title,
             request,
+            team_scope,
             cancel,
         } = materialization;
         let local_fork = source_conversation
@@ -15922,8 +16040,12 @@ impl Workspace {
             ctx,
         );
         let handoff_terminal_view_id = model_handle.as_ref(ctx).terminal_view_id();
+        let scope = ResolvedTeamScope::from_scope(
+            &UserWorkspaces::as_ref(ctx).team_context_for_window(source_view.window_id(ctx)),
+        );
         LLMPreferences::handle(ctx).update(ctx, |preferences, ctx| {
             preferences.update_preferred_agent_mode_llm(
+                &scope,
                 &HandoffLLMId::from(presentation.model_id.as_str()),
                 handoff_terminal_view_id,
                 ctx,
@@ -15960,7 +16082,7 @@ impl Workspace {
         }
         model_handle.update(ctx, |model, ctx| {
             model.set_environment_id(presentation.environment_id, ctx);
-            model.begin_local_to_cloud_handoff(request, cancel, ctx);
+            model.begin_local_to_cloud_handoff(request, team_scope, cancel, ctx);
         });
 
         if let Ok(mut slot) = model_slot.lock() {
@@ -17354,6 +17476,15 @@ impl Workspace {
             return;
         }
 
+        if query_filter.is_none()
+            && let Some(terminal_view_handle) = self.active_session_view(ctx)
+            && terminal_view_handle.update(ctx, |terminal_view, ctx| {
+                terminal_view.maybe_trigger_external_ctrl_r_history_search(ctx)
+            })
+        {
+            return;
+        }
+
         // Close all overlays including chip menus before opening command search
         self.close_all_overlays(ctx);
 
@@ -17428,6 +17559,21 @@ impl Workspace {
             ctx.focus(&self.command_search_view);
         } else {
             report_error!("Command search keybinding triggered but no session is active!");
+        }
+    }
+
+    /// If the active session's shell has rebound ctrl-t to an external file-search widget
+    /// (e.g. fzf), hands the keypress off to it.
+    fn trigger_external_ctrl_t_file_search(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.is_readonly_shared_session_active(ctx) {
+            return;
+        }
+        if let Some(terminal_view_handle) = self.active_session_view(ctx) {
+            terminal_view_handle.update(ctx, |terminal_view, ctx| {
+                if !terminal_view.maybe_trigger_external_ctrl_t_file_search(ctx) {
+                    terminal_view.write_user_bytes_to_pty(vec![C0::DC4], ctx);
+                }
+            });
         }
     }
 
@@ -18157,14 +18303,6 @@ impl Workspace {
                             ctx.notify();
                         });
                     }
-                    AcceptNotebook(sync_id) => {
-                        self.open_notebook(
-                            &NotebookSource::Existing(*sync_id),
-                            &OpenWarpDriveObjectSettings::default(),
-                            ctx,
-                            true,
-                        );
-                    }
                     AcceptEnvVarCollection(env_var_collection) => {
                         self.invoke_environment_variables(
                             (**env_var_collection).clone(),
@@ -18234,6 +18372,12 @@ impl Workspace {
         match event {
             WindowSettingsChangedEvent::BackgroundOpacity { .. } => {
                 ctx.notify();
+            }
+            WindowSettingsChangedEvent::BackgroundBackdrop { .. } => {
+                let backdrop = *WindowSettings::as_ref(ctx).background_backdrop;
+                if let Some(window) = ctx.windows().platform_window(ctx.window_id()) {
+                    window.set_background_backdrop(backdrop);
+                }
             }
             WindowSettingsChangedEvent::LeftPanelVisibilityAcrossTabs { .. } => {
                 if self.left_panel_visibility_across_tabs_enabled(ctx) {
@@ -18703,6 +18847,17 @@ impl Workspace {
     ) {
         self.close_all_overlays(ctx);
         self.open_settings_pane(section, Some(search_query), ctx);
+    }
+    fn browse_teams(&mut self, ctx: &mut ViewContext<Self>) {
+        let show_join_modal = UserWorkspaces::as_ref(ctx)
+            .team_for_window(self.window_id)
+            .is_some();
+        self.show_settings_with_section(Some(SettingsSection::Teams), ctx);
+        if show_join_modal {
+            self.settings_pane.update(ctx, |view, ctx| {
+                view.open_teams_page_join_modal(ctx);
+            });
+        }
     }
 
     /// Opens the team settings page and fills the invite field with the given email. This is used when linking directing to
@@ -19271,6 +19426,12 @@ impl Workspace {
     }
 
     pub fn open_prompt_suggestions_unavailable_modal(&mut self, ctx: &mut ViewContext<Self>) {
+        // Same free-AI-removal messaging as the startup notice, so it's equally
+        // out of place on WASM (e.g. an executor-role shared-session viewer).
+        if cfg!(target_family = "wasm") {
+            return;
+        }
+
         self.current_workspace_state
             .is_prompt_suggestions_unavailable_modal_open = true;
         send_telemetry_from_ctx!(
@@ -19316,8 +19477,12 @@ impl Workspace {
                     return;
                 };
 
+                let scope = ResolvedTeamScope::from_scope(
+                    &UserWorkspaces::as_ref(ctx)
+                        .team_context_for_window(terminal_view.window_id(ctx)),
+                );
                 let Some(codex_model_id) = LLMPreferences::as_ref(ctx)
-                    .get_preferred_codex_model()
+                    .get_preferred_codex_model(&scope, ctx)
                     .map(|info| info.id.clone())
                 else {
                     report_error!("No preferred codex model found");
@@ -23064,6 +23229,16 @@ impl Workspace {
                 .insert(flags::COMPLETIONS_OPEN_WHILE_TYPING_CONTEXT_FLAG);
         }
 
+        if *input_settings.warp_completions_enabled.value() {
+            context.set.insert(flags::WARP_COMPLETIONS_CONTEXT_FLAG);
+        }
+
+        if *input_settings.native_shell_completions_enabled.value() {
+            context
+                .set
+                .insert(flags::NATIVE_SHELL_COMPLETIONS_CONTEXT_FLAG);
+        }
+
         if *input_settings.command_corrections.value() {
             context.set.insert(flags::COMMAND_CORRECTIONS_CONTEXT_FLAG);
         }
@@ -23138,10 +23313,6 @@ impl Workspace {
         }
         if *window_settings.open_windows_at_custom_size {
             context.set.insert(flags::OPEN_WINDOWS_AT_CUSTOM_SIZE_FLAG);
-        }
-
-        if *window_settings.background_blur_texture {
-            context.set.insert(flags::WINDOW_BLUR_TEXTURE_FLAG);
         }
 
         if *window_settings.left_panel_visibility_across_tabs {
@@ -24459,6 +24630,7 @@ impl TypedActionView for Workspace {
                 filter,
                 init_content,
             }) => self.show_command_search(*filter, init_content, ctx),
+            TriggerExternalCtrlTFileSearch => self.trigger_external_ctrl_t_file_search(ctx),
             ImportToPersonalDrive => {
                 if let Some(personal_drive) = UserWorkspaces::as_ref(ctx).personal_drive(ctx) {
                     self.open_import_modal(personal_drive, &None, ctx);
@@ -26317,23 +26489,41 @@ impl TypedActionView for Workspace {
             }
             OpenNewWindowForTeam { team_uid } => {
                 let team_uid = *team_uid;
-                let existing_window_id = ctx
-                    .windows()
-                    .ordered_window_ids()
-                    .into_iter()
-                    .chain(ctx.window_ids())
-                    .find(|window_id| {
-                        UserWorkspaces::as_ref(ctx).team_uid_for_window(*window_id)
-                            == Some(team_uid)
+                TeamUpdateManager::handle(ctx).update(ctx, |manager, ctx| {
+                    std::mem::drop(manager.refresh_workspace_metadata(ctx));
+                });
+                #[cfg(target_family = "wasm")]
+                {
+                    // WASM hosts a single window; creating another replaces #wasm-container
+                    // and orphans the live session.
+                    UserWorkspaces::handle(ctx).update(ctx, |user_workspaces, ctx| {
+                        user_workspaces.switch_window_to_team(self.window_id, team_uid, ctx);
                     });
-                if let Some(window_id) = existing_window_id {
-                    ctx.windows().show_window_and_focus_app(window_id);
-                } else {
-                    crate::root_view::open_new_with_workspace_source(
-                        NewWorkspaceSource::TeamSwitched { team_uid },
-                        ctx,
-                    );
+                    ctx.notify();
                 }
+                #[cfg(not(target_family = "wasm"))]
+                {
+                    let existing_window_id = ctx
+                        .windows()
+                        .ordered_window_ids()
+                        .into_iter()
+                        .chain(ctx.window_ids())
+                        .find(|window_id| {
+                            UserWorkspaces::as_ref(ctx).team_uid_for_window(*window_id)
+                                == Some(team_uid)
+                        });
+                    if let Some(window_id) = existing_window_id {
+                        ctx.windows().show_window_and_focus_app(window_id);
+                    } else {
+                        crate::root_view::open_new_with_workspace_source(
+                            NewWorkspaceSource::TeamSwitched { team_uid },
+                            ctx,
+                        );
+                    }
+                }
+            }
+            BrowseTeams => {
+                self.browse_teams(ctx);
             }
             ShowTeamSwitcherMenu => {
                 self.show_team_switcher_dropdown(ctx);
@@ -26573,7 +26763,10 @@ impl View for Workspace {
         }
 
         #[cfg(target_family = "wasm")]
-        if self.is_conversation_transcript_viewer_focused(app) {
+        if matches!(
+            self.get_simplified_wasm_tab_bar_content(app),
+            Some(SimplifiedWasmTabBarContent::ConversationTranscript { .. })
+        ) {
             context.set.insert("Workspace_CloudConversationWebViewer");
         }
 
@@ -27690,6 +27883,9 @@ impl View for Workspace {
                             .cover()
                             .with_opacity(opacity_ratio)
                             .with_corner_radius(window_corner_radius)
+                            .enable_animation_with_start_time(
+                                self.background_image_animation_start_time,
+                            )
                             .finish(),
                     )
                     .finish(),

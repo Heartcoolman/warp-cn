@@ -26,7 +26,7 @@ use std::sync::Arc;
 use ai::agent::action::{AskUserQuestionItem, InsertReviewComment, RunAgentsRequest};
 use ai::document::DEFAULT_PLANNING_DOCUMENT_TITLE;
 use base64::Engine as _;
-use chrono::Duration;
+use chrono::{DateTime, Duration, Local};
 use cli_controller::{CLISubagentController, CLISubagentEvent};
 use find::FindState;
 use indexmap::IndexMap;
@@ -39,9 +39,9 @@ pub use pending_user_query_block::{PendingUserQueryBlock, PendingUserQueryBlockE
 #[cfg(not(target_family = "wasm"))]
 use repo_metadata::repositories::DetectedRepositories;
 use rustc_hash::FxHashSet;
-use secret_redaction::*;
 use serde::Serialize;
 use settings::Setting as _;
+use string_offset::StringRange;
 use warp_core::channel::ChannelState;
 use warp_core::features::FeatureFlag;
 use warp_core::ui::theme::Fill;
@@ -53,12 +53,12 @@ use warp_editor::render::element::VerticalExpansionBehavior;
 use warp_errors::{report_error, report_if_error};
 use warp_util::local_or_remote_path::LocalOrRemotePath;
 use warp_util::path::ShellFamily;
-use warpui::assets::asset_cache::AssetCache;
+use warpui::assets::asset_cache::{AssetCache, AssetSource};
 use warpui::r#async::{SpawnedFutureHandle, Timer};
 use warpui::clipboard::ClipboardContent;
 use warpui::elements::{
-    ClippedScrollStateHandle, MainAxisAlignment, MainAxisSize, MouseStateHandle, SecretRange,
-    SelectionBound, SelectionHandle, TableStateHandle, get_rich_content_position_id,
+    ClippedScrollStateHandle, MainAxisAlignment, MainAxisSize, MouseStateHandle, SelectionBound,
+    SelectionHandle, TableStateHandle, get_rich_content_position_id,
 };
 use warpui::image_cache::ImageType;
 use warpui::keymap::FixedBinding;
@@ -72,6 +72,7 @@ use warpui::{
 };
 
 use self::model::{AIBlockModel, AIBlockModelHelper};
+use self::secret_redaction::*;
 use super::action_model::{AIActionStatus, BlocklistAIActionEvent, RequestFileEditsFormatKind};
 use super::code_block::CodeSnippetButtonHandles;
 use super::controller::ClientIdentifiers;
@@ -85,8 +86,8 @@ use super::suggested_agent_mode_workflow_modal::SuggestedAgentModeWorkflowAndId;
 use super::suggested_rule_modal::SuggestedRuleAndId;
 use super::telemetry_banner::should_collect_ai_ugc_telemetry;
 use super::{
-    BlocklistAIActionModel, BlocklistAIController, BlocklistAIHistoryEvent,
-    BlocklistAIHistoryModel, BlocklistAIPermissions, ResponseStreamId,
+    BlocklistAIActionModel, BlocklistAIController, BlocklistAIHistoryModel, BlocklistAIPermissions,
+    ResponseStreamId,
 };
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::agent::redaction::redact_secrets;
@@ -97,9 +98,9 @@ use crate::ai::agent::{
     AIAgentOutputMessageType, AIAgentTextSection, AIIdentifiers, CancellationReason,
     CreateDocumentsRequest, CreateDocumentsResult, DocumentToCreate, EditDocumentsResult,
     MessageId, PassiveSuggestionTrigger, ProgrammingLanguage, RenderableAIError,
-    RequestCommandOutputResult, RequestFileEditsResult, SearchCodebaseResult, ServerOutputId,
-    SubagentCall, SubagentType, SuggestPromptRequest, SuggestPromptResult, SuggestedLoggingId,
-    SummarizationType, TodoOperation,
+    RequestCommandOutputResult, RequestFileEditsResult, ScreenshotSource, SearchCodebaseResult,
+    ServerOutputId, SubagentCall, SubagentType, SuggestPromptRequest, SuggestPromptResult,
+    SuggestedLoggingId, SummarizationType, TodoOperation,
 };
 use crate::ai::agent_conversations_model::{AgentConversationsModel, AgentConversationsModelEvent};
 use crate::ai::ambient_agents::AmbientAgentTaskId;
@@ -153,6 +154,7 @@ use crate::ai::get_relevant_files::controller::{
 #[cfg(feature = "local_fs")]
 use crate::ai::skills::SkillOpenOrigin;
 use crate::ai::skills::{SkillManager, SkillTelemetryEvent};
+use crate::ai::stored_screenshots::stored_screenshot_asset_source;
 use crate::ai::{AIRequestUsageModel, AIRequestUsageModelEvent};
 use crate::auth::{AuthStateProvider, UserUid};
 use crate::cloud_object::model::generic_string_model::GenericStringObjectId;
@@ -198,6 +200,7 @@ use crate::ui_components::icons::Icon;
 use crate::util::link_detection::*;
 #[cfg(feature = "local_fs")]
 use crate::util::openable_file_type::{FileTarget, is_supported_image_file};
+use crate::util::time_format::format_message_timestamp;
 use crate::view_components::DismissibleToast;
 use crate::view_components::action_button::{
     ActionButton, ActionButtonTheme, ButtonSize, KeystrokeSource, NakedTheme, PrimaryTheme,
@@ -475,6 +478,7 @@ pub(super) struct AIBlockStateHandles {
 
     /// Mouse state handle for the overflow menu button
     overflow_menu_handle: MouseStateHandle,
+    query_timestamp_tooltip_handle: MouseStateHandle,
 
     menu_accept_button_handle: MouseStateHandle,
     menu_reject_button_handle: MouseStateHandle,
@@ -984,6 +988,7 @@ pub struct AIBlock {
 
     time_to_first_token: OnceCell<Duration>,
     time_to_last_token: Option<Duration>,
+    receives_live_output_updates: bool,
 
     /// The number of blocks that were attached as context to this AI block's query.
     num_attached_context_blocks: usize,
@@ -1222,7 +1227,8 @@ impl AIBlock {
                     ctx.notify();
                 }
                 AISettingsChangedEvent::ThinkingDisplayMode { .. }
-                | AISettingsChangedEvent::OrchestrationMessageDisplayMode { .. } => {
+                | AISettingsChangedEvent::OrchestrationMessageDisplayMode { .. }
+                | AISettingsChangedEvent::UsageDisplayUnit { .. } => {
                     ctx.notify();
                 }
                 _ => {}
@@ -1317,29 +1323,6 @@ impl AIBlock {
                 }
             }
         });
-
-        // Note: UpdatedStreamingExchange is handled by the dedicated on_updated_output()
-        // callback in model_impl.rs, so we don't need to respond to it here.
-        ctx.subscribe_to_model(
-            &BlocklistAIHistoryModel::handle(ctx),
-            |me, _, event, ctx| {
-                if event
-                    .terminal_surface_id()
-                    .is_none_or(|id| id == me.terminal_view_id)
-                {
-                    match event {
-                        BlocklistAIHistoryEvent::AppendedExchange { .. }
-                        | BlocklistAIHistoryEvent::UpdatedTodoList { .. }
-                        | BlocklistAIHistoryEvent::UpdatedAutoexecuteOverride { .. }
-                        | BlocklistAIHistoryEvent::StartedNewConversation { .. }
-                        | BlocklistAIHistoryEvent::SetActiveConversation { .. } => {
-                            ctx.notify();
-                        }
-                        _ => {}
-                    }
-                }
-            },
-        );
 
         ctx.subscribe_to_model(
             cli_subagent_controller,
@@ -1497,6 +1480,7 @@ impl AIBlock {
         }
 
         let is_passive = model.request_type(ctx).is_passive();
+        let receives_live_output_updates = model.status(ctx).is_streaming();
 
         let mut me = Self {
             model,
@@ -1517,6 +1501,7 @@ impl AIBlock {
             state_handles: Default::default(),
             time_to_first_token: OnceCell::new(),
             time_to_last_token: None,
+            receives_live_output_updates,
             num_attached_context_blocks,
             has_attached_context_selected_text,
             finish_reason: None,
@@ -1578,9 +1563,8 @@ impl AIBlock {
         me.run_secret_redaction_on_user_query(me.client_ids.conversation_id, ctx);
         me.spawn_link_detection(ctx);
 
-        if me.model.status(ctx).is_streaming() {
-            me.model
-                .on_updated_output(Box::new(Self::on_output_status_update), ctx);
+        if let AIBlockOutputStatus::PartiallyReceived { output } = me.model.status(ctx) {
+            me.handle_updated_output(&output.get(), ctx);
         } else if let Some(output) = me.model.status(ctx).output_to_render() {
             // "Simulate" receiving this output if output is already complete.
             let output = output.get();
@@ -1619,6 +1603,14 @@ impl AIBlock {
         self.directory_context.pwd = pwd;
         self.directory_context.home_dir = home_dir;
         ctx.notify();
+    }
+
+    pub(crate) fn contains_todo_list(&self) -> bool {
+        !self.todo_list_states.is_empty()
+    }
+
+    pub(crate) fn receives_live_output_updates(&self) -> bool {
+        self.receives_live_output_updates
     }
 
     /// Set the shell launch data for this block, re-running link detection on the
@@ -1881,7 +1873,7 @@ impl AIBlock {
         })
     }
 
-    fn on_output_status_update(&mut self, ctx: &mut ViewContext<Self>) {
+    pub(crate) fn handle_history_output_update(&mut self, ctx: &mut ViewContext<Self>) {
         if let Some(latency) = self.model.time_since_request_start(ctx) {
             // Since this is a OnceCell, we'll only set time_to_first_token to the
             // latency of the first output received.
@@ -3911,6 +3903,7 @@ impl AIBlock {
                 document.title.clone()
             };
 
+            let will_auto_open = !opened_first;
             let (document_id, created_new) = model_handle.update(ctx, |model, model_ctx| {
                 let (document_id, created_new) = model
                     .get_or_create_streaming_document_for_create_documents(
@@ -3920,6 +3913,7 @@ impl AIBlock {
                         &title,
                         document.content.clone(),
                         file_link_resolution_context.clone(),
+                        will_auto_open,
                         model_ctx,
                     );
                 if !created_new {
@@ -3933,7 +3927,7 @@ impl AIBlock {
                 (document_id, created_new)
             });
 
-            if created_new && !opened_first {
+            if created_new && will_auto_open {
                 ctx.emit(AIBlockEvent::OpenAIDocumentPane {
                     document_id,
                     document_version: AIDocumentVersion::default(),
@@ -4503,6 +4497,10 @@ impl AIBlock {
 
     pub fn output_status(&self, app: &AppContext) -> AIBlockOutputStatus {
         self.model.status(app)
+    }
+
+    pub fn query_sent_at(&self, app: &AppContext) -> Option<DateTime<Local>> {
+        self.model.query_sent_at(app)
     }
 
     /// Returns `true` if this AI block contains user input.
@@ -5371,7 +5369,7 @@ impl AIBlock {
     fn show_secret_tooltip(
         &mut self,
         location: &TextLocation,
-        secret_range: &SecretRange,
+        secret_range: &StringRange,
         ctx: &mut ViewContext<Self>,
     ) {
         if let Some(hoverable_secret) = self
@@ -5395,7 +5393,7 @@ impl AIBlock {
     pub fn set_secret_redaction_state(
         &mut self,
         location: &TextLocation,
-        secret_range: &SecretRange,
+        secret_range: &StringRange,
         is_obfuscated: bool,
     ) {
         self.secret_redaction_state
@@ -5705,7 +5703,7 @@ impl AIBlock {
 
         // Get the model name from the input metadata.
         let mut model_name = LLMPreferences::as_ref(app)
-            .get_llm_info(base_model_id)
+            .get_llm_info(base_model_id, app)
             .map(|info| info.display_name.clone())
             .unwrap_or_default();
 
@@ -5714,7 +5712,7 @@ impl AIBlock {
             let model_id = self.model.model_id(app);
             if let Some(model_id) = model_id
                 && let Some(output_model_name) = LLMPreferences::as_ref(app)
-                    .get_llm_info(&model_id)
+                    .get_llm_info(&model_id, app)
                     .map(|info| info.display_name.clone())
             {
                 model_name = output_model_name;
@@ -6323,7 +6321,7 @@ pub enum AIBlockAction {
         location: TextLocation,
     },
     ChangedHoverOnSecret {
-        secret_range: SecretRange,
+        secret_range: StringRange,
         location: TextLocation,
         is_hovering: bool,
     },
@@ -6332,7 +6330,7 @@ pub enum AIBlockAction {
         location: TextLocation,
     },
     OpenSecretTooltip {
-        secret_range: SecretRange,
+        secret_range: StringRange,
         location: TextLocation,
     },
     OpenCitation(AIAgentCitation),
@@ -6366,6 +6364,7 @@ pub enum AIBlockAction {
     /// Copy the content from the previous user query.
     /// Note that this block may not have the user query.
     CopyQuery,
+    CopyTimestamp,
     /// Copy all AI output from the previous user query to the next user query.
     /// Note that this contains more than just this block, since from the user perspective everything after the user query appears like one block.
     CopyOutput,
@@ -6444,6 +6443,30 @@ fn open_code_action_event(
             layout,
         },
     }
+}
+
+/// The raw-asset cache ID under which a UseComputer action's screenshot bytes are stored.
+fn screenshot_asset_id(action_id: &AIAgentActionId) -> String {
+    format!("screenshot-{action_id}")
+}
+
+/// Opens the lightbox over the given screenshot asset sources.
+fn open_screenshot_lightbox(
+    sources: Vec<AssetSource>,
+    initial_index: usize,
+    ctx: &mut ViewContext<AIBlock>,
+) {
+    let images = sources
+        .into_iter()
+        .map(|asset_source| ui_components::lightbox::LightboxImage {
+            source: ui_components::lightbox::LightboxImageSource::Resolved { asset_source },
+            description: None,
+        })
+        .collect();
+    ctx.dispatch_typed_action(&WorkspaceAction::OpenLightbox {
+        images,
+        initial_index,
+    });
 }
 
 impl TypedActionView for AIBlock {
@@ -6871,6 +6894,14 @@ impl TypedActionView for AIBlock {
                 ctx.clipboard()
                     .write(ClipboardContent::plain_text(prompt_text));
             }
+            AIBlockAction::CopyTimestamp => {
+                if let Some(timestamp) = self.query_sent_at(ctx) {
+                    ctx.clipboard()
+                        .write(ClipboardContent::plain_text(format_message_timestamp(
+                            &timestamp,
+                        )));
+                }
+            }
             AIBlockAction::CopyOutput => {
                 // Copy all AI output from preceding user query until the next user query
                 let output_text = self.get_output_text_since_preceding_user_query(ctx);
@@ -7079,12 +7110,12 @@ impl TypedActionView for AIBlock {
                         .flat_map(|c| c.use_computer_action_ids())
                         .collect();
 
-                // Build lightbox images for each action that has a screenshot result.
+                let ai_client = ServerApiProvider::handle(ctx).as_ref(ctx).get_ai_client();
+
                 // We Arc::clone the result each iteration to release the immutable
                 // borrow on ctx, allowing the mutable AssetCache update in the same
                 // loop body. Arc::clone is just a refcount bump (no data copied).
-                let mut screenshot_action_ids: Vec<&AIAgentActionId> = Vec::new();
-                let mut images: Vec<ui_components::lightbox::LightboxImage> = Vec::new();
+                let mut screenshot_sources: Vec<(AIAgentActionId, AssetSource)> = Vec::new();
                 for action_id in &use_computer_action_ids {
                     let Some(result) = self
                         .action_model
@@ -7095,46 +7126,50 @@ impl TypedActionView for AIBlock {
                         continue;
                     };
                     let AIAgentActionResultType::UseComputer(
-                        crate::ai::agent::UseComputerResult::Success(computer_use::ActionResult {
-                            screenshot: Some(screenshot),
-                            ..
-                        }),
+                        crate::ai::agent::UseComputerResult::Success { screenshot, .. },
                     ) = &result.result
                     else {
                         continue;
                     };
-                    let asset_id = format!("screenshot-{action_id}");
-                    AssetCache::handle(ctx).update(ctx, |asset_cache, ctx| {
-                        asset_cache.insert_raw_asset_bytes::<ImageType>(
-                            asset_id.clone(),
-                            &screenshot.data,
-                            ctx,
-                        );
-                    });
-                    images.push(ui_components::lightbox::LightboxImage {
-                        source: ui_components::lightbox::LightboxImageSource::Resolved {
-                            asset_source: warpui::assets::asset_cache::AssetSource::Raw {
-                                id: asset_id,
-                            },
-                        },
-                        description: None,
-                    });
-                    screenshot_action_ids.push(action_id);
+                    match screenshot {
+                        Some(ScreenshotSource::Inline(screenshot)) => {
+                            let asset_id = screenshot_asset_id(action_id);
+                            AssetCache::handle(ctx).update(ctx, |asset_cache, ctx| {
+                                asset_cache.insert_raw_asset_bytes::<ImageType>(
+                                    asset_id.clone(),
+                                    &screenshot.data,
+                                    ctx,
+                                );
+                            });
+                            screenshot_sources
+                                .push((action_id.clone(), AssetSource::Raw { id: asset_id }));
+                        }
+                        Some(ScreenshotSource::Stored { stored_ref, .. }) => {
+                            screenshot_sources.push((
+                                action_id.clone(),
+                                stored_screenshot_asset_source(
+                                    stored_ref.clone(),
+                                    ai_client.clone(),
+                                ),
+                            ));
+                        }
+                        None => {}
+                    }
                 }
 
-                if images.is_empty() {
+                if screenshot_sources.is_empty() {
                     return;
                 }
 
-                let initial_index = screenshot_action_ids
+                let initial_index = screenshot_sources
                     .iter()
-                    .position(|id| *id == action_id)
+                    .position(|(id, _)| id == action_id)
                     .unwrap_or(0);
-
-                ctx.dispatch_typed_action(&WorkspaceAction::OpenLightbox {
-                    images,
-                    initial_index,
-                });
+                let sources = screenshot_sources
+                    .into_iter()
+                    .map(|(_, source)| source)
+                    .collect();
+                open_screenshot_lightbox(sources, initial_index, ctx);
             }
             AIBlockAction::OpenSubmittedAttachmentLightbox { image_index } => {
                 let decoded_images = self

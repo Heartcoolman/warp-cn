@@ -19,10 +19,10 @@ use warp_core::{safe_info, safe_warn};
 use warpui::r#async::FutureExt;
 use warpui::{ModelContext, ModelSpawner, SingletonEntity};
 
-use super::AgentDriverError;
 #[cfg(feature = "local_fs")]
 use super::cache_setup;
 use super::terminal::TerminalDriver;
+use super::{AgentDriverError, git_credentials};
 use crate::ai::agent_sdk::environment_snapshot::{
     EnvironmentSnapshot, EnvironmentSnapshotReporter, RepositoryRevision,
 };
@@ -124,7 +124,7 @@ fn environment_snapshot(
         .zip(resolved_heads)
         .filter_map(|(request, resolved_head_sha)| {
             Some(RepositoryRevision {
-                code_forge: request.repo.code_forge.unwrap_or_default(),
+                code_forge: request.repo.code_forge?,
                 repo_owner: request.repo.owner.clone(),
                 repo_name: request.repo.repo.clone(),
                 checkout_path: checkout_path(working_dir, &request.repo.repo),
@@ -225,6 +225,8 @@ pub(crate) fn validate_repository_head_overrides(
 /// 3. Run any setup commands.
 /// 4. If there is only one repository, navigate into it.
 ///
+/// Returns the directory where the harness will run.
+///
 /// `is_sandbox` tells the preparer that `working_dir` only exists inside a
 /// Docker sandbox container and therefore the host filesystem can't be used
 /// for repo detection or indexing. This is an explicit signal from the
@@ -239,7 +241,7 @@ pub(crate) fn prepare_environment(
     setup_events: SetupClientEventReporter,
     environment_snapshot_reporter: EnvironmentSnapshotReporter,
     ctx: &mut ModelContext<TerminalDriver>,
-) -> impl Future<Output = Result<(), PrepareEnvironmentError>> + use<> {
+) -> impl Future<Output = Result<PathBuf, PrepareEnvironmentError>> + use<> {
     let spawner = ctx.spawner();
     async move {
         let RepositoryPreparationOptions {
@@ -294,11 +296,11 @@ pub(crate) fn merge_repos_deduped(
     additional_repos: Vec<SourceRepo>,
 ) -> Result<Vec<SourceRepo>, PrepareEnvironmentError> {
     let mut seen = HashSet::new();
-    let mut names = HashMap::<String, (String, CodeForge)>::new();
+    let mut names = HashMap::<String, (String, Option<CodeForge>)>::new();
     let mut merged = Vec::with_capacity(environment_repos.len() + additional_repos.len());
 
     for repo in environment_repos.into_iter().chain(additional_repos) {
-        let forge = repo.code_forge.unwrap_or_default();
+        let forge = repo.code_forge;
         let key = (forge, repo.owner.to_lowercase(), repo.repo.to_lowercase());
         if !seen.insert(key) {
             continue;
@@ -380,7 +382,7 @@ async fn prepare_environment_impl(
     repo_channels: Arc<Mutex<HashMap<PathBuf, oneshot::Sender<()>>>>,
     setup_events: SetupClientEventReporter,
     environment_snapshot_reporter: EnvironmentSnapshotReporter,
-) -> Result<(), PrepareEnvironmentError> {
+) -> Result<PathBuf, PrepareEnvironmentError> {
     let working_dir_string = working_dir.to_string_lossy().to_string();
 
     // Position the session in `working_dir` before running any probes / clones.
@@ -394,6 +396,13 @@ async fn prepare_environment_impl(
         });
     }
     let mut codebase_context_receivers = Vec::new();
+
+    // Snapshot the process-wide identity bootstrap set, before anything below
+    // (cloning, setup commands) has a chance to change it for a given repo.
+    // The post-setup-commands fallback below compares each repo's effective
+    // identity against this baseline to tell whether the customer already
+    // claimed that repo's identity, rather than assuming so from forge count.
+    let git_identity_baseline = git_credentials::global_git_identity();
 
     let environment_snapshot = if source_repos.is_empty() {
         EnvironmentSnapshot::empty()
@@ -506,6 +515,23 @@ async fn prepare_environment_impl(
         Ok(())
     };
 
+    // Fill in a forge-appropriate identity for any repo whose effective
+    // identity is still exactly what bootstrap set — i.e. nothing (a setup
+    // command, or anything else run above) has claimed it yet. This runs
+    // after setup commands specifically so a customer's own git identity
+    // config always wins: repo-local config always beats `--global` config
+    // regardless of write order, so applying Warp's own fallback any earlier
+    // would permanently shadow a later customer override. Runs even if a
+    // setup command failed, so whatever happens next (e.g. a failure-linger
+    // session) still has a usable identity for every repo.
+    for repo in source_repos {
+        git_credentials::configure_repository_git_identity_if_unset(
+            &working_dir.join(&repo.repo),
+            repo.code_forge.map(CodeForge::host).unwrap_or(""),
+            git_identity_baseline.clone(),
+        );
+    }
+
     let remove_origins_result = if remove_repository_origins {
         remove_repository_origins_from_repos(source_repos, working_dir, spawner).await
     } else {
@@ -520,7 +546,7 @@ async fn prepare_environment_impl(
 
     // If there's only one repo in the environment, start the agent in that repo.
     // This way, it doesn't have to locate the correct repo to work on.
-    if let Some(repo_name) = single_repo_name(source_repos) {
+    let harness_working_dir = if let Some(repo_name) = single_repo_name(source_repos) {
         safe_info!(
             safe: ("Changing directory into single repository"),
             full: ("Changing directory into single repository: {repo_name}")
@@ -529,8 +555,11 @@ async fn prepare_environment_impl(
         if exit_code != 0.into() {
             return Err(PrepareEnvironmentError::ChangeDirectory { repo_name });
         }
-    }
-    Ok(())
+        working_dir.join(repo_name)
+    } else {
+        working_dir.to_path_buf()
+    };
+    Ok(harness_working_dir)
 }
 
 fn record_codebase_indexing(
@@ -576,10 +605,11 @@ fn record_codebase_indexing(
 // a real repository before this client updates, so callers must treat it as
 // an ordinary "can't clone this" outcome rather than an invariant violation.
 fn repository_forge_for_repo(repo: &SourceRepo) -> Option<RepositoryForge> {
-    match repo.code_forge.unwrap_or_default() {
-        CodeForge::GitHub => Some(RepositoryForge::GitHub),
-        CodeForge::GitLab => Some(RepositoryForge::GitLab),
-        CodeForge::None | CodeForge::Unknown => None,
+    match repo.code_forge {
+        Some(CodeForge::GitHub) => Some(RepositoryForge::GitHub),
+        Some(CodeForge::GitLab) => Some(RepositoryForge::GitLab),
+        Some(CodeForge::AzureDevOps) => Some(RepositoryForge::AzureDevOps),
+        Some(CodeForge::None | CodeForge::Unknown) | None => None,
     }
 }
 fn head_override_matches_repo(head_override: &RepositoryHeadOverride, repo: &SourceRepo) -> bool {

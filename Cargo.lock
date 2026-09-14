@@ -333,8 +333,10 @@ dependencies = [
  "filetime",
  "futures",
  "generic-array",
+ "hex",
  "http_client",
  "ignore",
+ "indexmap 2.12.0",
  "instant",
  "itertools 0.14.0",
  "languages",
@@ -351,12 +353,14 @@ dependencies = [
  "regex",
  "repo_metadata",
  "rmcp",
+ "schemars 1.0.4",
  "sentry",
  "serde",
  "serde_json",
  "serde_urlencoded",
  "serde_yaml 0.8.26",
  "serial_test",
+ "settings_value",
  "sha2 0.10.9",
  "shellexpand",
  "streaming-iterator",
@@ -370,6 +374,7 @@ dependencies = [
  "tokio",
  "typed-path 0.10.0",
  "unicode-width 0.1.14",
+ "url",
  "uuid",
  "virtual-fs",
  "warp_core",
@@ -2479,7 +2484,9 @@ dependencies = [
  "sha2 0.10.9",
  "tempfile",
  "thiserror 2.0.17",
+ "tokio",
  "tracing",
+ "walkdir",
  "warp_core",
  "warp_errors",
 ]
@@ -2996,6 +3003,7 @@ dependencies = [
  "session-sharing-protocol",
  "settings",
  "settings_value",
+ "url",
  "uuid",
  "warp-workflows",
  "warp_cli",
@@ -3243,15 +3251,6 @@ dependencies = [
  "regex",
  "shlex",
  "version-compare",
-]
-
-[[package]]
-name = "command-signatures-v2"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "command",
- "rust-embed 8.7.2",
 ]
 
 [[package]]
@@ -3528,7 +3527,7 @@ dependencies = [
 [[package]]
 name = "cosmic-text"
 version = "0.12.0"
-source = "git+https://github.com/warpdotdev/cosmic-text.git?rev=15198beba692162201c0ea8b15222cf5643ea068#15198beba692162201c0ea8b15222cf5643ea068"
+source = "git+https://github.com/warpdotdev/cosmic-text.git?rev=a7c7b71497542758e08f77390b8efce543b3181f#a7c7b71497542758e08f77390b8efce543b3181f"
 dependencies = [
  "bitflags 2.13.0",
  "fontdb",
@@ -4563,7 +4562,7 @@ checksum = "117240f60069e65410b3ae1bb213295bd828f707b5bec6596a1afc8793ce0cbc"
 [[package]]
 name = "dpi"
 version = "0.1.1"
-source = "git+https://github.com/warpdotdev/winit.git?rev=a4e0ecb5f9626ccac9445a73dc28354b52423abc#a4e0ecb5f9626ccac9445a73dc28354b52423abc"
+source = "git+https://github.com/warpdotdev/winit.git?rev=14db95a686387211d57cf2afd1d908b2d82a20fe#14db95a686387211d57cf2afd1d908b2d82a20fe"
 
 [[package]]
 name = "dsl_auto_type"
@@ -8340,6 +8339,7 @@ dependencies = [
  "cfg-if",
  "cloud_object_models",
  "futures",
+ "handlebars",
  "http 1.4.0",
  "log",
  "oauth2",
@@ -11581,6 +11581,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b15c43186be67a4fd63bee50d0303afffcef381492ebe2c5d87f324e1b8815c"
 
 [[package]]
+name = "regex_dfas"
+version = "0.0.0"
+dependencies = [
+ "regex",
+ "regex-automata",
+]
+
+[[package]]
 name = "remote_server"
 version = "0.1.0"
 dependencies = [
@@ -11841,33 +11849,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f1964b10c76125c36f8afe190065a4bf9a87bf324842c05701330bba9f1cacbb"
 dependencies = [
  "memchr",
-]
-
-[[package]]
-name = "rquickjs"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6db7788c2818f4546daabe9ae2d1ee2f4db61ab1998d4b483494c4193cc38dab"
-dependencies = [
- "rquickjs-core",
-]
-
-[[package]]
-name = "rquickjs-core"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b12cf8646fe0af5bcff2822ccd162990f0679a1f9287c7257f4f4193a9d31ea9"
-dependencies = [
- "rquickjs-sys",
-]
-
-[[package]]
-name = "rquickjs-sys"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b747058afd4d988d056e4972ec8516a5a86fdfc103c1c1485bfee8966a0743ae"
-dependencies = [
- "cc",
 ]
 
 [[package]]
@@ -12363,6 +12344,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "secret_redaction"
+version = "0.0.0"
+dependencies = [
+ "itertools 0.14.0",
+ "lazy_static",
+ "log",
+ "parking_lot",
+ "regex",
+ "regex-automata",
+ "regex_dfas",
+ "string-offset",
+ "warp_core",
+ "warp_errors",
+]
+
+[[package]]
 name = "security-framework"
 version = "2.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -12829,7 +12826,7 @@ dependencies = [
 [[package]]
 name = "session-sharing-protocol"
 version = "0.0.0"
-source = "git+https://github.com/warpdotdev/session-sharing-protocol.git?rev=b30fdd06379a3d073b398eabd106abed5b443aae#b30fdd06379a3d073b398eabd106abed5b443aae"
+source = "git+https://github.com/warpdotdev/session-sharing-protocol.git?rev=fcd0fea35ab9f782043c8ec74fd81bce187ded9f#fcd0fea35ab9f782043c8ec74fd81bce187ded9f"
 dependencies = [
  "byte-unit",
  "serde",
@@ -15499,7 +15496,6 @@ dependencies = [
  "comfy-table",
  "command",
  "command-corrections",
- "command-signatures-v2",
  "computer_use",
  "concat-idents",
  "console_error_panic_hook",
@@ -15630,11 +15626,11 @@ dependencies = [
  "repo_metadata",
  "reqwest",
  "rmcp",
- "rquickjs",
  "rust-embed 8.7.2",
  "rustc-hash 2.1.1",
  "rustls",
  "schemars 1.0.4",
+ "secret_redaction",
  "security-framework-sys",
  "sentry",
  "sentry-log",
@@ -15714,7 +15710,6 @@ dependencies = [
  "warp_graphql",
  "warp_i18n",
  "warp_isolation_platform",
- "warp_js",
  "warp_logging",
  "warp_managed_secrets",
  "warp_multi_agent_api",
@@ -15746,7 +15741,7 @@ dependencies = [
 [[package]]
 name = "warp-command-signatures"
 version = "0.0.0"
-source = "git+https://github.com/warpdotdev/command-signatures.git?rev=d3725aa42375cc229699c87be2b38f9d9f07080f#d3725aa42375cc229699c87be2b38f9d9f07080f"
+source = "git+https://github.com/warpdotdev/command-signatures.git?rev=48fd7aa5b7b4d99f5db57d1c5a25c47c05567fcf#48fd7aa5b7b4d99f5db57d1c5a25c47c05567fcf"
 dependencies = [
  "cfg-if",
  "itertools 0.10.5",
@@ -15764,7 +15759,7 @@ dependencies = [
 [[package]]
 name = "warp-completion-metadata"
 version = "0.0.0"
-source = "git+https://github.com/warpdotdev/command-signatures.git?rev=d3725aa42375cc229699c87be2b38f9d9f07080f#d3725aa42375cc229699c87be2b38f9d9f07080f"
+source = "git+https://github.com/warpdotdev/command-signatures.git?rev=48fd7aa5b7b4d99f5db57d1c5a25c47c05567fcf#48fd7aa5b7b4d99f5db57d1c5a25c47c05567fcf"
 dependencies = [
  "html-escape",
  "itertools 0.10.5",
@@ -15845,8 +15840,6 @@ dependencies = [
  "anyhow",
  "async-recursion",
  "async-trait",
- "bincode",
- "cfg-if",
  "clap",
  "command",
  "derive-new",
@@ -15860,7 +15853,6 @@ dependencies = [
  "log",
  "memo-map",
  "regex",
- "rquickjs",
  "serde",
  "shellexpand",
  "smol_str",
@@ -15871,7 +15863,6 @@ dependencies = [
  "warp_cli",
  "warp_completer",
  "warp_core",
- "warp_js",
  "warp_util",
  "warpui_core",
 ]
@@ -16134,20 +16125,9 @@ dependencies = [
  "log",
  "serde",
  "serde_json",
+ "serial_test",
  "thiserror 2.0.17",
  "warp_core",
-]
-
-[[package]]
-name = "warp_js"
-version = "0.1.0"
-dependencies = [
- "bincode",
- "cfg-if",
- "rquickjs",
- "serde",
- "thiserror 2.0.17",
- "uuid",
 ]
 
 [[package]]
@@ -16205,7 +16185,7 @@ dependencies = [
 [[package]]
 name = "warp_multi_agent_api"
 version = "0.0.0"
-source = "git+https://github.com/warpdotdev/warp-proto-apis.git?rev=f0028fa6d05db1ba63726eaf6f8d33ab17abe37b#f0028fa6d05db1ba63726eaf6f8d33ab17abe37b"
+source = "git+https://github.com/warpdotdev/warp-proto-apis.git?rev=7b638a3bce15b6159116c25caa1dda62cf004b0e#7b638a3bce15b6159116c25caa1dda62cf004b0e"
 dependencies = [
  "prost",
  "prost-reflect",
@@ -16403,6 +16383,8 @@ dependencies = [
  "rangemap",
  "regex",
  "regex-automata",
+ "regex_dfas",
+ "secret_redaction",
  "sentry",
  "serde",
  "serde_json",
@@ -17867,7 +17849,7 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 [[package]]
 name = "winit"
 version = "0.30.13"
-source = "git+https://github.com/warpdotdev/winit.git?rev=a4e0ecb5f9626ccac9445a73dc28354b52423abc#a4e0ecb5f9626ccac9445a73dc28354b52423abc"
+source = "git+https://github.com/warpdotdev/winit.git?rev=14db95a686387211d57cf2afd1d908b2d82a20fe#14db95a686387211d57cf2afd1d908b2d82a20fe"
 dependencies = [
  "ahash 0.8.11",
  "android-activity",

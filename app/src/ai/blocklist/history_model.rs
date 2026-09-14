@@ -327,6 +327,8 @@ pub struct BlocklistAIHistoryModel {
 
     /// In-flight optimistic conversation rename state keyed by conversation.
     in_flight_conversation_renames: HashMap<AIConversationId, InFlightConversationRename>,
+    /// Conversations with a server metadata request in progress.
+    in_flight_server_metadata_fetches: HashSet<AIConversationId>,
 
     #[cfg(feature = "local_fs")]
     db_connection: Option<Arc<Mutex<SqliteConnection>>>,
@@ -1147,6 +1149,25 @@ impl BlocklistAIHistoryModel {
             .is_some_and(|c| c.is_exchange_hidden(exchange_id))
     }
 
+    /// Test-only, crate-visible wrapper around [`Self::update_conversation_for_new_request_input`]
+    /// so tests outside this module (e.g. `agent_sdk::driver_tests`) can attach an in-flight
+    /// request to a conversation without widening that method's production visibility.
+    #[cfg(test)]
+    pub(crate) fn update_conversation_for_new_request_input_for_test(
+        &mut self,
+        request_input: RequestInput,
+        stream_id: ResponseStreamId,
+        terminal_surface_id: EntityId,
+        ctx: &mut ModelContext<Self>,
+    ) -> Result<(), UpdateHistoryError> {
+        self.update_conversation_for_new_request_input(
+            request_input,
+            stream_id,
+            terminal_surface_id,
+            ctx,
+        )
+    }
+
     /// Add a new [`AIAgentExchange`] to the [`AIConversation`] with the given [`AIConversationId`].
     /// Emits an event with the new exchange.
     pub(super) fn update_conversation_for_new_request_input(
@@ -1538,6 +1559,20 @@ impl BlocklistAIHistoryModel {
         };
 
         if let Some(key) = agent_key {
+            // The server emits `child_agent_started` on the parent for every
+            // child, local ones included, so the SSE family drain cannot
+            // tell this conversation's own child apart from one spawned
+            // out-of-band (CLI/API) and may have already fetched task
+            // metadata and materialized an `is_remote_child` placeholder for
+            // this run_id (`ensure_remote_child_placeholder`) before this
+            // conversation claimed it. Discard that stale placeholder so
+            // exactly one conversation ever represents this run_id,
+            // regardless of which side wins the race.
+            if let Some(existing) = self.agent_id_to_conversation_id.get(&key).copied()
+                && existing != conversation_id
+            {
+                self.discard_stale_placeholder_for_run_id(existing, conversation_id, &key, ctx);
+            }
             self.agent_id_to_conversation_id
                 .insert(key, conversation_id);
         }
@@ -1551,6 +1586,39 @@ impl BlocklistAIHistoryModel {
             conversation_id,
             terminal_surface_id,
         });
+    }
+
+    /// Discards `stale_conversation_id` when it is a remote-child placeholder
+    /// left behind by a `run_id` that `conversation_id` is now authoritatively
+    /// claiming. Only ever discards a placeholder (`is_remote_child`) — if the
+    /// existing mapping instead points at a real conversation, that would be
+    /// an unrelated bug, so it's logged rather than silently deleted.
+    fn discard_stale_placeholder_for_run_id(
+        &mut self,
+        stale_conversation_id: AIConversationId,
+        conversation_id: AIConversationId,
+        run_id: &str,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let is_placeholder = self
+            .conversations_by_id
+            .get(&stale_conversation_id)
+            .is_some_and(|conversation| conversation.is_remote_child());
+        if !is_placeholder {
+            log::warn!(
+                "assign_run_id_for_conversation: run_id={run_id} already mapped to \
+                 non-placeholder conversation {stale_conversation_id:?}; leaving it in place \
+                 and rebinding the run-id index to {conversation_id:?}."
+            );
+            return;
+        }
+        log::info!(
+            "assign_run_id_for_conversation: discarding stale remote-child placeholder \
+             {stale_conversation_id:?} for run_id={run_id}, superseded by local conversation \
+             {conversation_id:?}."
+        );
+        let terminal_surface_id = self.terminal_surface_id_for_conversation(&stale_conversation_id);
+        self.remove_conversation_from_memory(stale_conversation_id, terminal_surface_id, ctx);
     }
 
     /// Resolves a server-side agent identifier to a local conversation ID.
@@ -2057,6 +2125,12 @@ impl BlocklistAIHistoryModel {
                 .unwrap()
                 .as_str()
                 .to_string();
+            if !self
+                .in_flight_server_metadata_fetches
+                .insert(conversation_id)
+            {
+                return;
+            }
 
             let server_api = ServerApiProvider::as_ref(ctx).get_ai_client();
             ctx.spawn(
@@ -2065,24 +2139,28 @@ impl BlocklistAIHistoryModel {
                         .list_ai_conversation_metadata(Some(vec![server_token]))
                         .await
                 },
-                move |model, result, ctx| match result {
-                    Ok(mut metadata_list) if !metadata_list.is_empty() => {
-                        if let Some(metadata) = metadata_list.pop() {
-                            model.set_server_metadata_for_conversation(
-                                conversation_id,
-                                metadata,
-                                ctx,
+                move |model, result, ctx| {
+                    model
+                        .in_flight_server_metadata_fetches
+                        .remove(&conversation_id);
+                    match result {
+                        Ok(mut metadata_list) if !metadata_list.is_empty() => {
+                            if let Some(metadata) = metadata_list.pop() {
+                                model.set_server_metadata_for_conversation(
+                                    conversation_id,
+                                    metadata,
+                                    ctx,
+                                );
+                            }
+                        }
+                        Ok(_) => {
+                            log::warn!("No metadata returned for conversation {conversation_id}");
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "Failed to fetch metadata for conversation {conversation_id}: {e:#}"
                             );
                         }
-                    }
-                    Ok(_) => {
-                        log::warn!("No metadata returned for conversation {}", conversation_id);
-                    }
-                    Err(e) => {
-                        log::warn!(
-                            "Failed to fetch metadata for conversation {}: {e:#}",
-                            conversation_id
-                        );
                     }
                 },
             );
@@ -3076,6 +3154,7 @@ pub enum BlocklistAIHistoryEvent {
 
     UpdatedTodoList {
         terminal_surface_id: EntityId,
+        conversation_id: AIConversationId,
     },
 
     UpdatedAutoexecuteOverride {
