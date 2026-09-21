@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 pub use ai::agent::convert::ConvertToAPITypeError;
 use ai::api_keys::ApiKeyManager;
+pub(crate) use convert_from::convert_user_query_mode;
 pub use convert_from::{
     ConversionParams, ConvertAPIMessageToClientOutputMessage, MaybeAIAgentOutputMessage,
     MessageToAIAgentOutputMessageError, user_inputs_from_messages,
@@ -92,9 +93,19 @@ impl ServerConversationToken {
     }
 }
 
+impl std::fmt::Display for ServerConversationToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 #[cfg(test)]
 #[path = "api_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "api/injected_attribution_tests.rs"]
+mod injected_attribution_tests;
 impl From<ServerConversationToken> for String {
     fn from(value: ServerConversationToken) -> Self {
         value.0
@@ -317,17 +328,18 @@ impl RequestParams {
         let user_workspaces = UserWorkspaces::as_ref(app);
         let api_key_manager = ApiKeyManager::as_ref(app);
         // Bedrock and Gemini Enterprise are admin-configured host credentials rather than member
-        // BYO keys, so they deliberately skip this gate; scoping them to the team is P2 (#15447).
+        // BYO keys, so they deliberately skip this gate.
         let member_byo_credentials_allowed = user_workspaces.are_member_byo_keys_allowed(scope);
         let is_byo_enabled =
             user_workspaces.is_byo_api_key_enabled(app) && member_byo_credentials_allowed;
         #[cfg(not(target_family = "wasm"))]
-        let geap_binding = crate::ai::geap_credentials::current_geap_policy(app).mint_binding();
+        let geap_binding =
+            crate::ai::geap_credentials::current_geap_policy(scope, app).mint_binding();
         #[cfg(target_family = "wasm")]
         let geap_binding: Option<::ai::api_keys::GeapMintBinding> = None;
         let api_keys = api_key_manager.api_keys_for_request(
             is_byo_enabled,
-            user_workspaces.is_aws_bedrock_credentials_enabled(app),
+            user_workspaces.is_aws_bedrock_credentials_enabled(scope, app),
             geap_binding,
         );
         let is_custom_inference_enabled = user_workspaces.is_byo_endpoint_enabled(app)

@@ -33,6 +33,7 @@ use crate::ai::blocklist::controller::RequestInput;
 use crate::ai::llms::LLMId;
 use crate::auth::AuthStateProvider;
 use crate::cloud_object::{Owner, Revision, ServerMetadata, ServerPermissions};
+use crate::features::FeatureFlag;
 use crate::input_suggestions::HistoryInputSuggestion;
 use crate::persistence::ModelEvent;
 use crate::persistence::model::{
@@ -40,6 +41,7 @@ use crate::persistence::model::{
     PersistedAutoexecuteMode,
 };
 use crate::server::ids::ServerId;
+use crate::server::server_api::ServerApiProvider;
 use crate::server::telemetry::context_provider::AppTelemetryContextProvider;
 use crate::terminal::model::session::SessionId;
 use crate::test_util::ai_agent_tasks::create_api_task;
@@ -131,6 +133,98 @@ fn ensure_remote_child_conversation_creates_one_named_run_mapping() {
     });
 }
 
+/// Reproduces the race between the SSE family drain (which materializes an
+/// `is_remote_child` placeholder for a `child_agent_started` event before the
+/// local in-process child conversation has claimed its run_id) and the local
+/// child-launch path (which calls `assign_run_id_for_conversation` once its
+/// own conversation is ready). Whichever side loses the race must not leave
+/// an orphaned duplicate behind in `children_by_parent`.
+#[test]
+fn assign_run_id_for_conversation_discards_stale_remote_placeholder_for_same_run_id() {
+    App::test((), |mut app| async move {
+        initialize_history_persistence_for_tests(&mut app);
+        let terminal_view_id = EntityId::new();
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
+        let parent_run_id = "11111111-1111-1111-1111-111111111111";
+        let child_task_id: AmbientAgentTaskId =
+            "22222222-2222-2222-2222-222222222222".parse().unwrap();
+
+        let (parent_id, placeholder_id, local_id) =
+            history_model.update(&mut app, |history, ctx| {
+                let parent_id =
+                    history.start_new_conversation(terminal_view_id, false, true, false, ctx);
+                history.assign_run_id_for_conversation(
+                    parent_id,
+                    parent_run_id.to_string(),
+                    parent_run_id.parse().ok(),
+                    terminal_view_id,
+                    ctx,
+                );
+
+                // SSE side wins the race first: the family drain fetches task
+                // metadata and materializes a remote-child placeholder before the
+                // local launch has finished.
+                let placeholder_id = history.ensure_remote_child_conversation(
+                    terminal_view_id,
+                    parent_id,
+                    child_task_id.to_string(),
+                    child_task_id,
+                    "Researcher".to_string(),
+                    String::new(),
+                    Some(Harness::Codex),
+                    ctx,
+                );
+
+                // Local side finishes afterwards: it already created its own real
+                // hidden-pane conversation and now claims the same run_id.
+                let local_id = history.start_new_child_conversation(
+                    terminal_view_id,
+                    "Researcher".to_string(),
+                    parent_id,
+                    Some(Harness::Codex),
+                    false,
+                    ctx,
+                );
+                history.assign_run_id_for_conversation(
+                    local_id,
+                    child_task_id.to_string(),
+                    Some(child_task_id),
+                    terminal_view_id,
+                    ctx,
+                );
+
+                (parent_id, placeholder_id, local_id)
+            });
+
+        assert_ne!(
+            placeholder_id, local_id,
+            "the placeholder and the local conversation must be distinct records for this race \
+             to be meaningful"
+        );
+        history_model.read(&app, |history, _| {
+            assert_eq!(
+                history.child_conversation_ids_of(&parent_id),
+                &[local_id],
+                "the orphaned remote placeholder must not remain alongside the real local child; \
+                 exactly one pill should represent this run_id",
+            );
+            assert_eq!(
+                history.conversation_id_for_agent_id(&child_task_id.to_string()),
+                Some(local_id),
+            );
+            assert!(
+                history.conversation(&placeholder_id).is_none(),
+                "the stale placeholder conversation should be fully discarded",
+            );
+            let child = history.conversation(&local_id).unwrap();
+            assert!(
+                !child.is_remote_child(),
+                "the surviving conversation is the real local child, not a placeholder",
+            );
+        });
+    });
+}
+
 fn create_user_query_message(
     id: &str,
     task_id: &str,
@@ -150,6 +244,9 @@ fn create_user_query_message(
                 referenced_attachments: HashMap::new(),
                 mode: None,
                 intended_agent: Default::default(),
+                origin: None,
+                author: None,
+                source_message: None,
             },
         )),
         request_id: request_id.to_string(),
@@ -211,6 +308,7 @@ fn create_exchange_with_query(
             user_query_mode: UserQueryMode::default(),
             running_command: None,
             intended_agent: None,
+            base: None,
         }],
         output_status: AIAgentOutputStatus::Finished {
             finished_output: FinishedAIAgentOutput::Success {
@@ -2161,6 +2259,89 @@ fn test_restore_conversations_dedup_children_by_parent() {
         // Should have exactly one entry, not two.
         history_model.read(&app, |model, _| {
             assert_eq!(model.child_conversation_ids_of(&parent_id), &[child_id]);
+        });
+    });
+}
+
+#[test]
+fn closed_surface_cleanup_preserves_transferred_conversation() {
+    App::test((), |mut app| async move {
+        let old_surface = EntityId::new();
+        let new_surface = EntityId::new();
+        let conversation = AIConversation::new(false, false);
+        let conversation_id = conversation.id();
+        let history = app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
+        history.update(&mut app, |model, ctx| {
+            model.restore_conversations(new_surface, vec![conversation], ctx);
+            model.set_active_conversation_id(conversation_id, new_surface, ctx);
+            model
+                .active_conversation_for_terminal_surface
+                .insert(old_surface, conversation_id);
+            model
+                .live_conversation_ids_for_terminal_surface
+                .insert(old_surface, Vec::new());
+        });
+
+        let events = Arc::new(Mutex::new(Vec::new()));
+        app.update(|ctx| {
+            let events = events.clone();
+            ctx.subscribe_to_model(&history, move |_, event, _| {
+                events.lock().unwrap().push(event.clone());
+            });
+        });
+        history.update(&mut app, |model, ctx| {
+            model.clear_conversations_for_closed_terminal_surface(old_surface, ctx);
+        });
+
+        history.read(&app, |model, _| {
+            assert_eq!(
+                model
+                    .active_conversation_for_terminal_surface
+                    .get(&old_surface),
+                None
+            );
+            assert!(
+                !model
+                    .live_conversation_ids_for_terminal_surface
+                    .contains_key(&old_surface)
+            );
+            assert_eq!(
+                model.active_conversation_id(new_surface),
+                Some(conversation_id)
+            );
+            assert_eq!(
+                model.terminal_surface_id_for_conversation(&conversation_id),
+                Some(new_surface)
+            );
+        });
+        assert!(events.lock().unwrap().is_empty());
+    });
+}
+
+#[test]
+fn closed_surface_cleanup_clears_owned_conversations() {
+    App::test((), |mut app| async move {
+        let surface_id = EntityId::new();
+        let conversation = AIConversation::new(false, false);
+        let conversation_id = conversation.id();
+        let history = app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
+        history.update(&mut app, |model, ctx| {
+            model.restore_conversations(surface_id, vec![conversation], ctx);
+            model.set_active_conversation_id(conversation_id, surface_id, ctx);
+            model.clear_conversations_for_closed_terminal_surface(surface_id, ctx);
+        });
+        history.read(&app, |model, _| {
+            assert_eq!(model.active_conversation_id(surface_id), None);
+            assert_eq!(
+                model.terminal_surface_id_for_conversation(&conversation_id),
+                None
+            );
+            assert_eq!(
+                model
+                    .cleared_conversation_ids_for_terminal_surface
+                    .get(&surface_id),
+                Some(&vec![conversation_id])
+            );
         });
     });
 }
@@ -4280,6 +4461,47 @@ fn hydrate_remote_child_placeholder_with_cloud_transcript_preserves_placeholder_
             format!("{err:#}").contains("not found in conversations_by_id"),
             "error must surface the missing-placeholder reason; got: {err:#}",
         );
+    });
+}
+
+#[test]
+fn repeated_stream_completions_share_one_in_flight_metadata_fetch() {
+    let _cloud_conversations = FeatureFlag::CloudConversations.override_enabled(true);
+
+    App::test((), |mut app| async move {
+        initialize_history_persistence_for_tests(&mut app);
+        app.add_singleton_model(|_| ServerApiProvider::new_for_test());
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
+        let terminal_surface_id = EntityId::new();
+        let conversation_id = history_model.update(&mut app, |history, ctx| {
+            let conversation_id =
+                history.start_new_conversation(terminal_surface_id, false, false, false, ctx);
+            history.set_server_conversation_token_for_conversation(
+                conversation_id,
+                "metadata-fetch-token".to_string(),
+            );
+            conversation_id
+        });
+        let stream_id = ResponseStreamId::new_for_test();
+
+        history_model.update(&mut app, |history, ctx| {
+            history.mark_response_stream_completed_successfully(
+                &stream_id,
+                conversation_id,
+                terminal_surface_id,
+                ctx,
+            );
+            history.mark_response_stream_completed_successfully(
+                &stream_id,
+                conversation_id,
+                terminal_surface_id,
+                ctx,
+            );
+            assert_eq!(
+                history.in_flight_server_metadata_fetches,
+                HashSet::from([conversation_id])
+            );
+        });
     });
 }
 

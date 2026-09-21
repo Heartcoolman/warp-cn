@@ -40,7 +40,7 @@ use crate::terminal::settings::TerminalSettings;
 use crate::terminal::shared_session::settings::SharedSessionSettings;
 use crate::terminal::warpify::settings::WarpifySettings;
 use crate::undo_close::UndoCloseSettings;
-use crate::window_settings::WindowSettings;
+use crate::window_settings::{WindowSettings, stage_legacy_background_backdrop};
 use crate::workflows::aliases::WorkflowAliases;
 use crate::workspace::tab_settings::TabSettings;
 
@@ -136,6 +136,7 @@ pub fn init(
     if needs_settings_file_migration(ctx) {
         migrate_native_settings_to_settings_file(ctx);
     }
+    stage_legacy_background_backdrop(ctx);
 
     let use_thin_strokes = *FontSettings::as_ref(ctx).use_thin_strokes;
 
