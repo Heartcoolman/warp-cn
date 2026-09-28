@@ -151,6 +151,7 @@ impl OneTimeModalModel {
                 // Accounts created after the removal of free AI go through the new
                 // onboarding and are treated as already-noticed (no modal).
                 mark_free_ai_removal_notice_seen(ctx);
+                hoa_onboarding::mark_hoa_onboarding_completed(ctx);
                 GeneralSettings::handle(ctx).update(ctx, |settings, ctx| {
                     if let Err(e) = settings
                         .did_check_to_trigger_openwarp_launch_modal
@@ -548,6 +549,14 @@ impl OneTimeModalModel {
     }
 
     fn check_and_trigger_free_ai_removal_modal(&mut self, ctx: &mut ModelContext<Self>) -> bool {
+        // Never show one-time modals on WASM. `check_and_trigger_all_modals` already
+        // guards its own call, but `maybe_recheck_free_ai_removal_modal` and
+        // `resume_modal_checks_after_feature_intro` call this directly (e.g. from an
+        // async billing/usage update), so the guard belongs here too.
+        if cfg!(target_family = "wasm") {
+            return false;
+        }
+
         if *AISettings::as_ref(ctx).did_check_to_trigger_free_ai_removal_modal {
             return false;
         }
