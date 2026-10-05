@@ -288,6 +288,7 @@ pub(crate) fn plugin_manager_for_with_shell(
         CLIAgent::OpenCode
         | CLIAgent::Codex
         | CLIAgent::Gemini
+        | CLIAgent::Grok
         | CLIAgent::Amp
         | CLIAgent::Droid
         | CLIAgent::Copilot
@@ -296,6 +297,7 @@ pub(crate) fn plugin_manager_for_with_shell(
         | CLIAgent::Auggie
         | CLIAgent::CursorCli
         | CLIAgent::Hermes
+        | CLIAgent::Kiro
         | CLIAgent::Goose
         | CLIAgent::Vibe
         | CLIAgent::Antigravity

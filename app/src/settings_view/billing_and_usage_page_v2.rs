@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use ::ai::api_keys::{ApiKeyManager, ApiKeyManagerEvent};
 use chrono::Local;
 use itertools::Itertools;
 use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
@@ -28,6 +29,9 @@ use warpui::{
 };
 
 use super::billing_and_usage::billing_cycle_usage_section::BillingCycleUsageSectionView;
+use super::billing_and_usage::chatgpt_usage_card::{
+    chatgpt_manage_usage_button, render_chatgpt_usage_card,
+};
 use super::billing_and_usage::overage_limit_modal::{SpendingLimitModal, SpendingLimitModalEvent};
 use super::billing_and_usage::usage_history_entry::UsageHistoryEntry;
 use super::billing_and_usage::usage_history_model::UsageHistoryModel;
@@ -49,7 +53,7 @@ use crate::modal::{Modal, ModalEvent, ModalViewState};
 use crate::pricing::PricingInfoModel;
 use crate::server::ids::ServerId;
 use crate::server::telemetry::TelemetryEvent;
-use crate::settings::ai::AISettings;
+use crate::settings::ai::{AISettings, AISettingsChangedEvent};
 use crate::ui_components::blended_colors;
 use crate::ui_components::buttons::icon_button;
 use crate::ui_components::icons::Icon;
@@ -280,6 +284,7 @@ pub struct BillingAndUsagePageV2View {
     plan_mouse_states: PlanSectionMouseStates,
     buy_credits_mouse_states: BuyCreditsMouseStates,
     ambient_trial_mouse_states: AmbientTrialMouseStates,
+    chatgpt_manage_usage_button: ViewHandle<ActionButton>,
     billing_cycle_usage_section: ViewHandle<BillingCycleUsageSectionView>,
 }
 
@@ -319,6 +324,20 @@ impl BillingAndUsagePageV2View {
         });
         usage_history_model.update(ctx, |m, ctx| m.refresh_usage_history_async(ctx));
 
+        ctx.subscribe_to_model(&AISettings::handle(ctx), |_, _, event, ctx| {
+            if matches!(event, AISettingsChangedEvent::UsageDisplayUnit { .. }) {
+                ctx.notify();
+            }
+        });
+
+        if FeatureFlag::ChatGPTSubscription.is_enabled() {
+            ctx.subscribe_to_model(&ApiKeyManager::handle(ctx), |_, _, event, ctx| {
+                if matches!(event, ApiKeyManagerEvent::ChatGPTConnectionUpdated) {
+                    ctx.notify();
+                }
+            });
+        }
+
         let auth_state = AuthStateProvider::as_ref(ctx).get().clone();
 
         let addon_credit_modal = ctx.add_typed_action_view(SpendingLimitModal::new);
@@ -353,6 +372,8 @@ impl BillingAndUsagePageV2View {
 
         let billing_cycle_usage_section =
             ctx.add_typed_action_view(BillingCycleUsageSectionView::new);
+        let chatgpt_manage_usage_button =
+            ctx.add_typed_action_view(|_| chatgpt_manage_usage_button());
 
         let mut me = Self {
             self_handle: ctx.handle(),
@@ -377,6 +398,7 @@ impl BillingAndUsagePageV2View {
             plan_mouse_states: Default::default(),
             buy_credits_mouse_states: Default::default(),
             ambient_trial_mouse_states: Default::default(),
+            chatgpt_manage_usage_button,
             billing_cycle_usage_section,
         };
         me.update_addon_credits_options(ctx);
@@ -1770,6 +1792,11 @@ impl BillingAndUsagePageV2View {
             self.render_ambient_agent_trial_widget(ai_model, appearance, app)
         {
             content.add_child(ambient_trial_widget);
+        }
+        if let Some(chatgpt_usage_card) =
+            render_chatgpt_usage_card(&self.chatgpt_manage_usage_button, appearance, app)
+        {
+            content.add_child(chatgpt_usage_card);
         }
         if let Some(balance) = self.render_balance_section(appearance, app) {
             content.add_child(balance);

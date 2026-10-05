@@ -23,7 +23,7 @@ name: Warp CI
 env:
   CARGO_TERM_COLOR: always
   NEXTEST_PROFILE: ci
-  WORKSPACE_TEST_ARGS: --workspace --locked --exclude command-signatures-v2
+  WORKSPACE_TEST_ARGS: --workspace --locked
   # Include only as much debug info as is necessary to see backtraces
   # in test failures.  This should speed up compilation somewhat and
   # reduces the size of built artifacts (which addresses issues with
@@ -55,13 +55,14 @@ jobs:
       affects-database-schema: ${{ github.ref == 'master' || steps.filter.outputs.affects-database-schema }}
       affects-rust-sources: ${{ github.ref == 'master' || steps.filter.outputs.affects-rust-sources }}
       macos-runner: ${{ steps.mac_runner_type.outputs.value }}
+      needs-build: ${{ github.event_name != 'pull_request' || steps.build_filter.outputs.needs-build }}
       wasm-runner: ${{ steps.wasm_runner_type.outputs.value }}
     steps:
       - name: Checkout sources
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Check changed files
-        uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
         with:
           filters: |
@@ -70,6 +71,25 @@ jobs:
               - 'crates/persistence/migrations/**'
             affects-rust-sources:
               - '**.rs'
+
+      - name: Check for build inputs
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: build_filter
+        with:
+          predicate-quantifier: every
+          filters: |
+            needs-build:
+              - '**'
+              # Only human-readable files in known documentation locations may skip builds.
+              # Markdown elsewhere, including bundled skills, can affect shipped behavior.
+              - '!AGENTS.md'
+              - '!CODE_OF_CONDUCT.md'
+              - '!CONTRIBUTING.md'
+              - '!FAQ.md'
+              - '!README.md'
+              - '!SECURITY.md'
+              - '!.github/**/*.md'
+              - '!specs/**'
 
       - name: Determine macOS runner type
         id: mac_runner_type
@@ -109,7 +129,6 @@ jobs:
             name: "MacOS"
             runner: ${{ fromJSON(needs.params.outputs.macos-runner) }}
             is_self_hosted: ${{ contains(fromJSON(needs.params.outputs.macos-runner), 'self-hosted') }}
-            extra_test_args: ""
 
           - os: "linux"
             name: "Linux"
@@ -118,16 +137,15 @@ jobs:
             runner: ubuntu-latest-large
             # We don't (yet) have any self-hosted Linux runners.
             is_self_hosted: false
-            extra_test_args: ""
 
           - os: "windows"
             name: "Windows"
             runner: windows-latest-large
             # We don't (yet) have any self-hosted Windows runners.
             is_self_hosted: false
-            extra_test_args: "--exclude command-signatures-v2 --exclude warp_js"
     runs-on: ${{ matrix.runner }}
     needs: params
+    if: ${{ needs.params.outputs.needs-build == 'true' }}
     # Make sure an ID token is created with the necessary permissions to use
     # GCP's Workload Identity Federation (for service account authentication).
     permissions:
@@ -207,7 +225,7 @@ jobs:
 
       - name: Install cargo nextest
         if: ${{ matrix.is_self_hosted == false }}
-        uses: taiki-e/install-action@16b05812d776ae1dfaabc8277e421fb6d2506419 # v2.82.7
+        uses: taiki-e/install-action@37f7c5781271959fb65b6b35224e28652ff2b63d # v2.87.0
         with:
           tool: nextest
 
@@ -247,7 +265,7 @@ jobs:
           apt: vim
 
       - name: Compile tests
-        run: cargo nextest run ${{ env.WORKSPACE_TEST_ARGS }} ${{ matrix.extra_test_args }} --no-run
+        run: cargo nextest run ${{ env.WORKSPACE_TEST_ARGS }} --no-run
         env:
           # Attach the GitHub auth token so that requests to the GitHub API
           # don't get rate limited during compilation (e.g.: retrieving
@@ -259,7 +277,7 @@ jobs:
         # that we don't bother running these first tests if test compilation
         # fails).
         if: success()
-        run: cargo nextest run ${{ env.WORKSPACE_TEST_ARGS }} ${{ matrix.extra_test_args }} -E "not package(integration)"
+        run: cargo nextest run ${{ env.WORKSPACE_TEST_ARGS }} -E "not package(integration)"
         env:
           # Unit tests may end up spawning a shell, but shouldn't care which
           # shell it is.  We'll use zsh, as it has the shortest bootstrap times
@@ -285,7 +303,7 @@ jobs:
         if: matrix.os != 'windows' && (success() || failure())
         uses: coactions/setup-xvfb@b6b4fcfb9f5a895edadc3bc76318fae0ac17c8b3 # v1
         with:
-          run: cargo nextest run ${{ env.WORKSPACE_TEST_ARGS }} ${{ matrix.extra_test_args }} -E "package(integration) and not test(shell_integration_tests)${{ env.EXCLUDE_SSH_TESTS_FILTER }}${{ env.EXCLUDE_REMOTE_SERVER_TESTS_FILTER }}"
+          run: cargo nextest run ${{ env.WORKSPACE_TEST_ARGS }} -E "package(integration) and not test(shell_integration_tests)${{ env.EXCLUDE_SSH_TESTS_FILTER }}${{ env.EXCLUDE_REMOTE_SERVER_TESTS_FILTER }}"
         env:
           # We run shell-agnostic tests against zsh, as it has the shortest
           # bootstrap times and tends to be the most reliable.
@@ -310,7 +328,7 @@ jobs:
         if: matrix.os != 'windows' && (success() || failure())
         uses: coactions/setup-xvfb@b6b4fcfb9f5a895edadc3bc76318fae0ac17c8b3 # v1
         with:
-          run: cargo nextest run ${{ env.WORKSPACE_TEST_ARGS }} ${{ matrix.extra_test_args }} -E "package(integration) and test(shell_integration_tests)${{ env.EXCLUDE_SSH_TESTS_FILTER }}${{ env.EXCLUDE_REMOTE_SERVER_TESTS_FILTER }}"
+          run: cargo nextest run ${{ env.WORKSPACE_TEST_ARGS }} -E "package(integration) and test(shell_integration_tests)${{ env.EXCLUDE_SSH_TESTS_FILTER }}${{ env.EXCLUDE_REMOTE_SERVER_TESTS_FILTER }}"
         env:
           WARP_SHELL_PATH: ${{ steps.echo_shells_unix.outputs.default_bash_path }}
 
@@ -336,7 +354,7 @@ jobs:
         if: (success() || failure()) && runner.os == 'macos'
         uses: coactions/setup-xvfb@b6b4fcfb9f5a895edadc3bc76318fae0ac17c8b3 # v1
         with:
-          run: cargo nextest run ${{ env.WORKSPACE_TEST_ARGS }} ${{ matrix.extra_test_args }} -E "package(integration) and test(shell_integration_tests)${{ env.EXCLUDE_SSH_TESTS_FILTER }}${{ env.EXCLUDE_REMOTE_SERVER_TESTS_FILTER }}"
+          run: cargo nextest run ${{ env.WORKSPACE_TEST_ARGS }} -E "package(integration) and test(shell_integration_tests)${{ env.EXCLUDE_SSH_TESTS_FILTER }}${{ env.EXCLUDE_REMOTE_SERVER_TESTS_FILTER }}"
         env:
           WARP_SHELL_PATH: ${{ steps.echo_shells_unix.outputs.latest_bash_path }}
 
@@ -359,7 +377,7 @@ jobs:
         if: matrix.os != 'windows' && (success() || failure())
         uses: coactions/setup-xvfb@b6b4fcfb9f5a895edadc3bc76318fae0ac17c8b3 # v1
         with:
-          run: cargo nextest run ${{ env.WORKSPACE_TEST_ARGS }} ${{ matrix.extra_test_args }} -E "package(integration) and test(shell_integration_tests)${{ env.EXCLUDE_SSH_TESTS_FILTER }}${{ env.EXCLUDE_REMOTE_SERVER_TESTS_FILTER }}"
+          run: cargo nextest run ${{ env.WORKSPACE_TEST_ARGS }} -E "package(integration) and test(shell_integration_tests)${{ env.EXCLUDE_SSH_TESTS_FILTER }}${{ env.EXCLUDE_REMOTE_SERVER_TESTS_FILTER }}"
         env:
           WARP_SHELL_PATH: ${{ steps.echo_shells_unix.outputs.fish_path }}
 
@@ -382,7 +400,7 @@ jobs:
         if: matrix.os != 'windows' && (success() || failure())
         uses: coactions/setup-xvfb@b6b4fcfb9f5a895edadc3bc76318fae0ac17c8b3 # v1
         with:
-          run: cargo nextest run ${{ env.WORKSPACE_TEST_ARGS }} ${{ matrix.extra_test_args }} -E "package(integration) and test(shell_integration_tests)${{ env.EXCLUDE_SSH_TESTS_FILTER }}${{ env.EXCLUDE_REMOTE_SERVER_TESTS_FILTER }}"
+          run: cargo nextest run ${{ env.WORKSPACE_TEST_ARGS }} -E "package(integration) and test(shell_integration_tests)${{ env.EXCLUDE_SSH_TESTS_FILTER }}${{ env.EXCLUDE_REMOTE_SERVER_TESTS_FILTER }}"
         env:
           WARP_SHELL_PATH: ${{ steps.echo_shells_unix.outputs.zsh_path }}
 
@@ -405,7 +423,7 @@ jobs:
         if: matrix.os != 'windows' && (success() || failure())
         uses: coactions/setup-xvfb@b6b4fcfb9f5a895edadc3bc76318fae0ac17c8b3 # v1
         with:
-          run: cargo nextest run ${{ env.WORKSPACE_TEST_ARGS }} ${{ matrix.extra_test_args }} -E "package(integration) and test(shell_integration_tests)${{ env.EXCLUDE_SSH_TESTS_FILTER }}${{ env.EXCLUDE_REMOTE_SERVER_TESTS_FILTER }}"
+          run: cargo nextest run ${{ env.WORKSPACE_TEST_ARGS }} -E "package(integration) and test(shell_integration_tests)${{ env.EXCLUDE_SSH_TESTS_FILTER }}${{ env.EXCLUDE_REMOTE_SERVER_TESTS_FILTER }}"
         env:
           WARP_SHELL_PATH: ${{ steps.echo_shells_unix.outputs.powershell_path }}
 
@@ -428,17 +446,8 @@ jobs:
       - name: Run doc tests
         # Run this step even if a previous test step fails
         if: success() || failure()
-        run: cargo test ${{ env.WORKSPACE_TEST_ARGS }} ${{ matrix.extra_test_args }} --doc
+        run: cargo test ${{ env.WORKSPACE_TEST_ARGS }} --doc
 
-        # Run warp_completer tests with the "v2" (completions-on-js) flag enabled. We do this to
-        # ensure that the v2 completions implementation doesn't regress/rot while it's development
-        # is paused.
-      - name: Run completions-on-js tests
-        # Run this step even if a previous test step fails
-        if: matrix.os != 'windows' && (success() || failure())
-        uses: coactions/setup-xvfb@b6b4fcfb9f5a895edadc3bc76318fae0ac17c8b3 # v1
-        with:
-          run: cargo nextest run --locked -p warp_completer --features v2
 
     # This is longer than we like and temporary until we speed up integration tests
     # The maximum timeout for the entire job is 6 hours:
@@ -483,7 +492,7 @@ jobs:
           echo "::notice title=Remote Server Tests - Default Bash Version::$DEFAULT_BASH_VERSION"
 
       - name: Install cargo nextest
-        uses: taiki-e/install-action@16b05812d776ae1dfaabc8277e421fb6d2506419 # v2.82.7
+        uses: taiki-e/install-action@37f7c5781271959fb65b6b35224e28652ff2b63d # v2.87.0
         with:
           tool: nextest
 
@@ -571,7 +580,6 @@ jobs:
             runner: ${{ fromJSON(needs.params.outputs.macos-runner) }}
             is_self_hosted: ${{ contains(fromJSON(needs.params.outputs.macos-runner), 'self-hosted') }}
             null_device: "/dev/null"
-            clippy_excludes: "--exclude warp_completer"
 
           - os: "linux"
             name: "Linux"
@@ -581,7 +589,6 @@ jobs:
             # We don't (yet) have any self-hosted Linux runners.
             is_self_hosted: false
             null_device: "/dev/null"
-            clippy_excludes: "--exclude warp_completer"
 
           - os: "windows"
             name: "Windows"
@@ -589,10 +596,9 @@ jobs:
             # We don't (yet) have any self-hosted Windows runners.
             is_self_hosted: false
             null_device: "NUL"
-            clippy_excludes: "--exclude warp_js --exclude command-signatures-v2"
     runs-on: ${{ matrix.runner }}
     needs: params
-    #    if: ${{ needs.params.outputs.affects-rust-sources == 'true' }}
+    if: ${{ needs.params.outputs.needs-build == 'true' }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
@@ -615,13 +621,10 @@ jobs:
           set -e
           # On Windows, omit --all-features because pprof and related profiling features don't compile.
           if [ "${{ matrix.os }}" = "windows" ]; then
-            cargo clippy --locked --workspace ${{ matrix.clippy_excludes }} --all-targets --tests -- -D warnings
+            cargo clippy --locked --workspace --all-targets --tests -- -D warnings
           else
             # TODO(vorporeal): Re-enable the `all-features` flag once we've fixed things.
-            cargo clippy --locked --workspace ${{ matrix.clippy_excludes }} --all-targets --tests -- -D warnings
-            # Run clippy on warp_completer with default, rather than all features enabled, because there is
-            # feature-gated logic for the WIP completions-on-js implementation.
-            cargo clippy --locked -p warp_completer --all-targets --tests -- -D warnings
+            cargo clippy --locked --workspace --all-targets --tests -- -D warnings
           fi
           # Workspace feature unification enables `warp/tui` through the `warp_tui` package.
           # Also lint the default GUI configuration used by `cargo run` and `./script/run`.
@@ -647,11 +650,12 @@ jobs:
       fail-fast: false
     runs-on: ubuntu-latest
     needs: params
+    if: ${{ needs.params.outputs.needs-build == 'true' }}
     steps:
       - name: Checkout sources
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
         with:
           # Only cache runs on the master branch (caches on feature branches
           # are not reusable).
@@ -676,6 +680,14 @@ jobs:
           # if changing here, probably a good idea to change there too to keep dev tools on local ~= CI
           cargo install --git https://github.com/wgsl-analyzer/wgsl-analyzer --tag "2025-06-28" wgslfmt && \
           find . -name "*.wgsl" -exec wgslfmt --check {} +
+
+      - name: Install ShellCheck
+        uses: ConorMacBride/install-package@3e7ad059e07782ee54fa35f827df52aae0626f30 # v1
+        with:
+          apt: shellcheck
+
+      - name: Run ShellCheck
+        run: ./script/lint_shellcheck --ci
 
       - name: Run PSScriptAnalyzer (PowerShell Lint)
         run: ./script/lint_powershell -ci
@@ -705,6 +717,7 @@ jobs:
       fail-fast: false
     runs-on: ${{ fromJSON(needs.params.outputs.wasm-runner) }}
     needs: params
+    if: ${{ needs.params.outputs.needs-build == 'true' }}
     steps:
       - name: Compute IS_SELF_HOSTED
         id: is_self_hosted
@@ -773,6 +786,7 @@ jobs:
             null_device: "/dev/null"
     runs-on: ${{ matrix.runner }}
     needs: params
+    if: ${{ needs.params.outputs.needs-build == 'true' }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
@@ -806,6 +820,7 @@ jobs:
     # Match the platform used by agent-mode-evals CI.
     runs-on: ubuntu-latest-large
     needs: params
+    if: ${{ needs.params.outputs.needs-build == 'true' }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
@@ -849,14 +864,15 @@ jobs:
     steps:
       - name: Check CI results
         run: |
-          # Convert needs context to JSON and check required jobs
-          echo '${{ toJSON(needs) }}' | jq -r '
-            # Get all jobs except database-migration
-            to_entries | 
+          needs_build="${{ needs.params.outputs.needs-build }}"
+
+          echo '${{ toJSON(needs) }}' | jq -r --arg needs_build "$needs_build" '
+            to_entries |
             map(select(.key != "database-migration")) |
             .[] |
-            if .value.result != "success" then
-              "::error::Required job \(.key) failed or was skipped (status: \(.value.result))"
+            (if .key == "params" or $needs_build == "true" then "success" else "skipped" end) as $expected |
+            if .value.result != $expected then
+              "::error::Job \(.key) had unexpected status \(.value.result) (expected: \($expected))"
             else
               empty
             end

@@ -8,6 +8,7 @@ use iso8601_duration::Duration as Iso8601Duration;
 use serde::{Deserialize, Serialize};
 use session_sharing_protocol::common::SessionId;
 use url::Url;
+use warp_cli::agent::Harness;
 use warp_core::ui::theme::WarpTheme;
 use warp_errors::report_error;
 use warpui::color::ColorU;
@@ -201,6 +202,22 @@ where
     })
 }
 
+/// Ownership scope for a run: personal or team-owned. Mirrors the public API's
+/// `RunItem.scope`; distinct from `creator`, which is never a team.
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Default)]
+pub struct TaskScope {
+    #[serde(rename = "type", default)]
+    pub scope_type: String,
+    #[serde(default)]
+    pub uid: String,
+}
+
+impl TaskScope {
+    pub fn is_team(&self) -> bool {
+        self.scope_type.eq_ignore_ascii_case("team")
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct AmbientAgentTask {
     pub task_id: AmbientAgentTaskId,
@@ -247,6 +264,17 @@ pub struct AmbientAgentTask {
     /// driver case). Empty on older servers.
     #[serde(default)]
     pub children: Vec<String>,
+
+    /// Server-computed: whether a debug agent may be bootstrapped into this run's retained
+    /// environment-setup-failure session right now (REMOTE-2661). `#[serde(default)]` so an
+    /// older or ineligible server deserializes to `false`.
+    #[serde(default)]
+    pub debug_agent_available: bool,
+
+    /// This run's ownership scope. `#[serde(default)]` for an older server that never sends
+    /// it, in which case only the literal creator is recognized as authorized.
+    #[serde(default)]
+    pub scope: Option<TaskScope>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -330,6 +358,40 @@ impl AmbientAgentTask {
         self.conversation_id.as_deref()
     }
 
+    /// Whether this run is a retained environment-setup-failure session whose debug window is
+    /// still usable, so a debug prompt may be routed into it (REMOTE-2661). The server is the
+    /// sole authority here and re-verifies eligibility before accepting a follow-up; this only
+    /// decides what the client presents and where a submission goes.
+    pub fn is_setup_failure_debug_session_open(&self) -> bool {
+        self.debug_agent_available
+    }
+
+    /// Whether a debug conversation may still be *bootstrapped* into this session, i.e. none
+    /// exists yet. A later prompt reuses the persisted conversation instead.
+    pub fn is_open_for_setup_failure_debug_bootstrap(&self) -> bool {
+        self.is_setup_failure_debug_session_open() && self.conversation_id().is_none()
+    }
+
+    /// The third-party CLI harness this task is configured to run, if any. `None` means the
+    /// task runs on Warp's native Oz harness (the default when no harness is configured), whose
+    /// conversations are represented locally in `BlocklistAIHistoryModel`. A `Some` task has no
+    /// such local conversation, whether or not its CLI-harness session has started yet — callers
+    /// that route or gate on "is this task backed by a native conversation" must check this
+    /// independent of runtime CLI-session state.
+    pub fn third_party_harness_type(&self) -> Option<Harness> {
+        let harness_type = self
+            .agent_config_snapshot
+            .as_ref()
+            .and_then(|config| config.harness.as_ref())?
+            .harness_type;
+        (harness_type != Harness::Oz).then_some(harness_type)
+    }
+
+    /// Whether this task is configured for a third-party CLI harness rather than Oz.
+    pub fn is_third_party_harness(&self) -> bool {
+        self.third_party_harness_type().is_some()
+    }
+
     /// Returns true when this task's source must not accept user-triggered cloud follow-ups.
     pub fn blocks_cloud_followups(&self) -> bool {
         self.source
@@ -400,6 +462,19 @@ impl AmbientAgentTask {
                 + u.compute_cost.unwrap_or(0.0)
                 + u.platform_cost.unwrap_or(0.0)) as f32
         })
+    }
+    /// Total server-reported run cost, in US cents.
+    pub fn cost_in_cents(&self) -> Option<f32> {
+        let usage = self.active_run_execution().request_usage?;
+        let costs = [
+            usage.inference_cost_usd,
+            usage.compute_cost_usd,
+            usage.platform_cost_usd,
+        ];
+        costs
+            .iter()
+            .any(Option::is_some)
+            .then(|| (costs.into_iter().flatten().sum::<f64>() * 100.0) as f32)
     }
 
     /// Server-reported run duration.
@@ -566,6 +641,14 @@ pub struct TaskStatusMessage {
     pub message: String,
     #[serde(default, alias = "errorCode")]
     pub error_code: Option<TaskStatusErrorCode>,
+    /// Deadline of an open post-failure debug window (REMOTE-2208/REMOTE-2661), if the server
+    /// is holding one open. `#[serde(default)]`; `None` means no window is known to be open.
+    #[serde(default)]
+    pub session_debug_until: Option<DateTime<Utc>>,
+    /// True while a REMOTE-2661 debug turn is actively pinning the idle timer. Display-only;
+    /// can outlast an expired `session_debug_until` while pinned.
+    #[serde(default, alias = "debugAgentActive")]
+    pub debug_agent_active: bool,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
@@ -596,6 +679,9 @@ pub struct RequestUsage {
     pub inference_cost: Option<f64>,
     pub compute_cost: Option<f64>,
     pub platform_cost: Option<f64>,
+    pub inference_cost_usd: Option<f64>,
+    pub compute_cost_usd: Option<f64>,
+    pub platform_cost_usd: Option<f64>,
 }
 
 /// Cancel an ambient agent task and show a toast with the result.

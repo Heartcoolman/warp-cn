@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use futures::future::BoxFuture;
 use oauth2::{RefreshToken, TokenResponse as _};
 use rmcp::transport::auth::{
-    AuthClient, AuthorizationManager, CredentialStore, InMemoryCredentialStore, OAuthClientConfig,
-    OAuthState, StoredCredentials,
+    AuthClient, AuthorizationManager, AuthorizationRequest, CredentialStore,
+    InMemoryCredentialStore, OAuthClientConfig, OAuthState, StoredCredentials,
 };
 use rmcp::transport::{AuthError, AuthorizationSession};
 use serde::de::DeserializeOwned;
@@ -321,14 +321,21 @@ pub async fn make_authenticated_client(
                  in the Warp desktop app first."
             );
         }
+        // Naming the alternatives matters more than it looks: a cloud agent
+        // often runs somewhere its operator cannot open a browser against, so
+        // "authenticate in the desktop app" is not always a remedy they can
+        // act on.
         return Err(AuthError::AuthorizationFailed(
-            "MCP server requires OAuth authentication. Please authenticate this server in the \
-             Warp desktop app first, then try again."
+            "This MCP server asked for interactive OAuth, which cannot run in a headless or \
+             cloud agent. Either attach the server as a Warp-managed MCP so the platform \
+             supplies its credentials, or configure a static credential header backed by a \
+             managed secret. Authenticating the server in the Warp desktop app also works for \
+             runs on that same machine."
                 .to_string(),
         ));
     }
 
-    let metadata = auth_manager.discover_metadata().await?;
+    let metadata = auth_manager.resolve_metadata().await?.metadata;
 
     // Configure the auth manager's OAuth client using dynamic or static client registration.
     let mut oauth_state = if let Some(provider) = metadata
@@ -380,7 +387,7 @@ pub async fn make_authenticated_client(
         // Try dynamic client registration.
         let mut oauth_state = OAuthState::Unauthorized(auth_manager);
         oauth_state
-            .start_authorization(&[], &redirect_uri, Some("Warp"))
+            .start_authorization(AuthorizationRequest::new(&redirect_uri).with_client_name("Warp"))
             .await?;
         oauth_state
     };

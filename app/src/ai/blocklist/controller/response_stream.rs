@@ -20,6 +20,9 @@ use crate::network::NetworkStatus;
 use crate::send_telemetry_from_ctx;
 use crate::server::retry_strategies::backoff_after_attempts;
 use crate::server::server_api::{AIApiError, ServerApiProvider};
+use crate::server::team_scope::RequestTeamScope;
+#[cfg(test)]
+use crate::workspaces::user_workspaces::TeamlessScopeForTest;
 
 /// Maximum number of recovery attempts spent on one request before the failure is
 /// surfaced.
@@ -295,20 +298,55 @@ pub struct ResponseStream {
     /// Note this is unique compared to `id`; this is unique across retry requests while the response
     /// stream id remains stable.
     current_request_id: Option<Uuid>,
+
+    /// Captured once at construction, so retries keep the team the request started on.
+    team_scope: RequestTeamScope,
+
+    #[cfg(test)]
+    suppress_request_spawn: bool,
 }
 
 impl ResponseStream {
-    /// Emits a synthetic successful response event through the normal controller subscription.
     #[cfg(test)]
     pub fn emit_response_event_for_test(
         &mut self,
         event: warp_multi_agent_api::ResponseEvent,
         ctx: &mut ModelContext<Self>,
     ) {
-        ctx.emit(ResponseStreamEvent::ReceivedEvent(Consumable::new(Ok(
-            event,
-        ))));
+        let request_id = self
+            .current_request_id
+            .expect("test response stream must have a current request");
+        self.handle_response_stream_event(request_id, Ok(event), ctx);
     }
+
+    #[cfg(test)]
+    pub fn emit_error_event_for_test(
+        &mut self,
+        error: Arc<AIApiError>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let request_id = self
+            .current_request_id
+            .expect("test response stream must have a current request");
+        self.handle_response_stream_event(request_id, Err(error), ctx);
+    }
+
+    #[cfg(test)]
+    pub fn exhaust_recovery_budget_for_test(&mut self, ctx: &mut ModelContext<Self>) {
+        while self.recovery.has_remaining() {
+            self.retry(ctx);
+        }
+    }
+
+    /// Emits the natural-completion `AfterStreamFinished` event (no cancellation) through
+    /// the normal controller subscription, mirroring what `on_response_stream_complete`
+    /// emits once the real network stream ends. Lets a test drive the controller's
+    /// post-stream-cleanup pending-events re-check without a real stream.
+    #[cfg(test)]
+    pub fn emit_after_stream_finished_for_test(&mut self, ctx: &mut ModelContext<Self>) {
+        ctx.emit(ResponseStreamEvent::AfterStreamFinished { cancellation: None });
+    }
+
     #[cfg(test)]
     pub fn new_for_test(id: ResponseStreamId) -> Self {
         let (cancellation_tx, _rx) = oneshot::channel();
@@ -328,6 +366,8 @@ impl ResponseStream {
             error_event_emitted: false,
             deferred_retry_pending: false,
             current_request_id: Some(Uuid::new_v4()),
+            team_scope: RequestTeamScope::from_scope(&TeamlessScopeForTest),
+            suppress_request_spawn: true,
         }
     }
 
@@ -335,13 +375,14 @@ impl ResponseStream {
         params: api::RequestParams,
         ai_identifiers: AIIdentifiers,
         recovery: RecoveryBudget,
+        team_scope: RequestTeamScope,
         ctx: &mut ModelContext<Self>,
     ) -> Self {
         let (cancellation_tx, cancellation_rx) = oneshot::channel();
         let start_time = Local::now();
 
         let request_id = Uuid::new_v4();
-        Self::spawn_request(request_id, params.clone(), cancellation_rx, ctx);
+        Self::spawn_request(request_id, params.clone(), team_scope, cancellation_rx, ctx);
         Self {
             id: ResponseStreamId(Uuid::new_v4().to_string()),
             params,
@@ -358,6 +399,9 @@ impl ResponseStream {
             error_event_emitted: false,
             deferred_retry_pending: false,
             current_request_id: Some(request_id),
+            team_scope,
+            #[cfg(test)]
+            suppress_request_spawn: false,
         }
     }
 
@@ -409,16 +453,7 @@ impl ResponseStream {
     fn retry(&mut self, ctx: &mut ModelContext<Self>) {
         self.recovery = self.recovery.next_attempt();
         self.retries_sent += 1;
-        // Reset per-attempt state for the new attempt.
-        self.has_received_client_actions = false;
-        self.stream_finished_received = false;
-        self.error_event_emitted = false;
-        self.deferred_retry_pending = false;
-        // A retry supersedes any resume this stream had scheduled. Unreachable today (the
-        // eventsource closes on its first error, so a `Resume` decision is never followed by
-        // another error on the same stream), but that depends on a transport detail several
-        // crates away, and the retry backoff widens the window it holds in.
-        self.pending_resume = None;
+        self.reset_attempt_state();
 
         let (cancellation_tx, cancellation_rx) = oneshot::channel();
         if let Some(old_cancellation_tx) = self.cancellation_tx.take() {
@@ -428,7 +463,29 @@ impl ResponseStream {
 
         let request_id = Uuid::new_v4();
         self.current_request_id = Some(request_id);
-        Self::spawn_request(request_id, self.params.clone(), cancellation_rx, ctx);
+        #[cfg(test)]
+        if self.suppress_request_spawn {
+            return;
+        }
+        Self::spawn_request(
+            request_id,
+            self.params.clone(),
+            self.team_scope,
+            cancellation_rx,
+            ctx,
+        );
+    }
+
+    fn reset_attempt_state(&mut self) {
+        self.has_received_client_actions = false;
+        self.stream_finished_received = false;
+        self.error_event_emitted = false;
+        self.deferred_retry_pending = false;
+        // A retry supersedes any resume this stream had scheduled. Unreachable today (the
+        // eventsource closes on its first error, so a `Resume` decision is never followed by
+        // another error on the same stream), but that depends on a transport detail several
+        // crates away, and the retry backoff widens the window it holds in.
+        self.pending_resume = None;
     }
 
     /// Decides how to recover from `error` and starts the recovery, or reports the failure
@@ -515,6 +572,7 @@ impl ResponseStream {
     fn spawn_request(
         request_id: Uuid,
         params: api::RequestParams,
+        team_scope: RequestTeamScope,
         cancellation_rx: oneshot::Receiver<()>,
         ctx: &mut ModelContext<Self>,
     ) {
@@ -532,7 +590,7 @@ impl ResponseStream {
             // xAI auth (there's no BYO xAI key), so a base model whose provider
             // is xAI is exactly a subscription request.
             let uses_grok_subscription = LLMPreferences::as_ref(ctx)
-                .get_llm_info(&params.model)
+                .get_llm_info(&params.model, ctx)
                 .is_some_and(|info| info.provider == LLMProvider::Xai);
             if uses_grok_subscription {
                 // Both halves, because this branch writes a member credential into `api_keys`,
@@ -571,6 +629,7 @@ impl ResponseStream {
                                 Self::spawn_generate(
                                     request_id,
                                     me.params.clone(),
+                                    team_scope,
                                     cancellation_rx,
                                     ctx,
                                 );
@@ -587,7 +646,7 @@ impl ResponseStream {
             }
 
             let uses_geap = LLMPreferences::as_ref(ctx)
-                .get_llm_info(&params.model)
+                .get_llm_info(&params.model, ctx)
                 .is_some_and(|info| {
                     info.host_configs
                         .get(&LLMModelHost::GeminiEnterprise)
@@ -595,7 +654,8 @@ impl ResponseStream {
                 });
             if uses_geap
                 && let Some(binding) =
-                    crate::ai::geap_credentials::current_geap_policy(ctx).mint_binding()
+                    crate::ai::geap_credentials::current_geap_policy_for_any_team(ctx)
+                        .mint_binding()
             {
                 let refresh_binding = binding.clone();
                 let refresh_rx = ApiKeyManager::handle(ctx).update(ctx, |manager, ctx| {
@@ -631,6 +691,7 @@ impl ResponseStream {
                             Self::spawn_generate(
                                 request_id,
                                 me.params.clone(),
+                                team_scope,
                                 cancellation_rx,
                                 ctx,
                             );
@@ -641,7 +702,7 @@ impl ResponseStream {
             }
         }
 
-        Self::spawn_generate(request_id, params, cancellation_rx, ctx);
+        Self::spawn_generate(request_id, params, team_scope, cancellation_rx, ctx);
     }
 
     /// Emits a terminal, user-visible error for a failed request-time Grok token
@@ -666,12 +727,15 @@ impl ResponseStream {
     fn spawn_generate(
         request_id: Uuid,
         params: api::RequestParams,
+        team_scope: RequestTeamScope,
         cancellation_rx: oneshot::Receiver<()>,
         ctx: &mut ModelContext<Self>,
     ) {
         let server_api = ServerApiProvider::as_ref(ctx).get();
         let _ = ctx.spawn(
-            async move { generate_multi_agent_output(server_api, params, cancellation_rx).await },
+            async move {
+                generate_multi_agent_output(server_api, params, team_scope, cancellation_rx).await
+            },
             move |me, stream, ctx| {
                 me.handle_response_stream_result(request_id, stream, ctx);
             },

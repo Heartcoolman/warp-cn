@@ -268,6 +268,7 @@ fn test_detect_known_agents() {
                 ("vibe", CLIAgent::Vibe),
                 ("agy", CLIAgent::Antigravity),
                 ("omp", CLIAgent::OhMyPi),
+                ("grok", CLIAgent::Grok),
                 ("warp", CLIAgent::WarpTui),
                 ("warp-dev", CLIAgent::WarpTui),
                 ("./script/run-tui", CLIAgent::WarpTui),
@@ -296,6 +297,15 @@ fn test_detect_with_arguments() {
             );
         });
     });
+}
+
+#[test]
+fn test_grok_public_configuration() {
+    assert_eq!(CLIAgent::Grok.command_prefix(), "grok");
+    assert_eq!(CLIAgent::Grok.display_name(), "Grok Build");
+    assert!(CLIAgent::Grok.supports_bash_mode());
+    assert_eq!(CLIAgent::Grok.skill_command_prefix(), "/");
+    assert_eq!(CLIAgent::Grok.icon(), Some(Icon::GrokLogo));
 }
 
 #[test]
@@ -454,7 +464,9 @@ fn workspace_with_team_uid(uid: &str) -> Workspace {
             None,
             None,
             None,
+            None,
         )]),
+        None,
     )
 }
 
@@ -648,10 +660,6 @@ fn test_warp_tui_variant_properties() {
     assert!(CLIAgent::WarpTui.supported_skill_providers().is_empty());
     assert!(!CLIAgent::WarpTui.supports_bash_mode());
     assert!(!CLIAgent::WarpTui.supports_cli_agent_footer());
-    assert!(matches!(
-        crate::server::telemetry::CLIAgentType::from(CLIAgent::WarpTui),
-        crate::server::telemetry::CLIAgentType::WarpTui
-    ));
     // Serialized name round-trips (also covered by
     // `test_serialized_name_round_trips_known_agents`, asserted explicitly here).
     assert_eq!(
