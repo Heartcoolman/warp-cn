@@ -86,6 +86,7 @@ impl AgentTodosPopupView {
     ) {
         if let BlocklistAIHistoryEvent::UpdatedTodoList {
             terminal_surface_id,
+            ..
         } = event
             && *terminal_surface_id == self.terminal_view_id
         {

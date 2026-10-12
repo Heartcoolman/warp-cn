@@ -2,6 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use tempfile::TempDir;
+use virtual_fs::VirtualFS;
 
 use super::*;
 
@@ -15,6 +16,125 @@ fn write_skill(dir: &Path, name: &str) -> PathBuf {
     )
     .unwrap();
     skill_dir
+}
+
+#[test]
+fn required_deferred_skill_reserves_canonical_name_for_claude_codex_and_gemini() {
+    let root = TempDir::new().unwrap();
+    let configured_root = root.path().join("configured");
+    let bundled_root = root.path().join("resources/bundled/skills");
+    fs::create_dir_all(&configured_root).unwrap();
+    fs::create_dir_all(&bundled_root).unwrap();
+    let configured = write_skill(&configured_root, FACTORY_DEFERRED_REPOSITORIES_SKILL);
+    let bundled = write_skill(&bundled_root, FACTORY_DEFERRED_REPOSITORIES_SKILL);
+
+    for relative_root in [".claude/skills", ".agents/skills", ".gemini/skills"] {
+        let skill_root = root.path().join(relative_root);
+        let published = publish_skill_sources(
+            &skill_root,
+            std::slice::from_ref(&configured),
+            &[],
+            Some(&bundled),
+            false,
+        )
+        .unwrap();
+        let canonical = skill_root.join(FACTORY_DEFERRED_REPOSITORIES_SKILL);
+        assert_eq!(published, vec![canonical.clone()]);
+        assert_eq!(fs::read_link(canonical).unwrap(), bundled);
+        assert!(configured.join("SKILL.md").is_file());
+    }
+}
+
+#[test]
+fn required_deferred_skill_preserves_conflicting_targets_in_sandbox_and_fails_outside() {
+    let root = TempDir::new().unwrap();
+    let bundled_root = root.path().join("resources/bundled/skills");
+    fs::create_dir_all(&bundled_root).unwrap();
+    let bundled = write_skill(&bundled_root, FACTORY_DEFERRED_REPOSITORIES_SKILL);
+
+    for relative_root in [".claude/skills", ".agents/skills", ".gemini/skills"] {
+        let skill_root = root.path().join(relative_root);
+        fs::create_dir_all(&skill_root).unwrap();
+        let canonical = skill_root.join(FACTORY_DEFERRED_REPOSITORIES_SKILL);
+        fs::create_dir_all(&canonical).unwrap();
+        fs::write(canonical.join("SKILL.md"), "existing user skill").unwrap();
+
+        assert!(publish_skill_sources(&skill_root, &[], &[], Some(&bundled), false).is_err());
+        assert_eq!(
+            fs::read_to_string(canonical.join("SKILL.md")).unwrap(),
+            "existing user skill"
+        );
+        assert!(
+            !skill_root
+                .join("warp-factory-deferred-repositories")
+                .exists()
+        );
+
+        let published = publish_skill_sources(&skill_root, &[], &[], Some(&bundled), true).unwrap();
+        assert_eq!(published, vec![canonical.clone()]);
+        assert_eq!(fs::read_link(canonical).unwrap(), bundled);
+        assert_eq!(
+            fs::read_to_string(skill_root.join("factory-deferred-repositories.backup/SKILL.md"))
+                .unwrap(),
+            "existing user skill"
+        );
+    }
+}
+
+#[test]
+fn empty_configured_skill_dirs_suppress_ambient_sources() {
+    let workspace = TempDir::new().unwrap();
+
+    let published_root = workspace.path().join("harness/skills");
+    assert!(
+        publish_skills_for_harness(&published_root, workspace.path(), false, &[], false,)
+            .unwrap()
+            .is_empty()
+    );
+    assert!(!published_root.exists());
+}
+
+#[test]
+fn empty_resolved_directories_still_publish_the_required_deferred_skill() {
+    let root = TempDir::new().unwrap();
+    let bundled = write_skill(root.path(), FACTORY_DEFERRED_REPOSITORIES_SKILL);
+    let skill_root = root.path().join(".gemini/skills");
+    let published = publish_skill_sources(&skill_root, &[], &[], Some(&bundled), false).unwrap();
+    let canonical = skill_root.join(FACTORY_DEFERRED_REPOSITORIES_SKILL);
+    assert_eq!(published, vec![canonical.clone()]);
+    assert_eq!(fs::read_link(canonical).unwrap(), bundled);
+}
+
+#[test]
+fn resolved_skill_dirs_are_published_relative_to_workspace_root() {
+    let workspace = TempDir::new().unwrap();
+    let source_dir = workspace.path().join("repo/skills");
+    let skill = write_skill(&source_dir, "factory-skill");
+    let published_root = workspace.path().join("harness/skills");
+    let source_dirs = vec![PathBuf::from("repo/skills")];
+    let published = publish_skills_for_harness(
+        &published_root,
+        workspace.path(),
+        false,
+        &source_dirs,
+        false,
+    )
+    .unwrap();
+    let link = published_root.join("factory-skill");
+    assert!(published.contains(&link));
+    assert_eq!(fs::read_link(&link).unwrap(), skill);
+}
+
+fn publish_source_dirs(
+    skill_root: &Path,
+    source_dirs: &[PathBuf],
+    is_sandbox: bool,
+) -> Vec<PathBuf> {
+    publish_skill_dirs(
+        skill_root,
+        skill_dirs_from_source_dirs(source_dirs),
+        is_sandbox,
+    )
 }
 
 #[test]
@@ -324,9 +444,8 @@ fn publish_skill_dirs_prefers_most_specific_directory_on_name_collision() {
     let general_linear = write_skill(&general_dir, "linear");
     let skill_root = TempDir::new().unwrap();
 
-    let published = publish_skill_dirs(skill_root.path(), &[specific_dir, general_dir], false);
-
-    assert_eq!(published, 2);
+    let published = publish_source_dirs(skill_root.path(), &[specific_dir, general_dir], false);
+    assert_eq!(published.len(), 2);
     assert_eq!(
         fs::read_link(skill_root.path().join("github")).unwrap(),
         specific_github
@@ -350,9 +469,8 @@ fn publish_skill_dirs_in_a_sandbox_overrides_an_existing_environment_skill_and_p
     fs::create_dir_all(&existing_target).unwrap();
     fs::write(existing_target.join("SKILL.md"), "pre-existing skill").unwrap();
 
-    let published = publish_skill_dirs(skill_root.path(), &[source_dir], true);
-
-    assert_eq!(published, 1);
+    let published = publish_source_dirs(skill_root.path(), &[source_dir], true);
+    assert_eq!(published.len(), 1);
     // The published skill wins under the real name...
     assert_eq!(
         fs::read_link(skill_root.path().join("github")).unwrap(),
@@ -374,9 +492,8 @@ fn publish_skill_dirs_skips_entries_without_skill_md() {
     write_skill(&source_dir, "github");
     let skill_root = TempDir::new().unwrap();
 
-    let published = publish_skill_dirs(skill_root.path(), &[source_dir], false);
-
-    assert_eq!(published, 1);
+    let published = publish_source_dirs(skill_root.path(), &[source_dir], false);
+    assert_eq!(published.len(), 1);
     assert!(skill_root.path().join("github").exists());
     assert!(!skill_root.path().join("not-a-skill").exists());
 }
@@ -386,7 +503,7 @@ fn publish_skill_dirs_is_a_noop_for_empty_source_dirs() {
     let outer = TempDir::new().unwrap();
     let skill_root = outer.path().join("skills");
 
-    assert_eq!(publish_skill_dirs(&skill_root, &[], false), 0);
+    assert!(publish_source_dirs(&skill_root, &[], false).is_empty());
     // Doesn't even create the skill root when there's nothing to publish.
     assert!(!skill_root.exists());
 }
@@ -400,8 +517,120 @@ fn publish_skill_dirs_recovers_from_missing_source_directory() {
     write_skill(&present_dir, "github");
     let skill_root = TempDir::new().unwrap();
 
-    let published = publish_skill_dirs(skill_root.path(), &[missing_dir, present_dir], false);
-
-    assert_eq!(published, 1);
+    let published = publish_source_dirs(skill_root.path(), &[missing_dir, present_dir], false);
+    assert_eq!(published.len(), 1);
     assert!(skill_root.path().join("github").exists());
+}
+
+#[test]
+#[serial_test::serial]
+fn bundled_factory_mcp_skill_source_follows_feature_flag() {
+    let resources = PathBuf::from("/bundled-resources");
+    let flag = FeatureFlag::FactoryMcp.override_enabled(false);
+    assert!(bundled_factory_mcp_skill_dirs(Some(resources.clone())).is_empty());
+    drop(flag);
+
+    let _flag = FeatureFlag::FactoryMcp.override_enabled(true);
+    assert_eq!(
+        bundled_factory_mcp_skill_dirs(Some(resources.clone())),
+        vec![resources.join("bundled/skills/factory-mcp")]
+    );
+    assert!(bundled_factory_mcp_skill_dirs(None).is_empty());
+}
+
+#[test]
+fn additional_factory_mcp_skill_publishes_to_native_harness_roots_idempotently() {
+    let root = TempDir::new().unwrap();
+    let bundled_skills = root.path().join("resources/bundled/skills");
+    fs::create_dir_all(&bundled_skills).unwrap();
+    let factory_mcp = write_skill(&bundled_skills, "factory-mcp");
+
+    for relative_root in [".claude/skills", ".agents/skills"] {
+        let skill_root = root.path().join(relative_root);
+        let first = publish_skill_dirs(&skill_root, std::slice::from_ref(&factory_mcp), false);
+        let second = publish_skill_dirs(&skill_root, std::slice::from_ref(&factory_mcp), false);
+
+        assert_eq!(first, second);
+        assert_eq!(
+            fs::read_link(skill_root.join("factory-mcp")).unwrap(),
+            factory_mcp
+        );
+        assert!(!skill_root.join("factory-mcp.backup").exists());
+    }
+}
+
+#[test]
+fn warp_skill_source_wins_over_bundled_factory_mcp_with_the_same_name() {
+    let root = TempDir::new().unwrap();
+    let warp_skills = root.path().join("warp-skills");
+    let bundled_skills = root.path().join("resources/bundled/skills");
+    fs::create_dir_all(&warp_skills).unwrap();
+    fs::create_dir_all(&bundled_skills).unwrap();
+    let configured_skill = write_skill(&warp_skills, "factory-mcp");
+    let bundled = write_skill(&bundled_skills, "factory-mcp");
+    let skill_root = root.path().join(".claude/skills");
+
+    let configured_skill_dirs = skill_dirs_from_source_dirs([warp_skills]);
+    publish_skill_dirs(
+        &skill_root,
+        configured_skill_dirs.iter().chain([&bundled]),
+        true,
+    );
+
+    assert_eq!(
+        fs::read_link(skill_root.join("factory-mcp")).unwrap(),
+        configured_skill
+    );
+    assert!(!skill_root.join("factory-mcp.backup").exists());
+}
+
+#[test]
+fn git_exclude_pattern_anchors_and_escapes_git_metacharacters() {
+    let pattern = git_exclude_pattern(Path::new(".agents/skills/name with *?[brackets]")).unwrap();
+
+    assert_eq!(pattern, r"/.agents/skills/name\ with\ \*\?\[brackets\]");
+}
+
+#[cfg(unix)]
+#[test]
+fn git_exclude_pattern_escapes_a_literal_backslash_on_unix() {
+    let pattern = git_exclude_pattern(Path::new(r".agents/skills/name\with\backslashes")).unwrap();
+
+    assert_eq!(pattern, r"/.agents/skills/name\\with\\backslashes");
+}
+
+#[test]
+fn git_exclude_pattern_rejects_line_separators() {
+    for line_separator in ['\n', '\r'] {
+        let path = format!(".agents/skills/first{line_separator}/injected");
+
+        assert!(git_exclude_pattern(Path::new(&path)).is_err());
+    }
+}
+
+#[test]
+fn write_published_skill_paths_to_git_exclude_is_idempotent_and_preserves_existing_content() {
+    VirtualFS::test(
+        "write_published_skill_paths_to_git_exclude",
+        |dirs, _sandbox| {
+            let repository = git2::Repository::init(dirs.tests()).unwrap();
+            let repository_root = repository.workdir().unwrap();
+            let exclude_path = repository.commondir().join("info").join("exclude");
+            fs::write(&exclude_path, "existing-pattern").unwrap();
+            let github = repository_root.join(".claude/skills/github");
+            let linear = repository_root.join(".claude/skills/linear");
+
+            write_published_skill_paths_to_git_exclude(
+                repository_root,
+                std::slice::from_ref(&github),
+            )
+            .unwrap();
+            write_published_skill_paths_to_git_exclude(repository_root, &[github, linear]).unwrap();
+
+            assert_eq!(
+                fs::read_to_string(exclude_path).unwrap(),
+                "existing-pattern\n/.claude/skills/github\n/.claude/skills/linear\n"
+            );
+        },
+    );
 }

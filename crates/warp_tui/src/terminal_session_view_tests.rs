@@ -17,21 +17,25 @@ use warp::settings::{
     TuiThemeSettings, TuiUsageDisplayMode, TuiVoiceInputHoldKey, TuiZeroStateObject,
 };
 use warp::terminal::model::ansi::{Handler, InputBufferValue, Mode};
+use warp::terminal::model::session::SessionInfo;
+use warp::terminal::model::session::command_executor::LocalCommandExecutor;
+use warp::terminal::shell::ShellType;
 use warp::tui_export::{
     AIAgentAction, AIAgentActionId, AIAgentActionType, AIAgentExchangeId, AIAgentInput,
     AIAgentOutput, AIAgentOutputMessage, AIAgentOutputMessageType, AIAgentTodo, AIAgentTodoList,
     AIBlockModel, AIBlockOutputStatus, AIConversationAutoexecuteMode, AIConversationId,
     AIRequestType, AgentViewEntryOrigin, AskUserQuestionItem, AskUserQuestionOption,
     AskUserQuestionType, BlockPadding, BlocklistAIHistoryEvent, BlocklistAIHistoryModel,
-    ConversationStatus, ConversationUsageTotals, Harness, InputTypeAutoDetectionSource, LLMId,
-    LLMPreferences, LinkedWorkflowData, LongRunningCommandControlState, MessageId,
-    OutputStatusUpdateCallback, ParsedSlashCommandInput, PtyIntent, PtyIntentEvent, ServerOutputId,
-    Session, Shared, SizeInfo, SizeUpdate, SlashCommandDataSource as _, SlashCommandKind, TaskId,
-    TranscriptScope, TuiMcpAction, TuiMcpServerId, TuiOnboardingMarker, TuiOnboardingMarkers,
-    TuiUpArrowHistoryItemKind, UserTakeOverReason, UserWorkspaces, WarpConfig,
-    WarpConfigUpdateEvent, export_conversation_markdown, forkable_tui_conversation_for_test,
-    queue_tui_permission_action, register_tui_session_view_test_singletons,
-    set_tui_default_team_admin_for_test, set_tui_workspace_teams_for_test, slash_commands,
+    ChargeUnit, ConversationStatus, ConversationUsageTotals, Harness, InputTypeAutoDetectionSource,
+    LLMId, LLMPreferences, LinkedWorkflowData, LongRunningCommandControlState, MessageId,
+    OutputStatusUpdateCallback, ParsedSlashCommandInput, PtyIntent, PtyIntentEvent,
+    ResolvedTeamScope, ServerOutputId, Session, Shared, SizeInfo, SizeUpdate,
+    SlashCommandDataSource as _, SlashCommandKind, TaskId, TranscriptScope, TuiMcpAction,
+    TuiMcpServerId, TuiOnboardingMarker, TuiOnboardingMarkers, TuiUpArrowHistoryItemKind,
+    UserTakeOverReason, UserWorkspaces, WarpConfig, WarpConfigUpdateEvent,
+    export_conversation_markdown, forkable_tui_conversation_for_test, queue_tui_permission_action,
+    register_tui_session_view_test_singletons, set_tui_default_team_admin_for_test,
+    set_tui_workspace_teams_for_test, slash_commands,
 };
 use warp_core::channel::{Channel, ChannelState};
 use warp_core::features::FeatureFlag;
@@ -41,7 +45,7 @@ use warpui::platform::WindowStyle;
 use warpui::{
     AddWindowOptions, EntityIdMap, ModelHandle, ReadModel, SingletonEntity, UpdateModel, ViewHandle,
 };
-use warpui_core::r#async::Timer;
+use warpui_core::r#async::{FutureExt as _, Timer};
 use warpui_core::elements::tui::{
     Color, TuiBuffer, TuiBufferExt, TuiConstrainedBox, TuiConstraint, TuiContainer, TuiElement,
     TuiEvent, TuiEventContext, TuiFlex, TuiLayoutContext, TuiPaintContext, TuiPaintSurface,
@@ -1041,25 +1045,72 @@ fn shell_mode_reserves_tab_even_when_attachments_render() {
     assert!(!attachment_focus_available(true, true));
     assert!(!attachment_focus_available(false, false));
 }
+
 #[test]
 fn shell_completion_source_warmup_loads_path_executables() {
     App::test((), |mut app| async move {
         let fixture = focus_test_fixture(&mut app);
         let (view, _) = add_focus_test_session(&mut app, &fixture, true);
-        let session = Arc::new(Session::test());
+        let command_dir = TempDir::new().unwrap();
+        #[cfg(unix)]
+        let shell_path = std::path::PathBuf::from("/bin/bash");
+        #[cfg(windows)]
+        let shell_path = std::path::PathBuf::from(
+            std::env::var_os("ProgramFiles").expect("Windows must have ProgramFiles"),
+        )
+        .join(r"Git\usr\bin\bash.exe");
+        #[cfg(unix)]
+        let executable_name = "warp-completion-fixture";
+        #[cfg(windows)]
+        let executable_name = "warp-completion-fixture.exe";
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+
+            let executable = command_dir.path().join(executable_name);
+            std::fs::write(&executable, "#!/bin/sh\nexit 0\n").unwrap();
+            std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        #[cfg(windows)]
+        std::fs::copy(
+            std::path::PathBuf::from(
+                std::env::var_os("SystemRoot").expect("Windows must have a SystemRoot"),
+            )
+            .join(r"System32\where.exe"),
+            command_dir.path().join(executable_name),
+        )
+        .unwrap();
+        let session_info = SessionInfo::new_for_test()
+            .with_shell_type(ShellType::Bash)
+            .with_path(Some(command_dir.path().to_str().unwrap().to_owned()));
+        let executor = Arc::new(LocalCommandExecutor::new(Some(shell_path), ShellType::Bash));
+        let session = Arc::new(Session::new(session_info, executor));
 
         view.update(&mut app, |view, ctx| {
             view.warm_shell_completion_sources(session.clone(), ctx);
         });
 
-        let deadline = Instant::now() + Duration::from_secs(5);
-        while !session.has_loaded_external_commands() && Instant::now() < deadline {
-            Timer::after(Duration::from_millis(10)).await;
+        async {
+            while !session.has_attempted_to_load_external_commands() {
+                Timer::after(Duration::from_millis(10)).await;
+            }
         }
+        .with_timeout(Duration::from_secs(5))
+        .await
+        .expect("Completion warmup must start external command discovery");
 
-        assert!(session.has_attempted_to_load_external_commands());
+        session
+            .load_external_commands()
+            .with_timeout(Duration::from_secs(5))
+            .await
+            .expect("External command discovery must finish");
         assert!(session.has_loaded_external_commands());
-        assert!(session.executable_names().any(|command| command == "git"));
+        assert!(
+            session
+                .executable_names()
+                .any(|command| command == executable_name)
+        );
     });
 }
 
@@ -1659,21 +1710,25 @@ fn accepted_model_only_changes_the_current_session() {
     App::test((), |mut app| async move {
         let fixture = focus_test_fixture(&mut app);
         LLMPreferences::handle(&app).update(&mut app, |preferences, ctx| {
-            let mut alternate = preferences.get_default_base_model(ctx).clone();
+            let scope = ResolvedTeamScope::from_scope(
+                &UserWorkspaces::teamless_context_resolver_for_test()(ctx),
+            );
+            let mut alternate = preferences.get_default_base_model(&scope, ctx).clone();
             alternate.id = "tui-session-override".into();
             alternate.display_name = "TUI session override".to_owned();
-            preferences.add_agent_mode_model_for_test(alternate);
+            preferences.add_agent_mode_model_for_test(&scope, alternate, ctx);
         });
         let (first_view, _) = add_focus_test_session(&mut app, &fixture, true);
         let (second_view, _) = add_focus_test_session(&mut app, &fixture, false);
         let (profile_default_id, alternate_id) = app.read(|ctx| {
+            let scope = UserWorkspaces::teamless_context_resolver_for_test()(ctx);
             let preferences = LLMPreferences::as_ref(ctx);
             let profile_default_id = preferences
-                .get_active_profile_base_model(ctx, None)
+                .get_active_profile_base_model(&scope, ctx, None)
                 .id
                 .clone();
             let alternate_id = preferences
-                .get_base_llm_choices_for_agent_mode(ctx)
+                .get_base_llm_choices_for_agent_mode(&scope, ctx)
                 .find(|model| model.id != profile_default_id && model.disable_reason.is_none())
                 .expect("test model catalog should include an alternate model")
                 .id
@@ -1686,24 +1741,25 @@ fn accepted_model_only_changes_the_current_session() {
         });
 
         app.read(|ctx| {
+            let scope = UserWorkspaces::teamless_context_resolver_for_test()(ctx);
             let preferences = LLMPreferences::as_ref(ctx);
             let first_surface_id = first_view.as_ref(ctx).terminal_surface_id;
             let second_surface_id = second_view.as_ref(ctx).terminal_surface_id;
             assert_eq!(
                 preferences
-                    .get_active_base_model(ctx, Some(first_surface_id))
+                    .get_active_base_model(&scope, ctx, Some(first_surface_id))
                     .id,
                 alternate_id
             );
             assert_eq!(
                 preferences
-                    .get_active_base_model(ctx, Some(second_surface_id))
+                    .get_active_base_model(&scope, ctx, Some(second_surface_id))
                     .id,
                 profile_default_id
             );
             assert_eq!(
                 preferences
-                    .get_active_profile_base_model(ctx, Some(first_surface_id))
+                    .get_active_profile_base_model(&scope, ctx, Some(first_surface_id))
                     .id,
                 profile_default_id
             );
@@ -1721,8 +1777,9 @@ fn model_menu_labels_the_profile_default_model() {
         });
 
         view.read(&app, |view, ctx| {
+            let scope = UserWorkspaces::teamless_context_resolver_for_test()(ctx);
             let default_name = LLMPreferences::as_ref(ctx)
-                .get_active_profile_base_model(ctx, Some(view.terminal_surface_id))
+                .get_active_profile_base_model(&scope, ctx, Some(view.terminal_surface_id))
                 .display_name
                 .clone();
             let snapshot = view
@@ -1856,6 +1913,7 @@ fn todo_updates_preserve_scroll_and_close_the_menu_when_the_list_disappears() {
             view.handle_history_event(
                 &BlocklistAIHistoryEvent::UpdatedTodoList {
                     terminal_surface_id: view.terminal_surface_id,
+                    conversation_id,
                 },
                 ctx,
             );
@@ -1889,6 +1947,7 @@ fn todo_updates_preserve_scroll_and_close_the_menu_when_the_list_disappears() {
             view.handle_history_event(
                 &BlocklistAIHistoryEvent::UpdatedTodoList {
                     terminal_surface_id: view.terminal_surface_id,
+                    conversation_id,
                 },
                 ctx,
             );
@@ -1906,6 +1965,7 @@ fn todo_updates_preserve_scroll_and_close_the_menu_when_the_list_disappears() {
             view.handle_history_event(
                 &BlocklistAIHistoryEvent::UpdatedTodoList {
                     terminal_surface_id: view.terminal_surface_id,
+                    conversation_id,
                 },
                 ctx,
             );
@@ -2460,7 +2520,8 @@ fn render_usage_footer_row(app: &mut App, totals: ConversationUsageTotals) -> Ve
     app.update(|ctx| {
         let builder = TuiUiBuilder::from_app(ctx);
         let mode = AISettings::as_ref(ctx).usage_display_mode;
-        let usage = UsageToggle::default().render_entry(mode, totals, ctx, |_, _| {});
+        let usage =
+            UsageToggle::default().render_entry(mode, totals, ChargeUnit::Credits, ctx, |_, _| {});
         let row = render_status_footer_row(
             FooterSegments {
                 ordered: vec![
@@ -2489,7 +2550,7 @@ fn response_summary_visibility_is_independent_from_the_footer_usage_mode() {
 
         let totals = ConversationUsageTotals {
             credits_spent: 2.5,
-            cost_in_cents: Some(3.2),
+            billed_cost_in_cents: Some(3.2),
             has_usage: true,
             charged_usage: None,
         };
@@ -2642,12 +2703,16 @@ fn footer_model_label_is_a_bounded_click_target() {
         // Force the bootstrap (Disabled) state so the footer — and its
         // clickable model label — render deterministically.
         view.update(&mut app, |view, _| {
-            view.terminal_model.lock().block_list_mut().reinit_shell();
+            view.terminal_model
+                .lock()
+                .block_list_mut()
+                .reinit_shell(None);
         });
 
         let model_name = view.read(&app, |view, ctx| {
+            let scope = UserWorkspaces::teamless_context_resolver_for_test()(ctx);
             LLMPreferences::as_ref(ctx)
-                .get_active_base_model(ctx, Some(view.terminal_surface_id))
+                .get_active_base_model(&scope, ctx, Some(view.terminal_surface_id))
                 .display_name
                 .clone()
         });
@@ -3274,7 +3339,10 @@ fn bootstrap_renders_starting_shell_above_input() {
         let fixture = focus_test_fixture(&mut app);
         let (view, _) = add_focus_test_session(&mut app, &fixture, true);
         view.update(&mut app, |view, _| {
-            view.terminal_model.lock().block_list_mut().reinit_shell();
+            view.terminal_model
+                .lock()
+                .block_list_mut()
+                .reinit_shell(None);
         });
 
         let lines = render_session(&mut app, &view, 80, 40);
@@ -3309,7 +3377,10 @@ fn zero_state_position_stays_stable_across_shell_bootstrap() {
         );
 
         view.update(&mut app, |view, _| {
-            view.terminal_model.lock().block_list_mut().reinit_shell();
+            view.terminal_model
+                .lock()
+                .block_list_mut()
+                .reinit_shell(None);
         });
         let bootstrap_lines = render_session(&mut app, &view, 80, 40);
         assert!(
@@ -3414,7 +3485,10 @@ fn submit_is_blocked_during_bootstrap_and_allowed_at_prompt() {
             view.input_view.update(ctx, |input, ctx| {
                 input.set_text("draft", ctx);
             });
-            view.terminal_model.lock().block_list_mut().reinit_shell();
+            view.terminal_model
+                .lock()
+                .block_list_mut()
+                .reinit_shell(None);
             view.handle_submitted("draft".to_owned(), None, ctx);
         });
 
@@ -4083,7 +4157,7 @@ fn visible_startup_script_shows_no_running_command_hint() {
         view.update(&mut app, |view, ctx| {
             {
                 let mut terminal_model = view.terminal_model.lock();
-                terminal_model.block_list_mut().reinit_shell();
+                terminal_model.block_list_mut().reinit_shell(None);
                 terminal_model
                     .update_blockheight_items(TRANSCRIPT_BLOCK_SPACING.block_padding, 0.0);
                 // Advance past WarpInput, then leave an unfinished startup-script
@@ -4130,7 +4204,7 @@ fn zero_state_renders_with_only_zero_height_bootstrap_blocks() {
         let (view, _) = add_focus_test_session(&mut app, &fixture, true);
         view.update(&mut app, |view, _| {
             let mut terminal_model = view.terminal_model.lock();
-            terminal_model.block_list_mut().reinit_shell();
+            terminal_model.block_list_mut().reinit_shell(None);
             terminal_model.update_blockheight_items(TRANSCRIPT_BLOCK_SPACING.block_padding, 0.0);
             terminal_model.simulate_block("bootstrap", "");
             terminal_model.simulate_long_running_block("shell init", "");
@@ -4411,7 +4485,7 @@ fn zero_state_transitions_through_bootstrap_lifecycle() {
         // routed to the block, so the zero state must stay hidden while the block runs.
         view.update(&mut app, |view, _| {
             let mut terminal_model = view.terminal_model.lock();
-            terminal_model.block_list_mut().reinit_shell();
+            terminal_model.block_list_mut().reinit_shell(None);
             terminal_model.update_blockheight_items(TRANSCRIPT_BLOCK_SPACING.block_padding, 0.0);
             // Advance past WarpInput to ScriptExecution.
             terminal_model.simulate_block("bootstrap", "");
@@ -4856,10 +4930,11 @@ fn footer_renders_agent_sections_left_aligned() {
                 TuiUsageDisplayMode::default(),
                 ConversationUsageTotals {
                     credits_spent: 2.5,
-                    cost_in_cents: Some(0.0),
+                    billed_cost_in_cents: Some(0.0),
                     has_usage: true,
                     charged_usage: None,
                 },
+                ChargeUnit::Credits,
                 ctx,
                 |_, _| {},
             );
@@ -4937,12 +5012,10 @@ fn footer_usage_entry_is_hidden_until_the_conversation_reports_usage() {
 /// A conversation with usage but an unknown historical cost (legacy restore)
 /// still renders the usage entry — `Cost unavailable` in cost mode, never
 /// `$0.00` — even when credits happen to be zero. Cost mode is only reachable
-/// while the credits⇄dollars toggle is enabled, so this exercises the
-/// `PricingTransparency`-on path.
+/// on a tier that charges in cents, so this exercises that path.
 #[test]
 fn footer_usage_entry_shows_unknown_cost_even_with_zero_credits() {
     App::test((), |mut app| async move {
-        let _cost_transparency = FeatureFlag::PricingTransparency.override_enabled(true);
         app.update(|ctx| {
             ctx.add_singleton_model(|_| Appearance::mock());
             let builder = TuiUiBuilder::from_app(ctx);
@@ -4950,10 +5023,11 @@ fn footer_usage_entry_shows_unknown_cost_even_with_zero_credits() {
                 TuiUsageDisplayMode::Cost,
                 ConversationUsageTotals {
                     credits_spent: 0.0,
-                    cost_in_cents: None,
+                    billed_cost_in_cents: None,
                     has_usage: true,
                     charged_usage: None,
                 },
+                ChargeUnit::Cents,
                 ctx,
                 |_, _| {},
             );

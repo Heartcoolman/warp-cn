@@ -34,14 +34,6 @@ fn remote_content<'a>(bundled_skills: &'a BundledSkills, host_id: &HostId) -> Op
         .map(|skill| skill.content.as_str())
 }
 
-#[test]
-fn factory_mcp_bundled_skill_bootstraps_canonical_mcp_resource() {
-    let skill = include_str!("../../../../resources/bundled/skills/factory-mcp/SKILL.md");
-
-    assert!(skill.contains("skill://warp/factory-mcp/SKILL.md"));
-    assert!(!skill.contains("references/factory-mcp-tools.md"));
-}
-
 /// The Factory files skill is always bundled, so a stale trigger description
 /// or a broken reference silently reaches every GUI, TUI, and Oz agent. Its
 /// trigger has to stay anchored to a factory.yaml root: `agents/<name>/agent.md`
@@ -150,6 +142,24 @@ fn factory_files_skill_carries_no_copy_of_the_format() {
     );
 }
 
+#[test]
+fn factory_deferred_repositories_skill_is_not_in_the_general_catalog() {
+    let resources_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../resources");
+    let path = resources_dir.join("bundled/skills/factory-deferred-repositories/SKILL.md");
+    let skill = parse_bundled_skill(&path).expect("Factory deferred skill parses");
+    assert_eq!(skill.name, FACTORY_DEFERRED_REPOSITORIES_SKILL);
+    assert!(skill.content.contains("--fail-if-target-exists"));
+    assert!(skill.content.contains("command_template"));
+    assert!(skill.content.contains("request_index"));
+    assert!(
+        skill
+            .content
+            .contains("preconfigured Git credential helper")
+    );
+
+    let catalog = futures::executor::block_on(load_bundled_skill_definitions(&resources_dir));
+    assert!(!catalog.contains_key(FACTORY_DEFERRED_REPOSITORIES_SKILL));
+}
 #[test]
 fn local_and_remote_catalogs_are_isolated() {
     let first_host_id = HostId::new("first-host".to_string());

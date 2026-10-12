@@ -47,6 +47,17 @@ pub(crate) async fn fetch_and_download_attachments(
         .get_task_attachments(task_id.clone())
         .await
         .context("Failed to fetch task attachments")?;
+    download_attachments(attachments, http_client, attachments_dir).await
+}
+
+pub(crate) async fn download_attachments(
+    attachments: Vec<TaskAttachment>,
+    http_client: Arc<ServerApi>,
+    attachments_dir: PathBuf,
+) -> anyhow::Result<Option<String>> {
+    if !FeatureFlag::AmbientAgentsImageUpload.is_enabled() {
+        return Ok(None);
+    }
 
     log::info!("Fetched {} task attachments", attachments.len());
 
@@ -267,11 +278,10 @@ async fn download_attachment(
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            return Err(anyhow::Error::new(HttpStatusError {
-                status: status.as_u16(),
-                body: body.clone(),
-            })
-            .context(format!("Download failed with status {status}: {body}")));
+            return Err(
+                anyhow::Error::new(HttpStatusError::new(status.as_u16(), body.clone()))
+                    .context(format!("Download failed with status {status}: {body}")),
+            );
         }
 
         // Stream the response body directly to disk instead of buffering the full payload

@@ -7,11 +7,11 @@ use warp_cli::agent::OutputFormat;
 use warp_cli::federate::{FederateCommand, IssueGcpTokenArgs, IssueTokenArgs};
 use warp_core::features::FeatureFlag;
 use warp_errors::report_error;
-use warp_managed_secrets::ManagedSecretManager;
 use warpui::platform::TerminationMode;
 use warpui::{AppContext, SingletonEntity as _};
 
 use super::common::set_ambient_task_context_from_run_id;
+use crate::server::server_api::managed_secrets::AppManagedSecretManager as ManagedSecretManager;
 
 /// Run identity federation commands.
 pub fn run(
@@ -45,12 +45,14 @@ fn issue_token(
     };
 
     ManagedSecretManager::handle(ctx).update(ctx, move |manager, ctx| {
-        let future =
-            manager.issue_task_identity_token(warp_managed_secrets::client::IdentityTokenOptions {
+        let future = manager.issue_task_identity_token(
+            None,
+            warp_managed_secrets::client::IdentityTokenOptions {
                 audience,
                 requested_duration: duration,
                 subject_template,
-            });
+            },
+        );
         ctx.spawn(future, move |_, result, ctx| match result {
             Ok(token) => {
                 let token_value = token.token;

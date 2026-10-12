@@ -1,4 +1,14 @@
+<<<<<<< HEAD
 <div align="center">
+=======
+<a href="https://www.warp.dev">
+    <img width="1024" alt="Warp Agentic Development Environment product preview" src="https://github.com/user-attachments/assets/9976b2da-2edd-4604-a36c-8fd53719c6d4" />
+</a>
+&nbsp;
+<p align="center">
+  <a href="https://warp.dev/factories"><img height="20" alt="Built with Warp" src="https://raw.githubusercontent.com/warpdotdev/brand-assets/main/Github/Built-With-Warp-Export@2x.png" /></a>
+</p>
+>>>>>>> upstream/master
 
 # Warp 中文社区版
 
@@ -24,6 +34,7 @@
 
 </div>
 
+<<<<<<< HEAD
 ---
 
 [Warp](https://www.warp.dev) 的中文社区 fork：界面默认中文，可一键切回英文或跟随系统；并附带 GitHub 自更新、本地加密凭据，以及可选的「自备 API Key 直连大模型」。
@@ -33,6 +44,19 @@
 | 菜单 · 命令面板 · 设置 · 对话框 · Tooltip<br/>Block actions · Resource Center · Onboarding 等 **客户端 UI** | 终端命令输出 · 服务端 GraphQL 字段 · **AI 模型回复原文** |
 
 ---
+=======
+Explore [build.warp.dev](https://build.warp.dev) to:
+- Watch thousands of [Warp Factory](warp.dev/factories) agents triage issues, write specs, implement changes, and review PRs
+- View top contributors and in-flight features
+- Track your own issues with GitHub sign-in
+- Click into active agent sessions in a web-compiled Warp terminal
+
+## Automate development with Warp Factories
+
+This repository is driven by [Warp Factories](https://warp.dev/factories): open, flexible infrastructure for teams to build cloud software factories of their own.
+
+Warp Factories are defined in code and easy to deploy on any model or harness, with evals, benchmarks, and self-improvement built in. [Get early access](https://warp.dev/factories) or [book a demo](https://warp.dev/get-started) for a tailored walk-through of the platform. Eligible teams can receive up to $10,000 in free factory usage.
+>>>>>>> upstream/master
 
 ## 目录
 

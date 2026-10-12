@@ -1,5 +1,6 @@
 use super::billing::{BillingCycleUsageHistory, BillingMetadata, BonusGrantsInfo};
 use crate::schema;
+use crate::user::DiscoverableTeamData;
 
 #[derive(cynic::QueryFragment, Debug, Clone)]
 pub struct Workspace {
@@ -8,6 +9,7 @@ pub struct Workspace {
     pub stripe_customer_id: Option<cynic::Id>,
     pub members: Vec<WorkspaceMember>,
     pub teams: Vec<Team>,
+    pub open_teams: Vec<DiscoverableTeamData>,
     pub billing_metadata: BillingMetadata,
     pub bonus_grants_info: BonusGrantsInfo,
     pub billing_cycle_usage_history: Option<BillingCycleUsageHistory>,
@@ -120,6 +122,8 @@ pub struct WorkspaceMemberUsageInfo {
     pub is_unlimited: bool,
     pub request_limit: i32,
     pub requests_used_since_last_refresh: i32,
+    pub included_usage_cents: Option<f64>,
+    pub usage_cents_used_since_last_refresh: Option<f64>,
     pub is_request_limit_prorated: bool,
 }
 
@@ -303,6 +307,7 @@ pub struct Team {
     pub color: Option<String>,
     pub invite_link: Option<String>,
     pub visibility: TeamVisibility,
+    pub feature_model_choice: FeatureModelChoice,
 }
 
 /// Governs which workspace members can discover and join a team. Orthogonal to
@@ -503,4 +508,5 @@ pub struct AddonCreditsSettings {
     pub auto_reload_enabled: bool,
     pub max_monthly_spend_cents: Option<i32>,
     pub selected_auto_reload_credit_denomination: Option<i32>,
+    pub selected_auto_reload_usage_cents: Option<i32>,
 }

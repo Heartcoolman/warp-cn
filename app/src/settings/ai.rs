@@ -6,6 +6,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use ::ai::api_keys::CustomEndpointDefinitions;
 use chrono::{DateTime, Utc};
 pub use cloud_object_models::{
     AgentModeCommandExecutionPredicate, DEFAULT_COMMAND_EXECUTION_ALLOWLIST,
@@ -658,7 +659,7 @@ pub enum TuiUsageDisplayMode {
     /// Credits spent — the same number the GUI's usage footer shows (default).
     #[default]
     Credits,
-    /// Provider dollar cost.
+    /// Billed dollar cost.
     Cost,
 }
 
@@ -670,8 +671,52 @@ settings::macros::implement_setting_for_enum!(
     surface: settings::SettingSurfaces::TUI,
     private: false,
     toml_path: "agents.usage_display_mode",
-    description: "Which unit the usage entry displays in Warp Agent CLI: credits or provider cost.",
+    description: "Which unit the usage entry displays in Warp Agent CLI: credits or dollars.",
 );
+
+/// Unit for GUI usage and spend displays.
+#[derive(
+    Default,
+    Debug,
+    serde::Serialize,
+    serde::Deserialize,
+    PartialEq,
+    Copy,
+    Clone,
+    EnumIter,
+    schemars::JsonSchema,
+    settings_value::SettingsValue,
+)]
+#[schemars(
+    description = "Which unit the GUI's usage/spend displays show: credits or dollars.",
+    rename_all = "snake_case"
+)]
+pub enum UsageDisplayUnit {
+    #[default]
+    Credits,
+    Dollars,
+}
+
+settings::macros::implement_setting_for_enum!(
+    UsageDisplayUnit,
+    AISettings,
+    SupportedPlatforms::ALL,
+    SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+    surface: settings::SettingSurfaces::GUI,
+    private: false,
+    toml_path: "agents.warp_agent.other.usage_display_unit",
+    description: "Which unit the GUI's usage/spend displays show: credits or dollars.",
+);
+
+impl UsageDisplayUnit {
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            UsageDisplayUnit::Credits => "Credits",
+            UsageDisplayUnit::Dollars => "Dollars",
+        }
+    }
+}
+
 /// One configurable item in the Warp Agent CLI statusline.
 #[derive(
     Debug,
@@ -1467,11 +1512,25 @@ define_settings_group!(AISettings, settings: [
         max_table_depth: 2,
         description: "AI execution profiles and their permissions.",
     }
+    // Non-secret custom inference endpoint definitions shared by GUI and TUI.
+    // Credentials remain in each surface's secure-storage namespace.
+    custom_endpoints: CustomEndpoints {
+        type: CustomEndpointDefinitions,
+        default: CustomEndpointDefinitions::default(),
+        supported_platforms: SupportedPlatforms::ALL,
+        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        surface: settings::SettingSurfaces::ALL,
+        private: false,
+        toml_path: "agents.custom_endpoints",
+        max_table_depth: 2,
+        description: "Custom inference endpoint definitions.",
+    }
     // Which unit the TUI footer's usage entry displays (credits or provider
     // cost), flipped by clicking the entry.
     //
     // TUI-only and file-backed so the choice persists across TUI sessions.
     usage_display_mode: TuiUsageDisplayMode,
+    usage_display_unit: UsageDisplayUnit,
     // Ordered visibility configuration for the TUI's bottom statusline.
     // TUI-only and local so separate devices can use different terminal layouts.
     tui_statusline: TuiStatusline {
@@ -1773,6 +1832,21 @@ define_settings_group!(AISettings, settings: [
     // We model it as a setting so it's only shown once to a given user regardless of the number of
     // devices they use.
     did_check_to_trigger_free_ai_removal_modal: DidShowFreeAiRemovalModal {
+        type: bool,
+        default: false,
+        supported_platforms: SupportedPlatforms::ALL,
+        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::No),
+        surface: settings::SettingSurfaces::GUI,
+        private: true,
+    }
+
+    // This is not a user-visible setting - it's merely a one-time flag to track if the
+    // "You're using your ChatGPT plan" modal has been shown for the user's current ChatGPT
+    // connection. Reset when the user disconnects so a later reconnect shows it again.
+    //
+    // We model it as a setting so it's only shown once to a given user regardless of the number of
+    // devices they use.
+    did_show_chatgpt_plan_modal: DidShowChatGPTPlanModal {
         type: bool,
         default: false,
         supported_platforms: SupportedPlatforms::ALL,

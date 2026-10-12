@@ -1,6 +1,6 @@
 use std::any::Any;
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::pin::pin;
 use std::rc::Rc;
 use std::str::FromStr;
@@ -21,7 +21,8 @@ use crate::ai::agent::conversation::{AIConversation, ConversationStatus};
 use crate::ai::agent::task::TaskId;
 use crate::ai::agent::{
     AIAgentActionId, AIAgentExchange, AIAgentExchangeId, AIAgentInput, AIAgentOutput,
-    AIAgentOutputStatus, AgentReviewCommentBatch, UserQueryMode,
+    AIAgentOutputMessage, AIAgentOutputMessageType, AIAgentOutputStatus, AgentReviewCommentBatch,
+    FinishedAIAgentOutput, MessageId, Shared, TodoOperation, UserQueryMode,
 };
 use crate::ai::agent_conversations_model::AgentConversationsModel;
 use crate::ai::ambient_agents::task::TaskPrincipalInfo;
@@ -32,6 +33,7 @@ use crate::ai::blocklist::agent_view::{
     ExitAgentViewError,
 };
 use crate::ai::blocklist::block::cli_controller::UserTakeOverReason;
+use crate::ai::blocklist::local_agent_task_sync_model::LocalAgentTaskSyncModel;
 use crate::ai::blocklist::{
     BlocklistAIHistoryEvent, BlocklistAIHistoryModel, FakeAIBlockModel, InputConfig, InputType,
     ResponseStream, ResponseStreamId,
@@ -54,8 +56,10 @@ use crate::pane_group::pane::PaneStack;
 use crate::pane_group::{BackingView, TerminalPaneId};
 use crate::server::ids::{ClientId, SyncId};
 use crate::server::server_api::ai::SpawnAgentRequest;
+use crate::server::team_scope::RequestTeamScope;
 use crate::settings::import::model::ImportedConfigModel;
 use crate::settings::{AISettings, AppEditorSettings, RightClickBehavior, WarpPromptSeparator};
+use crate::tab::NewSessionMenuItem;
 use crate::terminal::alt_screen::should_intercept_mouse;
 use crate::terminal::block_list_element::{SnackbarPoint, SnackbarTranslationMode};
 use crate::terminal::block_list_viewport::{ClampingMode, ScrollLines};
@@ -86,12 +90,16 @@ use crate::terminal::view::shared_session::ConversationEndedTombstoneView;
 use crate::terminal::{
     CLIAgent, MockTerminalManager, TerminalManager, TerminalModel, should_right_click_paste,
 };
+use crate::test_util::billing_unit::set_charge_unit;
 use crate::test_util::terminal::{
     add_window_with_id_and_terminal, initialize_app_for_terminal_view,
 };
 use crate::test_util::{add_window_with_terminal, assert_eventually};
 use crate::view_components::find::FindWithinBlockState;
-use crate::workspace::ToastStack;
+use crate::workspace::view::tests::{initialize_app as initialize_workspace_app, mock_workspace};
+use crate::workspace::{ToastStack, WorkspaceAction};
+use crate::workspaces::user_workspaces::TeamlessScopeForTest;
+use crate::workspaces::workspace::ChargeUnit;
 
 fn add_window_with_cloud_mode_terminal(app: &mut App) -> ViewHandle<TerminalView> {
     let tips_model = app.add_model(|_| Default::default());
@@ -136,6 +144,8 @@ fn owned_resumable_oz_task(task_id: AmbientAgentTaskId) -> AmbientAgentTask {
         artifacts: vec![],
         last_event_sequence: None,
         children: vec![],
+        debug_agent_available: false,
+        scope: None,
     }
 }
 
@@ -1603,6 +1613,7 @@ fn agent_view_user_query_input(query: &str) -> AIAgentInput {
         user_query_mode: UserQueryMode::Normal,
         running_command: None,
         intended_agent: None,
+        base: None,
     }
 }
 
@@ -1665,6 +1676,355 @@ fn command_block_count_for_conversation(
             )
         })
         .count()
+}
+
+fn ai_block_ids_for_conversation(
+    view: &TerminalView,
+    conversation_id: AIConversationId,
+) -> Vec<EntityId> {
+    view.rich_content_views
+        .iter()
+        .filter_map(|rich_content| {
+            let metadata = rich_content.ai_block_metadata()?;
+            (metadata.conversation_id == conversation_id).then_some(metadata.ai_block_handle.id())
+        })
+        .collect()
+}
+
+fn routed_ai_block_ids(
+    view: &TerminalView,
+    event: &BlocklistAIHistoryEvent,
+    ctx: &AppContext,
+) -> HashSet<EntityId> {
+    view.ai_block_targets_for_history_event(event, ctx)
+        .into_iter()
+        .map(|handle| handle.id())
+        .collect()
+}
+
+#[test]
+fn appended_exchange_targets_previous_conversation_and_pane_latest_blocks() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let terminal = add_window_with_terminal(&mut app, None);
+
+        let (first_conversation_id, first_exchange_id, second_conversation_id, second_block_id) =
+            terminal.update(&mut app, |view, ctx| {
+                let (first_conversation_id, _, first_exchange_id, _) =
+                    append_exchange_and_handle_event(
+                        view,
+                        agent_view_user_query_input("first"),
+                        ctx,
+                    );
+                let (second_conversation_id, _, second_exchange_id, _) =
+                    append_exchange_and_handle_event(
+                        view,
+                        agent_view_user_query_input("second"),
+                        ctx,
+                    );
+                let second_block_id = view
+                    .ai_block_for_exchange(&second_exchange_id)
+                    .expect("second AI block should exist")
+                    .id();
+                (
+                    first_conversation_id,
+                    first_exchange_id,
+                    second_conversation_id,
+                    second_block_id,
+                )
+            });
+
+        terminal.read(&app, |view, ctx| {
+            let first_block_id = view
+                .ai_block_for_exchange(&first_exchange_id)
+                .expect("first AI block should exist")
+                .id();
+            let event = BlocklistAIHistoryEvent::AppendedExchange {
+                exchange_id: AIAgentExchangeId::default(),
+                task_id: TaskId::new("new-task".to_string()),
+                terminal_surface_id: view.view_id,
+                conversation_id: first_conversation_id,
+                is_hidden: false,
+                response_stream_id: None,
+            };
+
+            assert_eq!(
+                routed_ai_block_ids(view, &event, ctx),
+                HashSet::from([first_block_id, second_block_id])
+            );
+
+            let pane_latest_event = BlocklistAIHistoryEvent::AppendedExchange {
+                exchange_id: AIAgentExchangeId::default(),
+                task_id: TaskId::new("pane-latest-task".to_string()),
+                terminal_surface_id: view.view_id,
+                conversation_id: second_conversation_id,
+                is_hidden: false,
+                response_stream_id: None,
+            };
+            let pane_latest_targets =
+                view.ai_block_targets_for_history_event(&pane_latest_event, ctx);
+            assert_eq!(pane_latest_targets.len(), 1);
+            assert_eq!(pane_latest_targets[0].id(), second_block_id);
+        });
+    })
+}
+
+#[test]
+fn streaming_exchange_targets_only_its_ai_block() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let terminal = add_window_with_terminal(&mut app, None);
+
+        let (conversation_id, exchange_id, other_block_id) =
+            terminal.update(&mut app, |view, ctx| {
+                let (conversation_id, _, exchange_id, _) = append_exchange_and_handle_event(
+                    view,
+                    agent_view_user_query_input("first"),
+                    ctx,
+                );
+                let (_, _, other_exchange_id, _) = append_exchange_and_handle_event(
+                    view,
+                    agent_view_user_query_input("second"),
+                    ctx,
+                );
+                let other_block_id = view
+                    .ai_block_for_exchange(&other_exchange_id)
+                    .expect("other AI block should exist")
+                    .id();
+                (conversation_id, exchange_id, other_block_id)
+            });
+
+        terminal.read(&app, |view, ctx| {
+            let expected_block_id = view
+                .ai_block_for_exchange(&exchange_id)
+                .expect("target AI block should exist")
+                .id();
+            let event = BlocklistAIHistoryEvent::UpdatedStreamingExchange {
+                exchange_id,
+                terminal_surface_id: view.view_id,
+                conversation_id,
+                is_hidden: false,
+            };
+            let targets = routed_ai_block_ids(view, &event, ctx);
+
+            assert_eq!(targets, HashSet::from([expected_block_id]));
+            assert!(!targets.contains(&other_block_id));
+        });
+    })
+}
+
+#[test]
+fn fork_replay_does_not_reprocess_completed_restored_output() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let original_view = add_window_with_terminal(&mut app, None);
+        let restored_view = add_window_with_terminal(&mut app, None);
+
+        let restored_conversation = original_view.update(&mut app, |view, ctx| {
+            let (conversation_id, _, exchange_id, response_stream_id) =
+                append_exchange_and_handle_event(
+                    view,
+                    agent_view_user_query_input("completed"),
+                    ctx,
+                );
+            BlocklistAIHistoryModel::handle(ctx).update(ctx, |history, ctx| {
+                let conversation = history
+                    .conversation_mut(&conversation_id)
+                    .expect("conversation should exist");
+                let mut exchange = conversation
+                    .remove_exchange(exchange_id)
+                    .expect("exchange should exist");
+                exchange.output_status = AIAgentOutputStatus::Finished {
+                    finished_output: FinishedAIAgentOutput::Success {
+                        output: Shared::new(AIAgentOutput::default()),
+                    },
+                };
+                conversation
+                    .append_reassigned_exchange(&response_stream_id, exchange, view.view_id, ctx)
+                    .expect("completed exchange should append");
+                conversation.clone()
+            })
+        });
+        let conversation_id = restored_conversation.id();
+        restored_view.update(&mut app, |view, ctx| {
+            view.restore_conversation_after_view_creation(
+                RestoredAIConversation::new(restored_conversation),
+                true,
+                RestoreConversationEntryBehavior::EnterRestoredConversation,
+                ctx,
+            );
+        });
+
+        let ai_block = restored_view.read(&app, |view, _| {
+            view.last_ai_block()
+                .expect("restored AI block should exist")
+                .clone()
+        });
+        assert!(ai_block.read(&app, |block, _| block.is_restored()));
+        assert!(ai_block.read(&app, |block, ctx| block.is_ai_output_complete(ctx)));
+        let output_updates = Rc::new(RefCell::new(0));
+        let observed_output_updates = output_updates.clone();
+        app.update(|ctx| {
+            ctx.subscribe_to_view(&ai_block, move |_, event, _| {
+                if matches!(event, AIBlockEvent::AIOutputUpdated) {
+                    *observed_output_updates.borrow_mut() += 1;
+                }
+            });
+        });
+
+        restored_view.update(&mut app, |view, ctx| {
+            BlocklistAIHistoryModel::handle(ctx).update(ctx, |history, ctx| {
+                history.on_forked_conversation(conversation_id, view.view_id, ctx);
+            });
+        });
+
+        assert_eq!(*output_updates.borrow(), 0);
+    })
+}
+
+#[test]
+fn todo_update_targets_only_todo_bearing_blocks_in_conversation() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let terminal = add_window_with_terminal(&mut app, None);
+
+        let (conversation_id, todo_block_id, plain_block_id) =
+            terminal.update(&mut app, |view, ctx| {
+                let (conversation_id, _, todo_exchange_id, response_stream_id) =
+                    append_exchange_and_handle_event(
+                        view,
+                        agent_view_user_query_input("first"),
+                        ctx,
+                    );
+                let todo_output = AIAgentOutput {
+                    messages: vec![AIAgentOutputMessage {
+                        id: MessageId::new("todo-list".to_string()),
+                        message: AIAgentOutputMessageType::TodoOperation(
+                            TodoOperation::UpdateTodos { todos: Vec::new() },
+                        ),
+                        citations: Vec::new(),
+                    }],
+                    ..Default::default()
+                };
+                BlocklistAIHistoryModel::handle(ctx).update(ctx, |history, ctx| {
+                    let conversation = history
+                        .conversation_mut(&conversation_id)
+                        .expect("conversation should exist");
+                    let mut exchange = conversation
+                        .remove_exchange(todo_exchange_id)
+                        .expect("exchange should exist");
+                    exchange.output_status = AIAgentOutputStatus::Streaming {
+                        output: Some(Shared::new(todo_output)),
+                    };
+                    conversation
+                        .append_reassigned_exchange(
+                            &response_stream_id,
+                            exchange,
+                            view.view_id,
+                            ctx,
+                        )
+                        .expect("exchange should append");
+                });
+                let todo_block = view
+                    .ai_block_for_exchange(&todo_exchange_id)
+                    .expect("todo AI block should exist")
+                    .clone();
+                todo_block.update(ctx, |block, ctx| {
+                    block.handle_history_output_update(ctx);
+                });
+
+                append_inputs_to_conversation_and_handle_event(
+                    view,
+                    conversation_id,
+                    vec![agent_view_user_query_input("follow up")],
+                    ctx,
+                );
+                let block_ids = ai_block_ids_for_conversation(view, conversation_id);
+                (
+                    conversation_id,
+                    todo_block.id(),
+                    *block_ids.last().expect("plain AI block should exist"),
+                )
+            });
+
+        terminal.read(&app, |view, ctx| {
+            let event = BlocklistAIHistoryEvent::UpdatedTodoList {
+                terminal_surface_id: view.view_id,
+                conversation_id,
+            };
+            let targets = routed_ai_block_ids(view, &event, ctx);
+
+            assert_eq!(targets, HashSet::from([todo_block_id]));
+            assert!(!targets.contains(&plain_block_id));
+        });
+    })
+}
+
+#[test]
+fn usage_update_targets_latest_blocks_for_conversation_and_ancestors() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let terminal = add_window_with_terminal(&mut app, None);
+
+        let (child_conversation_id, parent_old_block_id, expected_block_ids) =
+            terminal.update(&mut app, |view, ctx| {
+                let (parent_conversation_id, _, _, _) = append_exchange_and_handle_event(
+                    view,
+                    agent_view_user_query_input("parent first"),
+                    ctx,
+                );
+                let parent_old_block_id =
+                    *ai_block_ids_for_conversation(view, parent_conversation_id)
+                        .last()
+                        .expect("parent AI block should exist");
+                let child_conversation_id =
+                    BlocklistAIHistoryModel::handle(ctx).update(ctx, |history, ctx| {
+                        history.start_new_child_conversation(
+                            view.view_id,
+                            "child".to_string(),
+                            parent_conversation_id,
+                            None,
+                            false,
+                            ctx,
+                        )
+                    });
+                append_inputs_to_conversation_and_handle_event(
+                    view,
+                    child_conversation_id,
+                    vec![agent_view_user_query_input("child")],
+                    ctx,
+                );
+                append_inputs_to_conversation_and_handle_event(
+                    view,
+                    parent_conversation_id,
+                    vec![agent_view_user_query_input("parent latest")],
+                    ctx,
+                );
+                let expected_block_ids = HashSet::from([
+                    *ai_block_ids_for_conversation(view, child_conversation_id)
+                        .last()
+                        .expect("child AI block should exist"),
+                    *ai_block_ids_for_conversation(view, parent_conversation_id)
+                        .last()
+                        .expect("latest parent AI block should exist"),
+                ]);
+                (
+                    child_conversation_id,
+                    parent_old_block_id,
+                    expected_block_ids,
+                )
+            });
+
+        terminal.read(&app, |view, ctx| {
+            let event = BlocklistAIHistoryEvent::ConversationUsageMetadataUpdated {
+                conversation_id: child_conversation_id,
+            };
+            let targets = routed_ai_block_ids(view, &event, ctx);
+
+            assert_eq!(targets, expected_block_ids);
+            assert!(!targets.contains(&parent_old_block_id));
+        });
+    })
 }
 
 /// Bootstraps the terminal model with one completed block and one active long-running block.
@@ -1738,6 +2098,53 @@ fn is_passive_conversation_is_false_for_a_directly_issued_user_query() {
 }
 
 #[test]
+fn turn_panel_does_not_insert_a_block_after_its_footer() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        set_charge_unit(&mut app, ChargeUnit::Cents);
+        let terminal = add_window_with_terminal(&mut app, None);
+        let ai_block = terminal.update(&mut app, |view, ctx| {
+            view.insert_dummy_ai_block("query".to_string(), "response".to_string(), ctx)
+        });
+
+        let initial_content_ids = terminal.read(&app, |view, _| {
+            view.rich_content_views
+                .iter()
+                .map(|content| content.view_id())
+                .collect::<Vec<_>>()
+        });
+
+        ai_block.update(&mut app, |block, ctx| {
+            block.handle_action(&AIBlockAction::ToggleIsTurnPanelExpanded, ctx);
+        });
+        terminal.read(&app, |view, _| {
+            assert!(view.turn_panel_view_ids.contains_key(&ai_block.id()));
+            assert_eq!(
+                view.rich_content_views
+                    .iter()
+                    .map(|content| content.view_id())
+                    .collect::<Vec<_>>(),
+                initial_content_ids
+            );
+        });
+
+        ai_block.update(&mut app, |block, ctx| {
+            block.handle_action(&AIBlockAction::ToggleIsTurnPanelExpanded, ctx);
+        });
+        terminal.read(&app, |view, _| {
+            assert!(!view.turn_panel_view_ids.contains_key(&ai_block.id()));
+            assert_eq!(
+                view.rich_content_views
+                    .iter()
+                    .map(|content| content.view_id())
+                    .collect::<Vec<_>>(),
+                initial_content_ids
+            );
+        });
+    })
+}
+
+#[test]
 fn is_passive_conversation_is_recomputed_on_conversation_reassignment() {
     App::test((), |mut app| async move {
         initialize_app_for_terminal_view(&mut app);
@@ -1795,6 +2202,16 @@ fn is_passive_conversation_is_recomputed_on_conversation_reassignment() {
         terminal.read(&app, |view, ctx| {
             let ai_block = view.last_ai_block().expect("AI block should exist");
             assert!(!ai_block.as_ref(ctx).is_passive_conversation());
+            let event = BlocklistAIHistoryEvent::UpdatedStreamingExchange {
+                exchange_id,
+                terminal_surface_id: view.view_id,
+                conversation_id: new_conversation_id,
+                is_hidden: false,
+            };
+            assert_eq!(
+                routed_ai_block_ids(view, &event, ctx),
+                HashSet::from([ai_block.id()])
+            );
             assert_eq!(
                 BlocklistAIHistoryModel::as_ref(ctx)
                     .conversation(&new_conversation_id)
@@ -2185,6 +2602,7 @@ fn agent_jump_user_query(query: &str) -> AIAgentInput {
         user_query_mode: UserQueryMode::Normal,
         running_command: None,
         intended_agent: None,
+        base: None,
     }
 }
 
@@ -2373,6 +2791,7 @@ fn restoring_conversation_to_new_pane_transfers_blocks_from_previous_terminal_su
                     user_query_mode: UserQueryMode::Normal,
                     running_command: None,
                     intended_agent: None,
+                    base: None,
                 }],
                 ctx,
             );
@@ -2487,6 +2906,7 @@ fn clicking_old_banner_for_open_conversation_focuses_current_terminal_surface_wi
                     user_query_mode: UserQueryMode::Normal,
                     running_command: None,
                     intended_agent: None,
+                    base: None,
                 }],
                 ctx,
             );
@@ -2627,6 +3047,7 @@ fn appended_exchange_renders_in_current_terminal_surface_after_conversation_tran
                     user_query_mode: UserQueryMode::Normal,
                     running_command: None,
                     intended_agent: None,
+                    base: None,
                 }],
                 ctx,
             );
@@ -2678,6 +3099,7 @@ fn appended_exchange_renders_in_current_terminal_surface_after_conversation_tran
                     user_query_mode: UserQueryMode::Normal,
                     running_command: None,
                     intended_agent: None,
+                    base: None,
                 }]);
                 let exchange_id = exchange.id;
                 conversation
@@ -3433,7 +3855,7 @@ fn cloud_mode_dispatched_agent_inserts_queued_user_query() {
                             mode: UserQueryMode::Normal,
                             config: None,
                             title: None,
-                            team: None,
+                            team: Some(false),
                             agent_identity_uid: None,
                             skill: None,
                             attachments: vec![],
@@ -3446,6 +3868,7 @@ fn cloud_mode_dispatched_agent_inserts_queued_user_query() {
                             snapshot_disabled: None,
                             orchestration_handoff: None,
                         },
+                        RequestTeamScope::from_scope(&TeamlessScopeForTest),
                         ctx,
                     );
                 });
@@ -3898,6 +4321,7 @@ fn pending_cloud_mode_query_waits_for_renderable_user_query_exchange() {
                     user_query_mode: UserQueryMode::default(),
                     running_command: None,
                     intended_agent: None,
+                    base: None,
                 },
                 ctx,
             );
@@ -3938,6 +4362,7 @@ fn pending_cloud_mode_query_clears_when_streaming_exchange_becomes_renderable() 
                     user_query_mode: UserQueryMode::Normal,
                     running_command: None,
                     intended_agent: None,
+                    base: None,
                 }],
                 ctx,
             );
@@ -7164,6 +7589,185 @@ fn ctrl_c_after_transfer_takeover_does_not_cancel_conversation() {
     })
 }
 
+/// Subscribes to the terminal view's PTY writes so tests can assert on the bytes forwarded to the
+/// shell.
+fn capture_pty_writes(
+    app: &mut App,
+    terminal: &ViewHandle<TerminalView>,
+) -> Rc<RefCell<Vec<Vec<u8>>>> {
+    let pty_writes: Rc<RefCell<Vec<Vec<u8>>>> = Rc::new(RefCell::new(Vec::new()));
+    let writes = pty_writes.clone();
+    app.update(|ctx| {
+        ctx.subscribe_to_view(terminal, move |_, event, _| {
+            if let Event::WriteBytesToPty { bytes } = event {
+                writes.borrow_mut().push(bytes.to_vec());
+            }
+        });
+    });
+    pty_writes
+}
+
+/// Starts an in-progress conversation bound to a server token whose agent-requested command is
+/// still running in the active block.
+fn start_conversation_with_running_agent_command(
+    view: &mut TerminalView,
+    server_conversation_token: &SessionSharingServerConversationToken,
+    ctx: &mut ViewContext<TerminalView>,
+) -> AIConversationId {
+    let conversation_id = BlocklistAIHistoryModel::handle(ctx).update(ctx, |history, ctx| {
+        let conversation_id =
+            history.start_new_conversation(view.view_id, false, false, false, ctx);
+        history.set_server_conversation_token_for_conversation(
+            conversation_id,
+            server_conversation_token.to_string(),
+        );
+        conversation_id
+    });
+
+    let mut model = view.model.lock();
+    model.simulate_long_running_block("echo step-one; sleep 12; echo done-one", "step-one");
+    model
+        .block_list_mut()
+        .active_block_mut()
+        .set_agent_interaction_mode_for_requested_command(
+            AIAgentActionId::from("requested-command".to_owned()),
+            None,
+            conversation_id,
+        );
+    conversation_id
+}
+
+#[test]
+fn shared_session_cancel_action_interrupts_running_agent_command() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        FeatureFlag::AgentView.set_enabled(true);
+
+        let terminal = add_window_with_terminal(&mut app, None);
+        let pty_writes = capture_pty_writes(&mut app, &terminal);
+        let server_conversation_token = SessionSharingServerConversationToken::new();
+
+        let conversation_id = terminal.update(&mut app, |view, ctx| {
+            start_conversation_with_running_agent_command(view, &server_conversation_token, ctx)
+        });
+
+        terminal.update(&mut app, |view, ctx| {
+            view.handle_shared_session_cancel_action(server_conversation_token, ctx);
+        });
+
+        assert_eq!(*pty_writes.borrow(), vec![vec![C0::ETX]]);
+        terminal.read(&app, |_, ctx| {
+            let conversation = BlocklistAIHistoryModel::as_ref(ctx)
+                .conversation(&conversation_id)
+                .expect("conversation should exist");
+            assert_eq!(conversation.status(), &ConversationStatus::Cancelled);
+        });
+    })
+}
+
+#[test]
+fn shared_session_cancel_action_releases_agent_controlled_command_before_interrupting() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        FeatureFlag::AgentView.set_enabled(true);
+
+        let terminal = add_window_with_terminal(&mut app, None);
+        let pty_writes = capture_pty_writes(&mut app, &terminal);
+        let server_conversation_token = SessionSharingServerConversationToken::new();
+
+        let conversation_id = terminal.update(&mut app, |view, ctx| {
+            let conversation_id = start_conversation_with_running_agent_command(
+                view,
+                &server_conversation_token,
+                ctx,
+            );
+            let task_id = TaskId::new("test-cli-subagent".to_owned());
+            view.model
+                .lock()
+                .block_list_mut()
+                .active_block_mut()
+                .set_agent_interaction_mode_for_agent_monitored_command(&task_id, conversation_id)
+                .expect("command should become agent monitored");
+            assert!(
+                view.model
+                    .lock()
+                    .block_list()
+                    .active_block()
+                    .is_agent_in_control()
+            );
+            conversation_id
+        });
+
+        terminal.update(&mut app, |view, ctx| {
+            view.handle_shared_session_cancel_action(server_conversation_token, ctx);
+        });
+
+        // The agent-controlled block would otherwise swallow the Ctrl-C (see
+        // `write_user_bytes_to_pty`), so control must be handed to the user for teardown first.
+        assert_eq!(*pty_writes.borrow(), vec![vec![C0::ETX]]);
+        terminal.read(&app, |view, ctx| {
+            let model = view.model.lock();
+            let active_block = model.block_list().active_block();
+            assert!(!active_block.is_agent_in_control());
+            assert!(
+                !active_block
+                    .long_running_control_state()
+                    .is_some_and(|state| state.should_auto_resume())
+            );
+            let conversation = BlocklistAIHistoryModel::as_ref(ctx)
+                .conversation(&conversation_id)
+                .expect("conversation should exist");
+            assert_eq!(conversation.status(), &ConversationStatus::Cancelled);
+        });
+    })
+}
+
+#[test]
+fn shared_session_cancel_action_ignores_unknown_and_finished_conversations() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        FeatureFlag::AgentView.set_enabled(true);
+
+        let terminal = add_window_with_terminal(&mut app, None);
+        let pty_writes = capture_pty_writes(&mut app, &terminal);
+        let server_conversation_token = SessionSharingServerConversationToken::new();
+
+        let conversation_id = terminal.update(&mut app, |view, ctx| {
+            start_conversation_with_running_agent_command(view, &server_conversation_token, ctx)
+        });
+
+        // A token that isn't bound to any conversation on this surface is a no-op.
+        terminal.update(&mut app, |view, ctx| {
+            view.handle_shared_session_cancel_action(
+                SessionSharingServerConversationToken::new(),
+                ctx,
+            );
+        });
+        assert!(pty_writes.borrow().is_empty());
+
+        // A cancel that arrives after the conversation already finished must neither interrupt
+        // the command nor overwrite the terminal status.
+        terminal.update(&mut app, |view, ctx| {
+            BlocklistAIHistoryModel::handle(ctx).update(ctx, |history, ctx| {
+                history.update_conversation_status(
+                    view.view_id,
+                    conversation_id,
+                    ConversationStatus::Success,
+                    ctx,
+                );
+            });
+            view.handle_shared_session_cancel_action(server_conversation_token, ctx);
+        });
+        assert!(pty_writes.borrow().is_empty());
+        terminal.read(&app, |_, ctx| {
+            let conversation = BlocklistAIHistoryModel::as_ref(ctx)
+                .conversation(&conversation_id)
+                .expect("conversation should exist");
+            assert_eq!(conversation.status(), &ConversationStatus::Success);
+        });
+    })
+}
+
 #[test]
 fn completed_user_controlled_lrc_resumes_when_not_suppressed() {
     App::test((), |mut app| async move {
@@ -8013,6 +8617,34 @@ fn submit_cli_agent_rich_input_opencode_defers_enter_and_close() {
 }
 
 #[test]
+fn submit_cli_agent_rich_input_muse_uses_bracketed_paste() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+        let _cli_rich = FeatureFlag::CLIAgentRichInput.override_enabled(true);
+
+        let (_terminal, pty_writes) =
+            submit_rich_input_and_collect_pty_writes(&mut app, CLIAgent::Muse, "hello");
+
+        let writes = pty_writes.borrow();
+        assert_eq!(
+            writes.len(),
+            2,
+            "expected 2 PTY writes, got {}",
+            writes.len()
+        );
+
+        let mut expected_paste =
+            Vec::with_capacity(BRACKETED_PASTE_START.len() + 5 + BRACKETED_PASTE_END.len());
+        expected_paste.extend_from_slice(BRACKETED_PASTE_START);
+        expected_paste.extend_from_slice(b"hello");
+        expected_paste.extend_from_slice(BRACKETED_PASTE_END);
+        assert_eq!(writes[0], expected_paste);
+        assert_eq!(writes[1], b"\r");
+    })
+}
+
+#[test]
 fn attach_path_as_context_routes_to_open_cli_agent_rich_input() {
     App::test((), |mut app| async move {
         initialize_app_for_terminal_view(&mut app);
@@ -8641,6 +9273,8 @@ fn cli_session_status_updates_active_child_conversation() {
         let _agent_view = FeatureFlag::AgentView.override_enabled(true);
 
         let terminal = add_window_with_terminal(&mut app, None);
+        let task_id = AmbientAgentTaskId::from_str("123e4567-e89b-12d3-a456-426614174000")
+            .expect("valid task id");
 
         let child_conversation_id = terminal.update(&mut app, |view, ctx| {
             let parent_conversation_id =
@@ -8649,14 +9283,19 @@ fn cli_session_status_updates_active_child_conversation() {
                 });
             let child_conversation_id =
                 BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
-                    history_model.start_new_child_conversation(
+                    let child_conversation_id = history_model.start_new_child_conversation(
                         view.view_id,
                         "Agent 2".to_string(),
                         parent_conversation_id,
                         None,
                         false,
                         ctx,
-                    )
+                    );
+                    history_model
+                        .conversation_mut(&child_conversation_id)
+                        .expect("child conversation should exist")
+                        .set_task_id(task_id);
+                    child_conversation_id
                 });
 
             view.enter_agent_view(
@@ -8665,6 +9304,13 @@ fn cli_session_status_updates_active_child_conversation() {
                 AgentViewEntryOrigin::ChildAgent,
                 ctx,
             );
+
+            // Status updates only route to a conversation whose `task_id` matches
+            // the ambient task this pane's CLI-harness session is registered
+            // under (see `TerminalView::conversation_id_for_cli_status_updates`).
+            LocalAgentTaskSyncModel::handle(ctx).update(ctx, |sync_model, _ctx| {
+                sync_model.register_cli_session_for_test(view.view_id, task_id);
+            });
 
             CLIAgentSessionsModel::handle(ctx).update(ctx, |sessions, ctx| {
                 sessions.set_session(
@@ -8794,6 +9440,8 @@ fn cli_session_status_updates_single_child_conversation_without_agent_view() {
         let _agent_view = FeatureFlag::AgentView.override_enabled(true);
 
         let terminal = add_window_with_terminal(&mut app, None);
+        let task_id = AmbientAgentTaskId::from_str("123e4567-e89b-12d3-a456-426614174000")
+            .expect("valid task id");
 
         let child_conversation_id = terminal.update(&mut app, |view, ctx| {
             let parent_conversation_id =
@@ -8802,15 +9450,27 @@ fn cli_session_status_updates_single_child_conversation_without_agent_view() {
                 });
             let child_conversation_id =
                 BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
-                    history_model.start_new_child_conversation(
+                    let child_conversation_id = history_model.start_new_child_conversation(
                         view.view_id,
                         "Agent 2".to_string(),
                         parent_conversation_id,
                         None,
                         false,
                         ctx,
-                    )
+                    );
+                    history_model
+                        .conversation_mut(&child_conversation_id)
+                        .expect("child conversation should exist")
+                        .set_task_id(task_id);
+                    child_conversation_id
                 });
+
+            // Status updates only route to a conversation whose `task_id` matches
+            // the ambient task this pane's CLI-harness session is registered
+            // under (see `TerminalView::conversation_id_for_cli_status_updates`).
+            LocalAgentTaskSyncModel::handle(ctx).update(ctx, |sync_model, _ctx| {
+                sync_model.register_cli_session_for_test(view.view_id, task_id);
+            });
 
             CLIAgentSessionsModel::handle(ctx).update(ctx, |sessions, ctx| {
                 sessions.set_session(
@@ -9351,6 +10011,7 @@ fn close_find_bar_clears_ai_block_find_highlights() {
                     user_query_mode: UserQueryMode::Normal,
                     running_command: None,
                     intended_agent: None,
+                    base: None,
                 },
                 ctx,
             );
@@ -9486,6 +10147,7 @@ fn copy_selected_text_from_ai_block() {
                     user_query_mode: UserQueryMode::Normal,
                     running_command: None,
                     intended_agent: None,
+                    base: None,
                 },
                 ctx,
             );
@@ -10184,5 +10846,75 @@ fn back_button_label_resolves_token_only_parent_linkage() {
                 "for Orchestrator",
             );
         });
+    });
+}
+
+#[test]
+fn visible_bootstrap_block_leaves_focus_on_tab_rename_editor() {
+    App::test((), |mut app| async move {
+        initialize_workspace_app(&mut app);
+        let workspace = mock_workspace(&mut app);
+        let (window, terminal) = workspace.update(&mut app, |workspace, ctx| {
+            workspace.rename_tab(0, ctx);
+            let terminal = workspace
+                .active_tab_pane_group()
+                .as_ref(ctx)
+                .active_session_view(ctx)
+                .expect("tab should contain a terminal");
+            (ctx.window_id(), terminal)
+        });
+        assert!(workspace.read(&app, |workspace, ctx| {
+            workspace.is_inline_rename_editor_focused(ctx)
+        }));
+        let focused_before = app.focused_view_id(window);
+
+        terminal.update(&mut app, |view, ctx| {
+            view.handle_terminal_event(&ModelEvent::VisibleBootstrapBlock, ctx);
+        });
+
+        assert_eq!(app.focused_view_id(window), focused_before);
+        assert!(workspace.read(&app, |workspace, ctx| {
+            workspace.is_inline_rename_editor_focused(ctx)
+        }));
+    });
+}
+
+#[test]
+fn visible_bootstrap_block_leaves_focus_on_tab_group_rename_editor() {
+    let _grouped_tabs_guard = FeatureFlag::GroupedTabs.override_enabled(true);
+    App::test((), |mut app| async move {
+        initialize_workspace_app(&mut app);
+        let workspace = mock_workspace(&mut app);
+        let (window, terminal, group_id) = workspace.update(&mut app, |workspace, ctx| {
+            workspace.handle_action(
+                &WorkspaceAction::SelectNewSessionMenuItem(NewSessionMenuItem::CreateNewTabGroup),
+                ctx,
+            );
+            let group_id = workspace.tabs[0]
+                .group_id
+                .expect("active tab should be assigned to the new group");
+            let terminal = workspace
+                .active_tab_pane_group()
+                .as_ref(ctx)
+                .active_session_view(ctx)
+                .expect("new tab group should contain a terminal");
+            (ctx.window_id(), terminal, group_id)
+        });
+        workspace.update(&mut app, |workspace, ctx| {
+            workspace.rename_tab_group(group_id, ctx);
+        });
+        assert!(workspace.read(&app, |workspace, ctx| {
+            workspace.is_inline_rename_editor_focused(ctx)
+        }));
+        let focused_before = app.focused_view_id(window);
+
+        terminal.update(&mut app, |view, ctx| {
+            view.handle_terminal_event(&ModelEvent::VisibleBootstrapBlock, ctx);
+        });
+
+        assert_eq!(app.focused_view_id(window), focused_before);
+        assert!(workspace.read(&app, |workspace, ctx| {
+            workspace.is_inline_rename_editor_focused(ctx)
+        }));
     });
 }

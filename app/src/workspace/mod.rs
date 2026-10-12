@@ -87,11 +87,11 @@ use crate::workspace::view::{
     LEFT_PANEL_AGENT_CONVERSATIONS_BINDING_NAME, LEFT_PANEL_GLOBAL_SEARCH_BINDING_NAME,
     LEFT_PANEL_PROJECT_EXPLORER_BINDING_NAME, LEFT_PANEL_WARP_DRIVE_BINDING_NAME,
     NEW_AGENT_TAB_BINDING_NAME, NEW_AMBIENT_AGENT_TAB_BINDING_NAME, NEW_FILE_BINDING_NAME,
-    NEW_TAB_BINDING_NAME, NEW_TERMINAL_TAB_BINDING_NAME, OPEN_GLOBAL_SEARCH_BINDING_NAME,
-    TOGGLE_CONVERSATION_LIST_VIEW_BINDING_NAME, TOGGLE_NOTIFICATION_MAILBOX_BINDING_NAME,
-    TOGGLE_PROJECT_EXPLORER_BINDING_NAME, TOGGLE_RIGHT_PANEL_BINDING_NAME,
-    TOGGLE_TAB_CONFIGS_MENU_BINDING_NAME, TOGGLE_VERTICAL_TABS_PANEL_BINDING_NAME,
-    TOGGLE_WARP_DRIVE_BINDING_NAME,
+    NEW_TAB_BINDING_NAME, NEW_TERMINAL_TAB_BINDING_NAME, NEW_WINDOW_BINDING_NAME,
+    OPEN_GLOBAL_SEARCH_BINDING_NAME, TOGGLE_CONVERSATION_LIST_VIEW_BINDING_NAME,
+    TOGGLE_NOTIFICATION_MAILBOX_BINDING_NAME, TOGGLE_PROJECT_EXPLORER_BINDING_NAME,
+    TOGGLE_RIGHT_PANEL_BINDING_NAME, TOGGLE_TAB_CONFIGS_MENU_BINDING_NAME,
+    TOGGLE_VERTICAL_TABS_PANEL_BINDING_NAME, TOGGLE_WARP_DRIVE_BINDING_NAME,
 };
 
 pub fn init(app: &mut AppContext) {
@@ -114,6 +114,7 @@ pub fn init(app: &mut AppContext) {
     view::agent_cli_launch_modal::init(app);
     view::feature_intro_modal::init(app);
     view::auto_handoff_sleep_modal::init(app);
+    view::chatgpt_plan_modal::init(app);
     view::cloud_agent_capacity_modal::init(app);
     view::codex_modal::init(app);
     view::free_ai_removal_modal::init(app);
@@ -292,6 +293,18 @@ pub fn init(app: &mut AppContext) {
                 )
                 .with_context_predicate(id!("Workspace")),
                 EditableBinding::new(
+                    "workspace:open_chatgpt_plan_modal",
+                    "[Debug] Open ChatGPT Plan Modal",
+                    WorkspaceAction::OpenChatGPTPlanModal,
+                )
+                .with_context_predicate(id!("Workspace")),
+                EditableBinding::new(
+                    "workspace:reset_chatgpt_plan_modal_state",
+                    "[Debug] Reset ChatGPT Plan Modal State",
+                    WorkspaceAction::ResetChatGPTPlanModalState,
+                )
+                .with_context_predicate(id!("Workspace")),
+                EditableBinding::new(
                     "workspace:trigger_auto_handoff_to_cloud",
                     "[Debug] Trigger Auto-Handoff to Cloud",
                     WorkspaceAction::TriggerAutoHandoffToCloud,
@@ -372,6 +385,7 @@ pub fn init(app: &mut AppContext) {
             BindingDescription::fluent("binding-workspace-cycle-prev-session"),
             id!("Workspace") & id!("Workspace_MultipleTabs"),
         ),
+<<<<<<< ours
         FixedBinding::custom(
             CustomAction::AddWindow,
             WorkspaceAction::AddWindow,
@@ -379,7 +393,18 @@ pub fn init(app: &mut AppContext) {
             id!("Workspace"),
         )
         .with_enabled(|| ContextFlag::CreateNewSession.is_enabled()),
+=======
+>>>>>>> theirs
     ]);
+
+    app.register_editable_bindings([EditableBinding::new(
+        NEW_WINDOW_BINDING_NAME,
+        BindingDescription::new("Create New Window"),
+        WorkspaceAction::AddWindow,
+    )
+    .with_custom_action(CustomAction::AddWindow)
+    .with_context_predicate(id!("Workspace"))
+    .with_enabled(|| ContextFlag::CreateNewSession.is_enabled())]);
 
     app.register_editable_bindings([EditableBinding::new(
         NEW_FILE_BINDING_NAME,

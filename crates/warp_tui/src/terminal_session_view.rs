@@ -35,7 +35,7 @@ use warp::tui_export::{
     ModelEvent, ParsedSlashCommandInput, PersistenceWriter, PillBarActionKind,
     PillBarInteractionEvent, PillBarPillKind, PillSwitchOutcome, PtyIntent, PtyIntentEvent,
     QueuedQueryEvent, QueuedQueryModel, RepoDetectionSessionType, RepoDetectionSource,
-    ServerConversationToken, ServerId, SessionSettings, Sessions, SessionsEvent,
+    ResolvedTeamScope, ServerConversationToken, ServerId, SessionSettings, Sessions, SessionsEvent,
     ShellCommandExecutorEvent, SizeInfo, SizeUpdate, SkillReference, SlashCommandDataSource as _,
     SlashCommandKind, SlashCommandSelectionBehavior, StartAgentExecutorEvent, StartAgentRequest,
     StaticCommand, TelemetryEvent, TerminalModel, TerminalSurface, TerminalSurfaceInit,
@@ -56,6 +56,7 @@ use warp_core::features::FeatureFlag;
 use warp_core::settings::Setting;
 use warp_editor::model::CoreEditorModel;
 use warp_errors::report_error;
+use warp_terminal::event::ExitReason;
 use warp_util::local_or_remote_path::LocalOrRemotePath;
 use warpui::SingletonEntity;
 #[cfg(feature = "voice_input")]
@@ -1538,6 +1539,7 @@ impl TuiTerminalSessionView {
                 &model_events,
                 model.clone(),
                 terminal_surface_id,
+                UserWorkspaces::team_context_resolver(terminal_surface.clone()),
                 conversation_selection.clone(),
                 ctx,
             )
@@ -1590,7 +1592,7 @@ impl TuiTerminalSessionView {
                 active_session.clone(),
                 model.clone(),
                 terminal_surface_id,
-                terminal_surface,
+                terminal_surface.clone(),
                 ctx,
             )
         });
@@ -1684,11 +1686,13 @@ impl TuiTerminalSessionView {
         ctx.subscribe_to_model(&api_keys_menu, |_, _, _: &TuiApiKeysMenuEvent, ctx| {
             ctx.notify();
         });
+        let conversation_menu_team_context = UserWorkspaces::team_context_resolver(ctx.handle());
         let conversation_menu = ctx.add_model(|ctx| {
             TuiConversationMenuModel::new(
                 input_editor_model.clone(),
                 suggestions_mode.clone(),
                 conversation_selection.clone(),
+                conversation_menu_team_context,
                 window_id,
                 ctx,
             )
@@ -1915,6 +1919,7 @@ impl TuiTerminalSessionView {
                 input_editor_model,
                 active_session.clone(),
                 terminal_surface_id,
+                UserWorkspaces::team_context_resolver(terminal_surface),
                 ctx,
             )
         });
@@ -2089,6 +2094,8 @@ impl TuiTerminalSessionView {
                 }
                 QueuedQueryEvent::DefaultModeChanged => ctx.notify(),
                 QueuedQueryEvent::Appended { .. }
+                | QueuedQueryEvent::PromptReady { .. }
+                | QueuedQueryEvent::DispatchStateChanged { .. }
                 | QueuedQueryEvent::RowUnlocked { .. }
                 | QueuedQueryEvent::Removed { .. }
                 | QueuedQueryEvent::Reordered { .. }
@@ -2133,6 +2140,11 @@ impl TuiTerminalSessionView {
             ModelEvent::TerminalModeSwapped(_) => {
                 view.reconcile_focus(ctx);
                 ctx.notify();
+            }
+            ModelEvent::ShellExitObserved { status } => {
+                view.terminal_model
+                    .lock()
+                    .finalize_exit(ExitReason::ShellProcessExited { status: *status });
             }
             ModelEvent::Typeahead => view.handle_typeahead_event(ctx),
             ModelEvent::BlockMetadataReceived(_)
@@ -4354,8 +4366,11 @@ impl TuiTerminalSessionView {
     }
 
     fn handle_accepted_model(&mut self, id: &LLMId, ctx: &mut ViewContext<Self>) {
+        let scope = ResolvedTeamScope::from_scope(
+            &UserWorkspaces::as_ref(ctx).team_context_for_window(ctx.window_id()),
+        );
         LLMPreferences::handle(ctx).update(ctx, |preferences, ctx| {
-            preferences.update_preferred_agent_mode_llm(id, self.terminal_surface_id, ctx);
+            preferences.update_preferred_agent_mode_llm(&scope, id, self.terminal_surface_id, ctx);
         });
         self.model_menu.update(ctx, |menu, ctx| menu.dismiss(ctx));
     }
@@ -5163,6 +5178,24 @@ impl TuiTerminalSessionView {
             }
             ShellCommandExecutorEvent::CancelExecution => {
                 ctx.emit(TuiTerminalSessionEvent::InterruptPty);
+            }
+            ShellCommandExecutorEvent::InterruptForInjectedFollowup {
+                conversation_id,
+                block_id,
+            } => {
+                let should_interrupt = {
+                    let model = model.lock();
+                    let block = model.block_list().active_block();
+                    block.id() == block_id
+                        && block.ai_conversation_id() == Some(*conversation_id)
+                        && block.is_executing()
+                        && !block
+                            .long_running_control_state()
+                            .is_some_and(|state| state.is_user_in_control())
+                };
+                if should_interrupt {
+                    ctx.emit(TuiTerminalSessionEvent::InterruptPty);
+                }
             }
             ShellCommandExecutorEvent::TransferControlToUser {
                 action_id: _,
