@@ -424,12 +424,8 @@ impl AgentInputFooter {
         let file_button = ctx.add_typed_action_view(|_ctx| {
             ActionButton::new("", AgentInputButtonTheme)
                 .with_icon(Icon::Plus)
-<<<<<<< ours
                 .with_tooltip(t!("ai-ui-attach-file"))
-=======
-                .with_tooltip("Attach file")
                 .with_tooltip_keybinding(ATTACH_FILE_KEYBINDING)
->>>>>>> theirs
                 .with_size(button_size)
                 .with_tooltip_alignment(TooltipAlignment::Left)
                 .on_click(|ctx| {

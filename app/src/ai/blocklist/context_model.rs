@@ -34,10 +34,7 @@ use crate::terminal::model::block::{BlockId, BlockMetadata};
 use crate::terminal::model::session::Sessions;
 use crate::terminal::model_events::{ModelEvent, ModelEventDispatcher};
 use crate::util::git::{PrInfo, RepositoryInfo};
-<<<<<<< ours
-=======
 use crate::workspaces::user_workspaces::{TeamContextResolver, UserWorkspaces};
->>>>>>> theirs
 
 /// A non-image file picked via the "attach file" button, stored until query submission.
 #[derive(Clone, Debug, PartialEq, Eq)]

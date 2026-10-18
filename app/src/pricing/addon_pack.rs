@@ -1,13 +1,8 @@
 use thousands::Separable;
+use warp_i18n::t;
 use warp_graphql::billing::AddonCreditsOption;
 
 use crate::settings::UsageDisplayUnit;
-
-const ADDON_CREDITS_DESCRIPTION_LEAD: &str = "Add-on credits are purchased in prepaid packages that roll over each billing cycle and expire after one year.";
-const ADDON_CREDITS_VOLUME_DISCOUNT_NOTE: &str =
-    "The more you purchase, the better the per-credit rate.";
-const ADDON_CREDITS_DESCRIPTION_TAIL: &str =
-    "Once your base plan credits are used, add-on credits will be consumed.";
 
 /// What an add-on pack buys, in the unit it is shown in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -91,12 +86,9 @@ pub fn larger_packs_cost_less_per_credit(options: &[AddonCreditsOption]) -> bool
 /// usage packs shown in credits.
 pub fn addon_credits_description(options: &[AddonCreditsOption]) -> String {
     if larger_packs_cost_less_per_credit(options) {
-        format!(
-            "{ADDON_CREDITS_DESCRIPTION_LEAD} {ADDON_CREDITS_VOLUME_DISCOUNT_NOTE} \
-             {ADDON_CREDITS_DESCRIPTION_TAIL}"
-        )
+        t!("settings-billing-addon-description")
     } else {
-        format!("{ADDON_CREDITS_DESCRIPTION_LEAD} {ADDON_CREDITS_DESCRIPTION_TAIL}")
+        t!("settings-billing-addon-description-no-volume-discount")
     }
 }
 

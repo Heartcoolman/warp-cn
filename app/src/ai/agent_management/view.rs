@@ -55,9 +55,7 @@ use crate::ai::agent_management::telemetry::{
 };
 use crate::ai::ambient_agents::{AgentSource, cancel_task_with_toast};
 use crate::ai::artifacts::{Artifact, ArtifactButtonsRow, ArtifactButtonsRowEvent};
-use crate::ai::blocklist::view_util::{
-    UsageLabelKind, effective_usage_unit, format_usage, usage_label,
-};
+use crate::ai::blocklist::view_util::{effective_usage_unit, format_usage};
 use crate::ai::conversation_details_panel::{
     ConversationDetailsData, ConversationDetailsPanel, ConversationDetailsPanelEvent,
 };
@@ -106,13 +104,14 @@ fn format_request_usage(
     cost_in_cents: Option<f32>,
     usage_display_unit: UsageDisplayUnit,
 ) -> String {
-    let label = usage_label(
-        UsageLabelKind::DetailsPanel,
-        cost_in_cents,
-        usage_display_unit,
-    );
     let value = format_usage(credits, cost_in_cents, usage_display_unit);
-    format!("{label}: {value}")
+    let shows_dollars = matches!(usage_display_unit, UsageDisplayUnit::Dollars)
+        && cost_in_cents.is_some();
+    if shows_dollars {
+        t!("ai-ui-agent-metadata-usage", usage = value)
+    } else {
+        t!("ai-ui-agent-metadata-credits-used", usage = value)
+    }
 }
 
 #[cfg(test)]
@@ -1952,17 +1951,12 @@ impl AgentManagementView {
             metadata_parts.push(t!("ai-ui-agent-metadata-run-time", run_time = run_time));
         }
 
-<<<<<<< ours
-        if let Some(usage) = entry.display.request_usage.map(format_credits) {
-            metadata_parts.push(t!("ai-ui-agent-metadata-credits-used", usage = usage));
-=======
         if let Some(credits) = entry.display.request_usage {
             metadata_parts.push(format_request_usage(
                 credits,
                 entry.display.cost_in_cents,
                 effective_usage_unit(entry.display.cost_in_cents, app),
             ));
->>>>>>> theirs
         }
 
         Text::new(metadata_parts.join(" • "), font_family, font_size)

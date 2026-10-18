@@ -227,7 +227,7 @@ impl UsagePopoverView {
         let theme = appearance.theme();
         let background = theme.surface_2();
         let title = Text::new(
-            "Conversation".to_string(),
+            warp_i18n::t!("ai-ui-usage-conversation-title").to_string(),
             appearance.ui_font_family(),
             appearance.ui_font_size() + 4.,
         )
@@ -253,7 +253,11 @@ impl UsagePopoverView {
         let font_family = appearance.ui_font_family();
         let font_size = appearance.ui_font_size();
         let link = Hoverable::new(self.view_account_usage_mouse_state.clone(), move |_state| {
-            Text::new("View account usage".to_string(), font_family, font_size)
+            Text::new(
+                warp_i18n::t!("ai-ui-usage-view-account-usage").to_string(),
+                font_family,
+                font_size,
+            )
                 .with_color(link_color)
                 .with_selectable(false)
                 .finish()
@@ -493,7 +497,7 @@ impl UsagePopoverView {
             space_between_row()
                 .with_child(
                     Text::new(
-                        "All models".to_string(),
+                        warp_i18n::t!("ai-ui-usage-all-models").to_string(),
                         appearance.ui_font_family(),
                         font_size,
                     )
@@ -656,7 +660,7 @@ impl UsagePopoverView {
                     appearance,
                 ),
                 None => Text::new(
-                    "No detailed breakdown available".to_string(),
+                    warp_i18n::t!("ai-ui-usage-no-detailed-breakdown").to_string(),
                     appearance.ui_font_family(),
                     font_size,
                 )
@@ -1785,7 +1789,7 @@ fn render_diffs_row(
     space_between_row()
         .with_child(
             Text::new(
-                "Diffs applied".to_string(),
+                warp_i18n::t!("ai-ui-usage-diffs-applied").to_string(),
                 appearance.ui_font_family(),
                 font_size,
             )

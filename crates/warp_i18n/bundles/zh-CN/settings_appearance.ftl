@@ -46,6 +46,8 @@ settings-appearance-zoom-desc = 调整所有窗口的默认缩放级别
 settings-appearance-transparency-not-supported = 你的图形驱动不支持透明效果。
 settings-appearance-graphics-no-transparent = 当前图形设置可能不支持渲染透明窗口。
 settings-appearance-use-window-blur = 使用窗口模糊（亚克力质感）
+settings-appearance-window-backdrop = 窗口背景
+settings-appearance-backdrop-hidden-at-full-opacity = 不透明度为 100% 时背景不可见
 settings-appearance-hardware-no-transparent = 当前硬件可能不支持渲染透明窗口。
 settings-appearance-tools-panel-consistent = 工具面板可见性在标签页之间保持一致
 

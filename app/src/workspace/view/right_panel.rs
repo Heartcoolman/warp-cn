@@ -497,12 +497,8 @@ impl RightPanelView {
         let maximize_button = ctx.add_typed_action_view(|_| {
             ActionButton::new("", PaneHeaderTheme)
                 .with_icon(Icon::Maximize)
-<<<<<<< ours
                 .with_tooltip(t!("code-review-view-tooltip-maximize"))
-=======
-                .with_tooltip("Maximize")
                 .with_tooltip_keybinding("workspace:toggle_maximize_code_review_panel")
->>>>>>> theirs
                 .with_tooltip_positioning_provider(Arc::new(MenuPositioning::BelowInputBox))
                 .on_click(|ctx| ctx.dispatch_typed_action(RightPanelAction::ToggleMaximize))
         });

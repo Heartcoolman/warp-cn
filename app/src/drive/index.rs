@@ -147,12 +147,6 @@ const HOVER_PREVIEW_Y_OFFSET: f32 = 0.;
 
 const CREATE_TEAM_ICON_WIDTH: f32 = 16.;
 const CREATE_TEAM_ICON_HEIGHT: f32 = 16.;
-<<<<<<< ours
-=======
-const CREATE_TEAM_TEXT: &str = "Share commands & knowledge with your teammates.";
-const JOIN_OPEN_TEAM_TEXT: &str = "Join an open team in your workspace.";
-
->>>>>>> theirs
 const LOADING_ICON_WIDTH: f32 = 16.;
 const LOADING_ICON_HEIGHT: f32 = 16.;
 const MENU_WIDTH: f32 = 194.;
@@ -738,9 +732,9 @@ impl DriveIndex {
 
     fn join_team_header_text(total_teammates: i64) -> String {
         if total_teammates == 0 {
-            JOIN_OPEN_TEAM_TEXT.to_owned()
+            t!("drive-join-open-team-text").to_string()
         } else {
-            format!("Collaborate with {total_teammates} of your teammates already on Warp.")
+            t!("drive-collaborate-with-teammates", count = total_teammates)
         }
     }
 
@@ -2170,14 +2164,8 @@ impl DriveIndex {
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
-<<<<<<< ours
         let button_text = t!("drive-create-team");
-        let create_button = if UserWorkspaces::as_ref(app).total_teammates_in_joinable_teams() == 0
-        {
-=======
-        let button_text = "Create team".to_owned();
         let create_button = if UserWorkspaces::as_ref(app).num_joinable_teams() == 0 {
->>>>>>> theirs
             appearance
                 .ui_builder()
                 .button(
@@ -2281,32 +2269,15 @@ impl DriveIndex {
         .with_margin_top(16.)
         .finish();
 
-<<<<<<< ours
-        let or_text = Container::new(
-            Text::new_inline(t!("drive-or"), appearance.ui_font_family(), ITEM_FONT_SIZE)
-                .with_color(appearance.theme().nonactive_ui_text_color().into())
-                .with_style(Properties::default().weight(Weight::Medium))
-                .finish(),
-        )
-        .with_margin_top(14.)
-        .finish();
-
-        let or_row = Flex::row()
-            .with_main_axis_size(MainAxisSize::Max)
-            .with_main_axis_alignment(MainAxisAlignment::Center)
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_child(or_text)
-=======
         let mut children = vec![join_button];
         if show_or_separator {
             let or_text = Container::new(
-                Text::new_inline("Or", appearance.ui_font_family(), ITEM_FONT_SIZE)
+                Text::new_inline(t!("drive-or"), appearance.ui_font_family(), ITEM_FONT_SIZE)
                     .with_color(appearance.theme().nonactive_ui_text_color().into())
                     .with_style(Properties::default().weight(Weight::Medium))
                     .finish(),
             )
             .with_margin_top(14.)
->>>>>>> theirs
             .finish();
 
             children.push(

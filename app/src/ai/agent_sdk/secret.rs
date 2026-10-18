@@ -934,7 +934,7 @@ fn read_docker_registry_secret_value(
             if !is_terminal {
                 return Err(anyhow::anyhow!(NON_INTERACTIVE_REQUIRED_MSG));
             }
-            match inquire::Text::new("Registry host (e.g. ghcr.io):").prompt() {
+            match inquire::Text::new(&warp_i18n::t!("ai-ui-registry-host-prompt")).prompt() {
                 Ok(value) if !value.is_empty() => value,
                 Ok(_) => return Ok(None),
                 Err(InquireError::OperationCanceled | InquireError::OperationInterrupted) => {
@@ -952,7 +952,7 @@ fn read_docker_registry_secret_value(
             if !is_terminal {
                 return Err(anyhow::anyhow!(NON_INTERACTIVE_REQUIRED_MSG));
             }
-            match inquire::Text::new("Registry username:").prompt() {
+            match inquire::Text::new(&warp_i18n::t!("ai-ui-registry-username-prompt")).prompt() {
                 Ok(value) if !value.is_empty() => value,
                 Ok(_) => return Ok(None),
                 Err(InquireError::OperationCanceled | InquireError::OperationInterrupted) => {

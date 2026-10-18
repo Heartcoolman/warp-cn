@@ -148,7 +148,6 @@ pub async fn generate_multi_agent_output(
         mcp_context: params.mcp_context.map(Into::into),
     };
 
-<<<<<<< ours
     // warp-cn fork (M4.2.1): Direct mode short-circuit. Drives the
     // user-configured provider (`WARP_CN_DIRECT_PROVIDER` + `WARP_CN_API_KEY`)
     // instead of `app.warp.dev/ai/multi-agent`; see
@@ -159,16 +158,12 @@ pub async fn generate_multi_agent_output(
         return Ok(Box::pin(stream.take_until(cancellation_rx)));
     }
 
-    let response_stream =
-        warp_multi_agent_client::generate_multi_agent_output(server_api.as_ref(), &request).await;
-=======
     let response_stream = warp_multi_agent_client::generate_multi_agent_output(
         server_api.as_ref(),
         &request,
         team_scope.team_uid().map(|uid| uid.uid()),
     )
     .await;
->>>>>>> theirs
     match response_stream {
         Ok(stream) => {
             let output_stream = stream

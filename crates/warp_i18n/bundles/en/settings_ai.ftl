@@ -186,5 +186,5 @@ settings-ai-cmd-suffix-warp-credit-fallback = Warp credit fallback
 settings-ai-cmd-suffix-auto-toggle-rich-input = auto show or hide Rich Input based on agent status
 settings-ai-cmd-suffix-auto-open-rich-input-on-cli-agent-start = auto open Rich Input when a coding agent session starts
 settings-ai-cmd-suffix-auto-dismiss-rich-input-after-submit = auto dismiss Rich Input after prompt submission
-settings-ai-supergrok-connect-description = Connect your SuperGrok subscription to use Grok models in the Warp Agent through your xAI account.
+settings-ai-supergrok-connect-description = Connect your SuperGrok plan to use Grok models in the Warp Agent through your xAI account.
 settings-ai-cmd-suffix-hash-trigger-command-search = '#' trigger for AI command search

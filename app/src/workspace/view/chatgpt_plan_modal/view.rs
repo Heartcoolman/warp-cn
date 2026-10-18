@@ -168,7 +168,7 @@ impl ChatGPTPlanModal {
 
     fn render_title(appearance: &Appearance) -> Box<dyn Element> {
         Text::new(
-            "You're using your ChatGPT plan",
+            warp_i18n::t!("ai-ui-chatgpt-plan-modal-title"),
             appearance.ui_font_family(),
             20.,
         )
@@ -179,8 +179,7 @@ impl ChatGPTPlanModal {
 
     fn render_description(appearance: &Appearance) -> Box<dyn Element> {
         Text::new(
-            "Eligible requests in Warp will use your ChatGPT plan. You can manage usage for Warp \
-             in your ChatGPT settings.",
+            warp_i18n::t!("ai-ui-chatgpt-plan-modal-description"),
             appearance.ui_font_family(),
             14.,
         )

@@ -147,6 +147,10 @@ impl ResolvedTeamScope {
         Self(scope.team_uid())
     }
 
+    pub fn from_uid(team_uid: Option<ServerId>) -> Self {
+        Self(team_uid)
+    }
+
     #[cfg(feature = "agent_mode_evals")]
     pub(crate) fn teamless() -> Self {
         Self(None)

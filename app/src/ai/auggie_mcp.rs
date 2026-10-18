@@ -364,8 +364,8 @@ fn map_service_error(err: rmcp::ServiceError) -> AuggieMcpError {
 fn text_from_call_tool_result(result: &rmcp::model::CallToolResult) -> String {
     let mut text_blocks = Vec::new();
     for content in &result.content {
-        match &content.raw {
-            rmcp::model::RawContent::Text(text_content) => {
+        match content {
+            rmcp::model::ContentBlock::Text(text_content) => {
                 text_blocks.push(text_content.text.clone());
             }
             other => {

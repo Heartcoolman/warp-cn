@@ -5111,8 +5111,11 @@ impl ApiKeysWidget {
                                 },
                             );
                             // Pull a fresh model catalog from the new provider.
+                            let scope = ResolvedTeamScope::from_scope(
+                                &UserWorkspaces::as_ref(ctx).team_context_for_window(ctx.window_id()),
+                            );
                             LLMPreferences::handle(ctx).update(ctx, |p, inner| {
-                                p.refresh_available_models(inner);
+                                p.refresh_available_models(&scope, inner);
                             });
                         }
                     }
@@ -5738,11 +5741,7 @@ impl ApiKeysWidget {
 
         let description = Container::new(
             Text::new(
-<<<<<<< ours
                 warp_i18n::t!("settings-ai-supergrok-connect-description"),
-=======
-                "Connect your SuperGrok plan to use Grok models in the Warp Agent through your xAI account.",
->>>>>>> theirs
                 appearance.ui_font_family(),
                 CONTENT_FONT_SIZE,
             )
@@ -5854,7 +5853,7 @@ impl ApiKeysWidget {
 
         let description = Container::new(
             Text::new(
-                "Connect your ChatGPT plan to use OpenAI models in the Warp Agent through your OpenAI account.",
+                warp_i18n::t!("ai-ui-chatgpt-plan-connect-description"),
                 appearance.ui_font_family(),
                 CONTENT_FONT_SIZE,
             )
@@ -7102,8 +7101,11 @@ fn make_base_url_editor(
             });
             // Endpoint changed → re-fetch the catalog from the new host so
             // the model picker reflects what's actually available there.
+            let scope = ResolvedTeamScope::from_scope(
+                &UserWorkspaces::as_ref(ctx).team_context_for_window(ctx.window_id()),
+            );
             LLMPreferences::handle(ctx).update(ctx, |p, inner| {
-                p.refresh_available_models(inner);
+                p.refresh_available_models(&scope, inner);
             });
         }
     });

@@ -158,45 +158,6 @@ impl Component for Lightbox {
             },
         );
 
-<<<<<<< ours
-        // Build the central content based on the image source and whether the
-        // native size is known (i.e. the image data has been loaded).
-        let central_content: Box<dyn Element> =
-            match (current_source, params.current_image_native_size) {
-                // Image source resolved AND native size known → render the image.
-                (Some(LightboxImageSource::Resolved { asset_source }), Some(native_size)) => {
-                    let image = ConstrainedBox::new(
-                        Image::new(asset_source.clone(), CacheOption::Original)
-                            .contain()
-                            .layout_using_paint_bounds()
-                            .before_load(Align::new(loading_element(appearance)).finish())
-                            .finish(),
-                    )
-                    .with_max_width(native_size.x())
-                    .with_max_height(native_size.y())
-                    .finish();
-
-                    EventHandler::new(image)
-                        .on_left_mouse_down(|_, _, _| DispatchEventResult::StopPropagation)
-                        .finish()
-                }
-                // No images provided at all.
-                _ if image_count == 0 => {
-                    Text::new(t!("misc-no-images"), appearance.ui_font_family(), text_size)
-                        .with_color(ColorU::white())
-                        .finish()
-                }
-                // Still loading (either metadata or image bytes).
-                _ => loading_element(appearance),
-            };
-
-        // Show the description only when the image is fully loaded (native size known).
-        let content_with_description = if let (Some(description), Some(_)) =
-            (current_description, params.current_image_native_size)
-        {
-            let description_text = Text::new(description, appearance.ui_font_family(), text_size)
-                .with_color(ColorU::white())
-=======
         // Build the central content based on the image source and the load
         // state of the current image's bytes.
         let central_content: Box<dyn Element> = match (current_source, params.current_image_state) {
@@ -214,7 +175,6 @@ impl Component for Lightbox {
                 )
                 .with_max_width(native_size.x())
                 .with_max_height(native_size.y())
->>>>>>> theirs
                 .finish();
 
                 EventHandler::new(image)
@@ -222,12 +182,12 @@ impl Component for Lightbox {
                     .finish()
             }
             // No images provided at all.
-            _ if image_count == 0 => Text::new("No images", appearance.ui_font_family(), text_size)
+            _ if image_count == 0 => Text::new(t!("misc-no-images"), appearance.ui_font_family(), text_size)
                 .with_color(ColorU::white())
                 .finish(),
             // The image bytes failed to load or decode.
             (_, CurrentImageState::Failed) => Text::new(
-                "Failed to load image",
+                t!("misc-image-load-failed"),
                 appearance.ui_font_family(),
                 text_size,
             )

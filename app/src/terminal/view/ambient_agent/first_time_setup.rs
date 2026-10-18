@@ -241,27 +241,16 @@ impl FirstTimeCloudAgentSetupView {
         let theme = appearance.theme();
 
         let badge_text = if credits.usage_cents.is_some() {
-            "Free usage"
+            t!("ai-ui-ambient-free-usage")
         } else {
-            "Free credits"
+            t!("ai-ui-ambient-free-credits")
         };
         // Badge with blue border
         let badge = Container::new(
-<<<<<<< ours
-            Text::new(
-                t!("ai-ui-ambient-free-credits"),
-                appearance.ui_font_family(),
-                12.,
-            )
-            .with_style(Properties::default().weight(Weight::Semibold))
-            .with_color(theme.accent().into())
-            .finish(),
-=======
             Text::new(badge_text, appearance.ui_font_family(), 12.)
                 .with_style(Properties::default().weight(Weight::Semibold))
                 .with_color(theme.accent().into())
                 .finish(),
->>>>>>> theirs
         )
         .with_horizontal_padding(6.)
         .with_vertical_padding(4.)

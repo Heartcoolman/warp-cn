@@ -46,6 +46,8 @@ settings-appearance-zoom-desc = Adjusts the default zoom level across all window
 settings-appearance-transparency-not-supported = Transparency is not supported with your graphics drivers.
 settings-appearance-graphics-no-transparent = The selected graphics settings may not support rendering transparent windows.
 settings-appearance-use-window-blur = Use Window Blur (Acrylic texture)
+settings-appearance-window-backdrop = Window backdrop
+settings-appearance-backdrop-hidden-at-full-opacity = Backdrop is not visible at opacity 100%
 settings-appearance-hardware-no-transparent = The selected hardware may not support rendering transparent windows.
 settings-appearance-tools-panel-consistent = Tools panel visibility is consistent across tabs
 

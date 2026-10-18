@@ -3552,18 +3552,14 @@ impl SettingsWidget for WindowBackdropWidget {
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
-<<<<<<< ours
-        let window_settings = WindowSettings::as_ref(app);
-        let use_blur_texture = *window_settings.background_blur_texture;
-        let mut col = Flex::column().with_child(render_body_item::<AppearancePageAction>(
-            warp_i18n::t!("settings-appearance-use-window-blur").to_string(),
-=======
+        let backdrop_label = warp_i18n::t!("settings-appearance-window-backdrop");
+        let backdrop_hint = (*WindowSettings::as_ref(app).background_opacity
+            == BackgroundOpacity::MAX)
+            .then(|| warp_i18n::t!("settings-appearance-backdrop-hidden-at-full-opacity"));
         let mut col = Flex::column().with_child(render_dropdown_item(
             appearance,
-            "Window backdrop",
-            (*WindowSettings::as_ref(app).background_opacity == BackgroundOpacity::MAX)
-                .then_some("Backdrop is not visible at opacity 100%"),
->>>>>>> theirs
+            backdrop_label.as_ref(),
+            backdrop_hint.as_deref(),
             None,
             LocalOnlyIconState::for_setting(
                 BackgroundBackdrop::storage_key(),

@@ -39,6 +39,7 @@ settings-billing-enterprise-callout-non-admin = Enterprise credit usage isn't fu
 
 # Add-on credits
 settings-billing-addon-description = Add-on credits are purchased in prepaid packages that roll over each billing cycle and expire after one year. The more you purchase, the better the per-credit rate. Once your base plan credits are used, add-on credits will be consumed.
+settings-billing-addon-description-no-volume-discount = Add-on credits are purchased in prepaid packages that roll over each billing cycle and expire after one year. Once your base plan credits are used, add-on credits will be consumed.
 settings-billing-addon-team-description = Purchased add-on credits are shared across your team.
 settings-billing-addon-header = Add-on credits
 
@@ -90,6 +91,19 @@ settings-billing-upgrade-build-plan = Upgrade to the Build plan
 settings-billing-build-plan-suffix = " to purchase add-on credits."
 settings-billing-contact-ae = Contact your Account Executive for more add-on credits.
 settings-billing-contact-admin = Contact a team admin to purchase add-on credits.
+settings-billing-addon-usage-description = Usage rolls over each billing cycle and expires after one year. Once your base plan usage is depleted, any additional purchased usage will be consumed.
+settings-billing-addon-team-usage-description = Purchased usage is shared across your team.
+settings-billing-addon-usage-header = Add-on usage
+settings-billing-toast-purchase-usage-success = Successfully purchased usage
+settings-billing-build-plan-usage-suffix = " to purchase usage."
+settings-billing-contact-ae-usage = Contact your Account Executive for more usage.
+settings-billing-contact-admin-usage = Contact a team admin to purchase usage.
+settings-billing-monthly-spend-helper-usage = Sets the monthly limit spent on purchased usage
+settings-billing-auto-reload-usage-description = When enabled, auto reload will automatically purchase {$amount} when your purchased usage runs low.
+settings-billing-auto-reload-usage-delinquent-warning = Restricted due to billing issue. Update your payment method to purchase usage.
+settings-billing-usage-header = Usage
+settings-billing-account-usage-info = This is the {$duration} limit of AI usage for your account.
+settings-billing-dollars-remaining = {$amount} remaining
 
 # Total / billing date / restricted
 settings-billing-total-overages = Total overages

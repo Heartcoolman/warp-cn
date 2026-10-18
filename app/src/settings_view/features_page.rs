@@ -239,10 +239,7 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
                 .is_supported_on_current_platform(),
         ),
         ToggleSettingActionPair::new(
-<<<<<<< ours
-            &warp_i18n::t!("settings-features-cmd-suffix-command-corrections"),
-=======
-            "warp completions",
+            &warp_i18n::t!("settings-features-cmd-suffix-warp-completions"),
             builder(SettingsAction::FeaturesPageToggle(
                 FeaturesPageAction::ToggleWarpCompletions,
             )),
@@ -251,7 +248,7 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
         )
         .with_enabled(|| FeatureFlag::NativeShellCompletions.is_enabled()),
         ToggleSettingActionPair::new(
-            "native shell completions",
+            &warp_i18n::t!("settings-features-cmd-suffix-native-shell-completions"),
             builder(SettingsAction::FeaturesPageToggle(
                 FeaturesPageAction::ToggleNativeShellCompletions,
             )),
@@ -260,8 +257,7 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
         )
         .with_enabled(|| FeatureFlag::NativeShellCompletions.is_enabled()),
         ToggleSettingActionPair::new(
-            "command corrections",
->>>>>>> theirs
+            &warp_i18n::t!("settings-features-cmd-suffix-command-corrections"),
             builder(SettingsAction::FeaturesPageToggle(
                 FeaturesPageAction::ToggleCommandCorrections,
             )),

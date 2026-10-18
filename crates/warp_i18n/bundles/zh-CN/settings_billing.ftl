@@ -39,6 +39,7 @@ settings-billing-enterprise-callout-non-admin = 此视图暂未完整支持企�
 
 # 附加额度
 settings-billing-addon-description = 附加额度以预付套餐方式购买，每个计费周期滚存，一年后过期。购买越多，单价越优惠。基础套餐额度用尽后，会消耗附加额度。
+settings-billing-addon-description-no-volume-discount = 附加额度以预付套餐方式购买，每个计费周期滚存，一年后过期。基础套餐额度用尽后，会消耗附加额度。
 settings-billing-addon-team-description = 已购买的附加额度由整个团队共享。
 settings-billing-addon-header = 附加额度
 
@@ -90,6 +91,19 @@ settings-billing-upgrade-build-plan = 升级到 Build 套餐
 settings-billing-build-plan-suffix = " 以购买附加额度。"
 settings-billing-contact-ae = 请联系你的客户经理获取更多附加额度。
 settings-billing-contact-admin = 请联系团队管理员购买附加额度。
+settings-billing-addon-usage-description = 用量每个计费周期滚动，一年后过期。基础套餐用量用尽后，会消耗额外购买的用量。
+settings-billing-addon-team-usage-description = 购买的用量在团队内共享。
+settings-billing-addon-usage-header = 附加用量
+settings-billing-toast-purchase-usage-success = 用量购买成功
+settings-billing-build-plan-usage-suffix = " 以购买用量。"
+settings-billing-contact-ae-usage = 联系你的客户经理以购买更多用量。
+settings-billing-contact-admin-usage = 联系团队管理员以购买用量。
+settings-billing-monthly-spend-helper-usage = 设置每月用于购买用量的上限
+settings-billing-auto-reload-usage-description = 启用后，当购买的用量不足时，自动续购将自动购买 {$amount}。
+settings-billing-auto-reload-usage-delinquent-warning = 因账单问题受限。请更新支付方式以购买用量。
+settings-billing-usage-header = 用量
+settings-billing-account-usage-info = 这是你账户 {$duration} 的 AI 用量上限。
+settings-billing-dollars-remaining = 剩余 {$amount}
 
 # 合计 / 计费日 / 受限
 settings-billing-total-overages = 超额合计

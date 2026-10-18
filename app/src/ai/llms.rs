@@ -2040,20 +2040,27 @@ impl LLMPreferences {
         );
     }
 
-<<<<<<< ours
-    pub fn refresh_available_models(&self, ctx: &mut ModelContext<Self>) {
+    pub fn refresh_available_models(
+        &self,
+        scope: &(impl TeamScope + ?Sized),
+        ctx: &mut ModelContext<Self>,
+    ) {
         // warp-cn fork: if a Direct LLM provider is configured, fetch its
         // model list directly from the provider's `/v1/models` (or equivalent)
         // endpoint and bypass the upstream Warp catalog entirely. Falls back
         // to the original auth/public path on configuration miss or fetch error.
         #[cfg(feature = "direct_llm_backend")]
         {
+            let team_uid = scope.team_uid();
             ctx.spawn(
                 async move { crate::server::direct_backend::model_catalog::fetch_dynamic_catalog().await },
-                |me, opt, ctx| match opt {
+                move |me, opt, ctx| match opt {
                     Some(Ok(update)) => {
-                        if update != me.models_by_feature {
-                            me.on_server_update(update, ctx);
+                        let current = UserWorkspaces::as_ref(ctx)
+                            .feature_model_choice_for_team_uid(team_uid)
+                            .clone();
+                        if update != current {
+                            me.on_server_update(team_uid, update, ctx);
                         }
                     }
                     Some(Err(e)) => {
@@ -2061,7 +2068,7 @@ impl LLMPreferences {
                             "DirectBackend: dynamic catalog fetch failed, falling back to upstream: {e:#}"
                         );
                         if AuthStateProvider::as_ref(ctx).get().is_logged_in() {
-                            me.refresh_authed_models(ctx);
+                            me.refresh_authed_models_for_team_uid(team_uid, ctx);
                         } else {
                             me.refresh_public_models(ctx);
                         }
@@ -2069,7 +2076,7 @@ impl LLMPreferences {
                     None => {
                         // No direct provider configured — fall through to upstream.
                         if AuthStateProvider::as_ref(ctx).get().is_logged_in() {
-                            me.refresh_authed_models(ctx);
+                            me.refresh_authed_models_for_team_uid(team_uid, ctx);
                         } else {
                             me.refresh_public_models(ctx);
                         }
@@ -2081,21 +2088,10 @@ impl LLMPreferences {
         #[cfg(not(feature = "direct_llm_backend"))]
         {
             if AuthStateProvider::as_ref(ctx).get().is_logged_in() {
-                self.refresh_authed_models(ctx);
+                self.refresh_authed_models(scope, ctx);
             } else {
                 self.refresh_public_models(ctx);
             }
-=======
-    pub fn refresh_available_models(
-        &self,
-        scope: &(impl TeamScope + ?Sized),
-        ctx: &mut ModelContext<Self>,
-    ) {
-        if AuthStateProvider::as_ref(ctx).get().is_logged_in() {
-            self.refresh_authed_models(scope, ctx);
-        } else {
-            self.refresh_public_models(ctx);
->>>>>>> theirs
         }
     }
 

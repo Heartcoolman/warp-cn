@@ -15821,11 +15821,8 @@ dependencies = [
  "warp_errors",
  "warp_files",
  "warp_graphql",
-<<<<<<< HEAD
- "warp_i18n",
-=======
  "warp_harness_usage",
->>>>>>> upstream/master
+ "warp_i18n",
  "warp_isolation_platform",
  "warp_logging",
  "warp_managed_secrets",
@@ -16175,7 +16172,15 @@ dependencies = [
 ]
 
 [[package]]
-<<<<<<< HEAD
+name = "warp_harness_usage"
+version = "0.0.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "warp_i18n"
 version = "0.0.0"
 dependencies = [
@@ -16230,14 +16235,6 @@ dependencies = [
  "serde_json",
  "tokio",
  "warp_core",
-=======
-name = "warp_harness_usage"
-version = "0.0.0"
-dependencies = [
- "chrono",
- "serde",
- "serde_json",
->>>>>>> upstream/master
 ]
 
 [[package]]
