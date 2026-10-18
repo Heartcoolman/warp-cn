@@ -1,1 +1,197 @@
-bmFtZTogQnVpbGQgTGludXggQXBwICh1bnNpZ25lZCkKCiMg5Y+C54WnIGJ1aWxkLW1hYy1hcHAueW1sIC8gYnVpbGQtd2luZG93cy1hcHAueW1sIOeahCBMaW51eCDniYjmnKzjgILlm57lupQgaXNzdWUgIzQy77yI56S+5Yy65rGCIExpbnV4IOeJiO+8ieOAggojCiMg5Lik56eN6Kem5Y+R77yaCiMgMSkgd29ya2Zsb3dfZGlzcGF0Y2jvvIjmiYvliqjvvInvvJrmjInpnIDlh7rljIXvvJtjaGFubmVsIC8gcHJvZmlsZSDlj6/pgInjgIIKIyAyKSBwdXNoIHRhZ3MgdirvvJrlm7rlrpogb3NzL3JlbGVhc2Ug5Ye6IEFwcEltYWdlICsgLmRlYiArIC5ycG3vvIzlubbkvZzkuLogR2l0SHViIFJlbGVhc2Ug6LWE5Lqn5LiK5LygCiMgICAg77yITGludXgg5pqC5LiN5o6l5YWlIGluLWFwcCDoh6rmm7TmlrDkuI4gYXB0L3l1bSDmupDvvIzku4Xmj5Dkvpvlj6/kuIvovb3kuqfnianvvIzkuI3lgZrnrb7lkI3vvInjgIIKIwojIOWkjeeUqOS7k+W6k+W3siB2ZW5kb3JlZCDnmoQgc2NyaXB0L2xpbnV4L2J1bmRsZSArIGJ1bmRsZV9hcHBpbWFnZS9idW5kbGVfZGViL2J1bmRsZV9ycG3vvIwKIyDlroPku6zlt7LlrozmlbTmlK/mjIEgb3NzIGNoYW5uZWzvvIjml6AgU2VudHJ544CBYmluPXdhcnAtb3Nz44CBQVBQX05BTUU9V2FycE9zc+OAgUZFQVRVUkVTPXJlbGVhc2VfYnVuZGxl77yJ44CCCiMg5LiOIG1hYy93aW5kb3dzIOe8luivkeWQjOS4gOS4qiB3YXJwLW9zcyDkuozov5vliLbvvIjlkIwgY3JhdGUgLyDlkIwgbmxkXyog54m55oCn77yJ77yM5pWFIHpoLUNOIOe/u+ivkSBidW5kbGUKIyDkuI7lhbblroPlubPlj7DkuIDoh7TlhoXltYzjgIIKIwojIOS7hSB4ODZfNjTvvJrkuIrmuLggQ0kg5Lmf5Y+q5p6E5bu6IGxpbnV4IHg4Nl82NO+8m2FhcmNoNjQtbGludXgg5pyq57uPIENJIOimhueblua1i+ivleOAggpvbjoKICB3b3JrZmxvd19kaXNwYXRjaDoKICAgIGlucHV0czoKICAgICAgY2hhbm5lbDoKICAgICAgICBkZXNjcmlwdGlvbjogJ+WPkeW4g+aho+asoSAob3NzPeaXoCBTZW50cnkv5aSW6YOo5L6d6LWW77ybZGV2PeW4puiwg+ivleaWreiogO+8m2xvY2FsPeacrOWcsOW8gOWPkSknCiAgICAgICAgcmVxdWlyZWQ6IHRydWUKICAgICAgICBkZWZhdWx0OiBvc3MKICAgICAgICB0eXBlOiBjaG9pY2UKICAgICAgICBvcHRpb25zOgogICAgICAgICAgLSBvc3MKICAgICAgICAgIC0gZGV2CiAgICAgICAgICAtIGxvY2FsCiAgICAgIHByb2ZpbGU6CiAgICAgICAgZGVzY3JpcHRpb246ICfnvJbor5EgcHJvZmlsZSAoZGVidWc9Y2FyZ28gZGV2IHByb2ZpbGUsIH4zMC02MCBtaW7vvJtyZWxlYXNlPXJlbGVhc2UtbHRvLCDmlbDlsI/ml7Ygb24gZnJlZSBydW5uZXIpJwogICAgICAgIHJlcXVpcmVkOiB0cnVlCiAgICAgICAgZGVmYXVsdDogcmVsZWFzZQogICAgICAgIHR5cGU6IGNob2ljZQogICAgICAgIG9wdGlvbnM6CiAgICAgICAgICAtIGRlYnVnCiAgICAgICAgICAtIHJlbGVhc2UKICAgICAgcmVsZWFzZV90YWc6CiAgICAgICAgZGVzY3JpcHRpb246ICflj6/pgInvvJrlt7LlrZjlnKjnmoQgcmVsZWFzZSB0YWfvvIjlpoIgdjAuMjAyNi4wNi4wMS1jbi4x77yJ44CC5aGr5YaZ5ZCO55So5a6D5L2c5Li654mI5pys5Y+35p6E5bu677yM5bm25oqK5Lqn54mp6ZmE5Yiw6K+lIFJlbGVhc2XigJTigJTnlKjkuo7nu5nmn5DmrKHlj5HluIPooaXmnoTlu7ogTGludXgg5bmz5Y+w44CCJwogICAgICAgIHJlcXVpcmVkOiBmYWxzZQogICAgICAgIGRlZmF1bHQ6ICcnCiAgICAgICAgdHlwZTogc3RyaW5nCiAgcHVzaDoKICAgIHRhZ3M6CiAgICAgIC0gJ3YqJwoKIyB0YWcg6Kem5Y+R5pe26ZyA6KaBIGNvbnRlbnRzOndyaXRlIOaJjeiDveiwgyBgZ2ggcmVsZWFzZSB1cGxvYWRg77ybCiMgYWN0aW9uczp3cml0ZSDnu5kgcnVzdC1jYWNoZSDlhpnlhaXnlKjjgIIKcGVybWlzc2lvbnM6CiAgY29udGVudHM6IHdyaXRlCiAgYWN0aW9uczogd3JpdGUKCmpvYnM6CiAgYnVpbGQ6CiAgICBuYW1lOiBCdWlsZCAke3sgaW5wdXRzLmNoYW5uZWwgfHwgJ29zcycgfX0gKHg4Nl82NCkKICAgICMgR2l0SHViIOaJmOeuoSBydW5uZXLjgIJ1YnVudHUtMjIuMDQg6buY6K6kIGdjYz49MTHvvIzop4Tpgb/kuobkuIrmuLjkuLogdWJ1bnR1LTIwLjA0IGdjYy05LjUKICAgICMgbWVtY21wL2F3cy1sYy1ycyBidWcg6ICM6KOFIGdjYy0xMCDnmoTmraXpqqTvvJvoi6Xml6XlkI7pu5jorqQgZ2NjIOmAgOWbniA8MTEg6ZyA6KGl6K+l5q2l6aqk44CCCiAgICBydW5zLW9uOiB1YnVudHUtMjIuMDQKICAgICMgcmVsZWFzZS1sdG8g5Zyo5YWN6LS5IHJ1bm5lciDkuIrlhrfmnoTlu7rlj6/ovr7mlbDlsI/ml7bvvJtkZWJ1ZyBwcm9maWxlIOe6piAzMC02MCDliIbpkp/jgIIKICAgIHRpbWVvdXQtbWludXRlczogMzYwCgogICAgZW52OgogICAgICBDQVJHT19URVJNX0NPTE9SOiBhbHdheXMKICAgICAgUlVTVF9CQUNLVFJBQ0U6IDEKICAgICAgIyBHaXRIdWIgcnVubmVyIOaXoCBGVVNF77yMbGludXhkZXBsb3kgLyBhcHBpbWFnZXRvb2wg6ZyA5LulIGV4dHJhY3QtYW5kLXJ1biDmqKHlvI/ov5DooYzjgIIKICAgICAgQVBQSU1BR0VfRVhUUkFDVF9BTkRfUlVOOiAxCgogICAgc3RlcHM6CiAgICAgIC0gbmFtZTogQ2hlY2tvdXQKICAgICAgICB1c2VzOiBhY3Rpb25zL2NoZWNrb3V0QHY3LjAuMAogICAgICAgIHdpdGg6CiAgICAgICAgICAjIGFwcC9idWlsZC5ycyDnlKggYGdpdCBkZXNjcmliZSAtLXRhZ3NgIOaKiiBHSVRfUkVMRUFTRV9UQUcg54On6L+b5LqM6L+b5Yi277ybCiAgICAgICAgICAjIOm7mOiupCBzaGFsbG93IGNsb25lIOS4jeaLiSB0YWfvvIzkvJrorqnkuqfnianmmL7npLogZmFsbGJhY2sg54mI5pys5Y+344CCCiAgICAgICAgICBmZXRjaC10YWdzOiB0cnVlCgogICAgICAtIG5hbWU6IFNob3cgcnVubmVyIGluZm8KICAgICAgICBydW46IHwKICAgICAgICAgIHNldCAtZQogICAgICAgICAgKC4gL2V0Yy9vcy1yZWxlYXNlICYmIGVjaG8gIiRQUkVUVFlfTkFNRSIpCiAgICAgICAgICB1bmFtZSAtYQogICAgICAgICAgZ2NjIC0tdmVyc2lvbiB8IGhlYWQgLTEKICAgICAgICAgIHJ1c3RjIC0tdmVyc2lvbiB8fCB0cnVlCiAgICAgICAgICBjYXJnbyAtLXZlcnNpb24gfHwgdHJ1ZQogICAgICAgICAgZGYgLWggLwoKICAgICAgLSBuYW1lOiBBZGQgUnVzdCB0YXJnZXQKICAgICAgICAjIOW3peWFt+mTvueJiOacrOeUsSBydXN0LXRvb2xjaGFpbi50b21sKDEuOTIuMCkg5Yaz5a6a77yMcnVzdHVwIOmmluasoeiwg+eUqOaXtuiHquWKqOWuieijheOAggogICAgICAgIHJ1bjogcnVzdHVwIHRhcmdldCBhZGQgeDg2XzY0LXVua25vd24tbGludXgtZ251CgogICAgICAtIG5hbWU6IFNldHVwIFJ1c3QgY2FjaGUKICAgICAgICB1c2VzOiBTd2F0aW5lbS9ydXN0LWNhY2hlQHYyCiAgICAgICAgd2l0aDoKICAgICAgICAgIGtleTogbGludXgteDg2XzY0LSR7eyBpbnB1dHMuY2hhbm5lbCB8fCAnb3NzJyB9fS0ke3sgaW5wdXRzLnByb2ZpbGUgfHwgJ3JlbGVhc2UnIH19CiAgICAgICAgICAjIOS7hSBtYXN0ZXIgcHVzaCDkuI4gdGFnIHB1c2gg5YaZ57yT5a2Y77ybUFIgLyBzeW5jIOWIhuaUr+WPquivu++8jOmBv+WFjeaxoeafk+OAggogICAgICAgICAgc2F2ZS1pZjogJHt7IGdpdGh1Yi5yZWYgPT0gJ3JlZnMvaGVhZHMvbWFzdGVyJyB8fCBnaXRodWIucmVmX3R5cGUgPT0gJ3RhZycgfX0KCiAgICAgIC0gbmFtZTogSW5zdGFsbCBidWlsZCAmIHJ1bnRpbWUgZGVwZW5kZW5jaWVzCiAgICAgICAgIyDlpI3nlKjku5PlupPlhoUgdmVuZG9yZWQg55qE5L6d6LWW6ISa5pys77yIYXB0IOW8gOWPkeW6kyArIHByb3RvYyAyNS4xICsgWDExL1dheWxhbmQvRUdML1Z1bGthbgogICAgICAgICMg6L+Q6KGM5bqT77yJ44CCaW5zdGFsbF9ydW50aW1lX2RlcHMg5YaF6YOo5bey6ZO+5byP6LCD55SoIGluc3RhbGxfYnVpbGRfZGVwc+OAggogICAgICAgICMg6aKd5aSW6KGl6KOF5omT5YyF5bel5YW377yaZmFrZXJvb3TvvIhidW5kbGVfZGViL2J1bmRsZV9ycG0g6YO955So77yJ44CBcnBt77yI5o+Q5L6bIHJwbWJ1aWxkL3JwbXNpZ27vvIwKICAgICAgICAjIFVidW50dSDpu5jorqTkuI3luKbvvInjgIJkcGtnLWRlYiDkuLogVWJ1bnR1IOiHquW4puOAggogICAgICAgIHJ1bjogfAogICAgICAgICAgc2V0IC1lCiAgICAgICAgICBzdWRvIGFwdC1nZXQgdXBkYXRlCiAgICAgICAgICBzdWRvIGFwdC1nZXQgaW5zdGFsbCAteSBmYWtlcm9vdCBycG0KICAgICAgICAgIC4vc2NyaXB0L2xpbnV4L2luc3RhbGxfcnVudGltZV9kZXBzCgogICAgICAtIG5hbWU6IEluc3RhbGwgbGludXhkZXBsb3kgKEFwcEltYWdlIHRvb2xpbmcpCiAgICAgICAgcnVuOiB8CiAgICAgICAgICBzZXQgLWUKICAgICAgICAgIC4vc2NyaXB0L2xpbnV4L2luc3RhbGxfbGludXhkZXBsb3kKICAgICAgICAgICMgYnVuZGxlX2FwcGltYWdlIOmAmui/hyBQQVRIIOiwg+eUqCBsaW51eGRlcGxvee+8m+iEmuacrOaKiuWug+ijheWIsCB+Ly5sb2NhbC9iaW7jgIIKICAgICAgICAgIGVjaG8gIiRIT01FLy5sb2NhbC9iaW4iID4+ICIkR0lUSFVCX1BBVEgiCgogICAgICAtIG5hbWU6IEluc3RhbGwgY2FyZ28tYWJvdXQgKGxpY2Vuc2UgZ2VuZXJhdGlvbikKICAgICAgICAjIGJ1bmRsZV9hcHBpbWFnZSDihpIgc2NyaXB0L3ByZXBhcmVfYnVuZGxlZF9yZXNvdXJjZXMg5Lya6LeRIGBjYXJnbyBhYm91dCBnZW5lcmF0ZWAKICAgICAgICAjIOeUn+aIkCBUSElSRF9QQVJUWV9MSUNFTlNFUy50eHTvvIznvLror6XlrZDlkb3ku6TliJnmiZPljIXmraXpqqTlv4XlpLHotKUKICAgICAgICAjIO+8iGVycm9yOiBubyBzdWNoIGNvbW1hbmQ6IGBhYm91dGDvvInjgILniYjmnKzkuI4gd2luZG93cy9tYWMgd29ya2Zsb3cg5L+d5oyB5LiA6Ie044CCCiAgICAgICAgcnVuOiBjYXJnbyBpbnN0YWxsIC0tbG9ja2VkIGNhcmdvLWFib3V0QDAuOC40CgogICAgICAtIG5hbWU6IEJ1aWxkICYgYnVuZGxlCiAgICAgICAgaWQ6IGJ1bmRsZQogICAgICAgIHJ1bjogfAogICAgICAgICAgc2V0IC1lCiAgICAgICAgICAjIOehruWumueJiOacrOWPt+S8mOWFiOe6p++8mmRpc3BhdGNoIOaYvuW8jyByZWxlYXNlX3RhZyA+IHRhZyByZWYg5ZCNID4gYGdpdCBkZXNjcmliZWDjgIIKICAgICAgICAgIGlmIFsgLW4gIiR7SU5QVVRfUkVMRUFTRV9UQUc6LX0iIF07IHRoZW4KICAgICAgICAgICAgUkVMRUFTRV9UQUc9IiR7SU5QVVRfUkVMRUFTRV9UQUd9IgogICAgICAgICAgZWxpZiBbICIke0dJVEhVQl9SRUZfVFlQRX0iID0gInRhZyIgXTsgdGhlbgogICAgICAgICAgICBSRUxFQVNFX1RBRz0iJHtHSVRIVUJfUkVGX05BTUV9IgogICAgICAgICAgZWxzZQogICAgICAgICAgICBSRUxFQVNFX1RBRz0iJChnaXQgZGVzY3JpYmUgLS10YWdzIC0tYWx3YXlzIDI+L2Rldi9udWxsIHx8IHRydWUpIgogICAgICAgICAgICBbIC1uICIkUkVMRUFTRV9UQUciIF0gfHwgUkVMRUFTRV9UQUc9IjAuMC4wLSR7R0lUSFVCX1NIQTowOjd9IgogICAgICAgICAgZmkKICAgICAgICAgIGVjaG8gIkdJVF9SRUxFQVNFX1RBRz0kUkVMRUFTRV9UQUciCiAgICAgICAgICBDSEFOTkVMPSIke0lOUFVUX0NIQU5ORUw6LW9zc30iCiAgICAgICAgICBQUk9GSUxFPSIke0lOUFVUX1BST0ZJTEU6LXJlbGVhc2V9IgogICAgICAgICAgZWNobyAiUnVubmluZyBzY3JpcHQvbGludXgvYnVuZGxlIC0tY2hhbm5lbCAkQ0hBTk5FTCAtLXBhY2thZ2VzIGFwcGltYWdlLGRlYixycG0gLS1yZWxlYXNlLXRhZyAkUkVMRUFTRV9UQUcgKHByb2ZpbGU9JFBST0ZJTEUpIgogICAgICAgICAgaWYgWyAiJFBST0ZJTEUiID0gImRlYnVnIiBdOyB0aGVuCiAgICAgICAgICAgIC4vc2NyaXB0L2xpbnV4L2J1bmRsZSAtLWNoYW5uZWwgIiRDSEFOTkVMIiAtLXBhY2thZ2VzIGFwcGltYWdlLGRlYixycG0gLS1yZWxlYXNlLXRhZyAiJFJFTEVBU0VfVEFHIiAtLWRlYnVnCiAgICAgICAgICBlbHNlCiAgICAgICAgICAgIC4vc2NyaXB0L2xpbnV4L2J1bmRsZSAtLWNoYW5uZWwgIiRDSEFOTkVMIiAtLXBhY2thZ2VzIGFwcGltYWdlLGRlYixycG0gLS1yZWxlYXNlLXRhZyAiJFJFTEVBU0VfVEFHIgogICAgICAgICAgZmkKICAgICAgICBlbnY6CiAgICAgICAgICBJTlBVVF9DSEFOTkVMOiAke3sgaW5wdXRzLmNoYW5uZWwgfX0KICAgICAgICAgIElOUFVUX1BST0ZJTEU6ICR7eyBpbnB1dHMucHJvZmlsZSB9fQogICAgICAgICAgSU5QVVRfUkVMRUFTRV9UQUc6ICR7eyBpbnB1dHMucmVsZWFzZV90YWcgfX0KCiAgICAgIC0gbmFtZTogTG9jYXRlIHBhY2thZ2VzCiAgICAgICAgaWQ6IHBhdGhzCiAgICAgICAgcnVuOiB8CiAgICAgICAgICBzZXQgLWUKICAgICAgICAgIFBLR19ESVI9IiR7eyBzdGVwcy5idW5kbGUub3V0cHV0cy5wYWNrYWdlc19kaXIgfX0iCiAgICAgICAgICBpZiBbIC16ICIkUEtHX0RJUiIgXSB8fCBbICEgLWQgIiRQS0dfRElSIiBdOyB0aGVuCiAgICAgICAgICAgIGVjaG8gImJ1bmRsZSDmnKrovpPlh7ogcGFja2FnZXNfZGly77yM5Zue6YCA5omr5o+PIHRhcmdldC8qL2J1bmRsZS9saW51eCIKICAgICAgICAgICAgUEtHX0RJUj0iJChmaW5kIHRhcmdldCAtdHlwZSBkIC1wYXRoICcqL2J1bmRsZS9saW51eCcgfCBoZWFkIC0xKSIKICAgICAgICAgIGZpCiAgICAgICAgICBbIC1uICIkUEtHX0RJUiIgXSAmJiBbIC1kICIkUEtHX0RJUiIgXSB8fCB7IGVjaG8gIuaJvuS4jeWIsOS6p+eJqeebruW9lSI7IGV4aXQgMTsgfQogICAgICAgICAgZWNobyAicGtnX2Rpcj0kUEtHX0RJUiIgPj4gIiRHSVRIVUJfT1VUUFVUIgogICAgICAgICAgZWNobyAi5om+5Yiw55qE5Lqn54mp77yaIgogICAgICAgICAgZmluZCAiJFBLR19ESVIiIC1tYXhkZXB0aCAxIC10eXBlIGYgXCggLW5hbWUgJyouQXBwSW1hZ2UnIC1vIC1uYW1lICcqLmRlYicgLW8gLW5hbWUgJyoucnBtJyBcKSAtcHJpbnQKCiAgICAgIC0gbmFtZTogVXBsb2FkIHBhY2thZ2UgYXJ0aWZhY3RzCiAgICAgICAgdXNlczogYWN0aW9ucy91cGxvYWQtYXJ0aWZhY3RAdjcKICAgICAgICB3aXRoOgogICAgICAgICAgbmFtZTogd2FycC0ke3sgaW5wdXRzLmNoYW5uZWwgfHwgJ29zcycgfX0teDg2XzY0LSR7eyBpbnB1dHMucHJvZmlsZSB8fCAncmVsZWFzZScgfX0tbGludXgKICAgICAgICAgIHBhdGg6IHwKICAgICAgICAgICAgJHt7IHN0ZXBzLnBhdGhzLm91dHB1dHMucGtnX2RpciB9fS8qLkFwcEltYWdlCiAgICAgICAgICAgICR7eyBzdGVwcy5wYXRocy5vdXRwdXRzLnBrZ19kaXIgfX0vKi5kZWIKICAgICAgICAgICAgJHt7IHN0ZXBzLnBhdGhzLm91dHB1dHMucGtnX2RpciB9fS8qLnJwbQogICAgICAgICAgaWYtbm8tZmlsZXMtZm91bmQ6IGVycm9yCiAgICAgICAgICByZXRlbnRpb24tZGF5czogMTQKCiAgICAgICMgPT09PT0gdGFnIOinpuWPke+8jOaIliBkaXNwYXRjaCDmmL7lvI/kvKDlhaUgcmVsZWFzZV90YWfvvJrmiorkuqfnianpmYTliqDliLAgR2l0SHViIFJlbGVhc2UgPT09PT0KICAgICAgIyDvvIjku4Xlj6/kuIvovb3vvIzkuI3mjqUgaW4tYXBwIOiHquabtOaWsOOAgmRpc3BhdGNoK3JlbGVhc2VfdGFnIOeUqOS6jue7meW3suacieWPkeW4g+ihpeaehOW7uiBMaW51eOOAgu+8iQogICAgICAtIG5hbWU6IFVwbG9hZCBwYWNrYWdlcyB0byBHaXRIdWIgUmVsZWFzZQogICAgICAgIGlmOiBnaXRodWIucmVmX3R5cGUgPT0gJ3RhZycgfHwgaW5wdXRzLnJlbGVhc2VfdGFnICE9ICcnCiAgICAgICAgZW52OgogICAgICAgICAgR0hfVE9LRU46ICR7eyBzZWNyZXRzLkdJVEhVQl9UT0tFTiB9fQogICAgICAgICAgSU5QVVRfUkVMRUFTRV9UQUc6ICR7eyBpbnB1dHMucmVsZWFzZV90YWcgfX0KICAgICAgICBydW46IHwKICAgICAgICAgIHNldCAtZQogICAgICAgICAgVEFHPSIke0lOUFVUX1JFTEVBU0VfVEFHOi0kR0lUSFVCX1JFRl9OQU1FfSIKICAgICAgICAgIFBLR19ESVI9IiR7eyBzdGVwcy5wYXRocy5vdXRwdXRzLnBrZ19kaXIgfX0iCiAgICAgICAgICBtYXBmaWxlIC10IEFTU0VUUyA8IDwoZmluZCAiJFBLR19ESVIiIC1tYXhkZXB0aCAxIC10eXBlIGYgXCggLW5hbWUgJyouQXBwSW1hZ2UnIC1vIC1uYW1lICcqLmRlYicgLW8gLW5hbWUgJyoucnBtJyBcKSkKICAgICAgICAgIFsgIiR7I0FTU0VUU1tAXX0iIC1ndCAwIF0gfHwgeyBlY2hvICLml6Dlj6/kuIrkvKDkuqfniakiOyBleGl0IDE7IH0KICAgICAgICAgICMgbWFjL3dpbmRvd3Mgd29ya2Zsb3cg5Y+v6IO95bey5Li65ZCMIHRhZyDlu7rlpb0gcmVsZWFzZe+8m+WtmOWcqOWImeebtOaOpeS4iuS8oO+8jOWQpuWImemHjeivleetieW+heWFtuWHuueOsOOAggogICAgICAgICAgIyDms6jmhI8gZHJhZnTvvJpgZ2ggcmVsZWFzZSB2aWV3YCDlr7kgZHJhZnQg6L+U5ZueIDQwNO+8jGFzc2V0IOa4heWNleimgeaMiSBpZCDor7vjgIIKICAgICAgICAgIGZvciBpIGluIDEgMiAzIDQgNTsgZG8KICAgICAgICAgICAgaWYgZ2ggcmVsZWFzZSB2aWV3ICIkVEFHIiA+L2Rldi9udWxsIDI+JjE7IHRoZW4KICAgICAgICAgICAgICBnaCByZWxlYXNlIHVwbG9hZCAiJFRBRyIgIiR7QVNTRVRTW0BdfSIgLS1jbG9iYmVyCiAgICAgICAgICAgICAgZXhpdCAwCiAgICAgICAgICAgIGZpCiAgICAgICAgICAgIHNsZWVwICQoKGkgKiAzKSkKICAgICAgICAgIGRvbmUKICAgICAgICAgICMgNSDmrKHlkI7ku43ml6DmraPlvI8gcmVsZWFzZe+8iOe6ryBMaW51eCB0YWcg5Zy65pmv77yJ77ya6Ieq6KGM5Yib5bu677yM5L2GKirlu7rmiJAgZHJhZnQqKuOAggogICAgICAgICAgIyDnm7TmjqUgY3JlYXRlIOS8muaKiiByZWxlYXNlIOeri+WIu+WvueWkluWPr+inge+8jG1hYyDnmoQgcmVsZWFzZS1sdG8g6L+Y6KaB6LeR5LiA5Lik5Liq5bCP5pe277yMCiAgICAgICAgICAjIOeUqOaIt+S8muS4i+WIsOS4gOS4quWPquWJqSBMaW51eCDljIXjgIHkuJTnvLogdGFyLmd6L21pbmlzaWcg55qE5Y2K5oiQ5ZOB77ybCiAgICAgICAgICAjIGF1dG8tYXR0YWNoLXJlbGVhc2Ug5Lya5ZyoIG1hYyDkuqfnianliLDpvZDlkI7miorlroPovazmraPjgIIKICAgICAgICAgIGdoIHJlbGVhc2UgY3JlYXRlICIkVEFHIiAiJHtBU1NFVFNbQF19IiAtLXRpdGxlICIkVEFHIiAtLWRyYWZ0IC0tZ2VuZXJhdGUtbm90ZXMK
+name: Build Linux App (unsigned)
+
+# 参照 build-mac-app.yml / build-windows-app.yml 的 Linux 版本。回应 issue #42（社区求 Linux 版）。
+#
+# 两种触发：
+# 1) workflow_dispatch（手动）：按需出包；channel / profile 可选。
+# 2) push tags v*：固定 oss/release 出 AppImage + .deb + .rpm，并作为 GitHub Release 资产上传
+#    （Linux 暂不接入 in-app 自更新与 apt/yum 源，仅提供可下载产物，不做签名）。
+#
+# 复用仓库已 vendored 的 script/linux/bundle + bundle_appimage/bundle_deb/bundle_rpm，
+# 它们已完整支持 oss channel（无 Sentry、bin=warp-oss、APP_NAME=WarpOss、FEATURES=release_bundle）。
+# 与 mac/windows 编译同一个 warp-oss 二进制（同 crate / 同 nld_* 特性），故 zh-CN 翻译 bundle
+# 与其它平台一致内嵌。
+#
+# 仅 x86_64：上游 CI 也只构建 linux x86_64；aarch64-linux 未经 CI 覆盖测试。
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: '发布档次 (oss=无 Sentry/外部依赖；dev=带调试断言；local=本地开发)'
+        required: true
+        default: oss
+        type: choice
+        options:
+          - oss
+          - dev
+          - local
+      profile:
+        description: '编译 profile (debug=cargo dev profile, ~30-60 min；release=release-lto, 数小时 on free runner)'
+        required: true
+        default: release
+        type: choice
+        options:
+          - debug
+          - release
+      release_tag:
+        description: '可选：已存在的 release tag（如 v0.2026.06.01-cn.1）。填写后用它作为版本号构建，并把产物附到该 Release——用于给某次发布补构建 Linux 平台。'
+        required: false
+        default: ''
+        type: string
+  push:
+    tags:
+      - 'v*'
+
+# tag 触发时需要 contents:write 才能调 `gh release upload`；
+# actions:write 给 rust-cache 写入用。
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  build:
+    name: Build ${{ inputs.channel || 'oss' }} (x86_64)
+    # GitHub 托管 runner。ubuntu-22.04 默认 gcc>=11，规避了上游为 ubuntu-20.04 gcc-9.5
+    # memcmp/aws-lc-rs bug 而装 gcc-10 的步骤；若日后默认 gcc 退回 <11 需补该步骤。
+    runs-on: ubuntu-22.04
+    # release-lto 在免费 runner 上冷构建可达数小时；debug profile 约 30-60 分钟。
+    timeout-minutes: 360
+
+    env:
+      CARGO_TERM_COLOR: always
+      RUST_BACKTRACE: 1
+      # GitHub runner 无 FUSE，linuxdeploy / appimagetool 需以 extract-and-run 模式运行。
+      APPIMAGE_EXTRACT_AND_RUN: 1
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.0
+        with:
+          # app/build.rs 用 `git describe --tags` 把 GIT_RELEASE_TAG 烧进二进制；
+          # 默认 shallow clone 不拉 tag，会让产物显示 fallback 版本号。
+          fetch-tags: true
+
+      - name: Show runner info
+        run: |
+          set -e
+          (. /etc/os-release && echo "$PRETTY_NAME")
+          uname -a
+          gcc --version | head -1
+          rustc --version || true
+          cargo --version || true
+          df -h /
+
+      - name: Add Rust target
+        # 工具链版本由 rust-toolchain.toml(1.92.0) 决定，rustup 首次调用时自动安装。
+        run: rustup target add x86_64-unknown-linux-gnu
+
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: linux-x86_64-${{ inputs.channel || 'oss' }}-${{ inputs.profile || 'release' }}
+          # 仅 master push 与 tag push 写缓存；PR / sync 分支只读，避免污染。
+          save-if: ${{ github.ref == 'refs/heads/master' || github.ref_type == 'tag' }}
+
+      - name: Install build & runtime dependencies
+        # 复用仓库内 vendored 的依赖脚本（apt 开发库 + protoc 25.1 + X11/Wayland/EGL/Vulkan
+        # 运行库）。install_runtime_deps 内部已链式调用 install_build_deps。
+        # 额外补装打包工具：fakeroot（bundle_deb/bundle_rpm 都用）、rpm（提供 rpmbuild/rpmsign，
+        # Ubuntu 默认不带）。dpkg-deb 为 Ubuntu 自带。
+        run: |
+          set -e
+          sudo apt-get update
+          sudo apt-get install -y fakeroot rpm
+          ./script/linux/install_runtime_deps
+
+      - name: Install linuxdeploy (AppImage tooling)
+        run: |
+          set -e
+          ./script/linux/install_linuxdeploy
+          # bundle_appimage 通过 PATH 调用 linuxdeploy；脚本把它装到 ~/.local/bin。
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install cargo-about (license generation)
+        # bundle_appimage → script/prepare_bundled_resources 会跑 `cargo about generate`
+        # 生成 THIRD_PARTY_LICENSES.txt，缺该子命令则打包步骤必失败
+        # （error: no such command: `about`）。版本与 windows/mac workflow 保持一致。
+        run: cargo install --locked cargo-about@0.8.4
+
+      - name: Build & bundle
+        id: bundle
+        run: |
+          set -e
+          # 确定版本号优先级：dispatch 显式 release_tag > tag ref 名 > `git describe`。
+          if [ -n "${INPUT_RELEASE_TAG:-}" ]; then
+            RELEASE_TAG="${INPUT_RELEASE_TAG}"
+          elif [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            RELEASE_TAG="${GITHUB_REF_NAME}"
+          else
+            RELEASE_TAG="$(git describe --tags --always 2>/dev/null || true)"
+            [ -n "$RELEASE_TAG" ] || RELEASE_TAG="0.0.0-${GITHUB_SHA:0:7}"
+          fi
+          echo "GIT_RELEASE_TAG=$RELEASE_TAG"
+          CHANNEL="${INPUT_CHANNEL:-oss}"
+          PROFILE="${INPUT_PROFILE:-release}"
+          echo "Running script/linux/bundle --channel $CHANNEL --packages appimage,deb,rpm --release-tag $RELEASE_TAG (profile=$PROFILE)"
+          if [ "$PROFILE" = "debug" ]; then
+            ./script/linux/bundle --channel "$CHANNEL" --packages appimage,deb,rpm --release-tag "$RELEASE_TAG" --debug
+          else
+            ./script/linux/bundle --channel "$CHANNEL" --packages appimage,deb,rpm --release-tag "$RELEASE_TAG"
+          fi
+        env:
+          INPUT_CHANNEL: ${{ inputs.channel }}
+          INPUT_PROFILE: ${{ inputs.profile }}
+          INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
+
+      - name: Locate packages
+        id: paths
+        run: |
+          set -e
+          PKG_DIR="${{ steps.bundle.outputs.packages_dir }}"
+          if [ -z "$PKG_DIR" ] || [ ! -d "$PKG_DIR" ]; then
+            echo "bundle 未输出 packages_dir，回退扫描 target/*/bundle/linux"
+            PKG_DIR="$(find target -type d -path '*/bundle/linux' | head -1)"
+          fi
+          [ -n "$PKG_DIR" ] && [ -d "$PKG_DIR" ] || { echo "找不到产物目录"; exit 1; }
+          echo "pkg_dir=$PKG_DIR" >> "$GITHUB_OUTPUT"
+          echo "找到的产物："
+          find "$PKG_DIR" -maxdepth 1 -type f \( -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' \) -print
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: warp-${{ inputs.channel || 'oss' }}-x86_64-${{ inputs.profile || 'release' }}-linux
+          path: |
+            ${{ steps.paths.outputs.pkg_dir }}/*.AppImage
+            ${{ steps.paths.outputs.pkg_dir }}/*.deb
+            ${{ steps.paths.outputs.pkg_dir }}/*.rpm
+          if-no-files-found: error
+          retention-days: 14
+
+      # ===== tag 触发，或 dispatch 显式传入 release_tag：把产物附加到 GitHub Release =====
+      # （仅可下载，不接 in-app 自更新。dispatch+release_tag 用于给已有发布补构建 Linux。）
+      - name: Upload packages to GitHub Release
+        if: github.ref_type == 'tag' || inputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -e
+          TAG="${INPUT_RELEASE_TAG:-$GITHUB_REF_NAME}"
+          PKG_DIR="${{ steps.paths.outputs.pkg_dir }}"
+          mapfile -t ASSETS < <(find "$PKG_DIR" -maxdepth 1 -type f \( -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' \))
+          [ "${#ASSETS[@]}" -gt 0 ] || { echo "无可上传产物"; exit 1; }
+          # mac/windows workflow 可能已为同 tag 建好 release；存在则直接上传，否则重试等待其出现。
+          # 注意 draft：`gh release view` 对 draft 返回 404，asset 清单要按 id 读。
+          for i in 1 2 3 4 5; do
+            if gh release view "$TAG" >/dev/null 2>&1; then
+              gh release upload "$TAG" "${ASSETS[@]}" --clobber
+              exit 0
+            fi
+            sleep $((i * 3))
+          done
+          # 5 次后仍无正式 release（纯 Linux tag 场景）：自行创建，但**建成 draft**。
+          # 直接 create 会把 release 立刻对外可见，mac 的 release-lto 还要跑一两个小时，
+          # 用户会下到一个只剩 Linux 包、且缺 tar.gz/minisig 的半成品；
+          # auto-attach-release 会在 mac 产物到齐后把它转正。
+          gh release create "$TAG" "${ASSETS[@]}" --title "$TAG" --draft --generate-notes

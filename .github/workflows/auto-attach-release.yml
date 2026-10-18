@@ -1,1 +1,203 @@
-bmFtZTogQXV0by1hdHRhY2ggYnVpbGQgYXJ0aWZhY3RzIHRvIGRyYWZ0IHJlbGVhc2UKCiMg55uR5ZCsIGJ1aWxkLW1hYy1hcHAueW1sIOaIkOWKn+WujOaIkOS6i+S7tu+8jOaKiuaehOW7uuS6p+eJqeaMguWIsOWQjCB0YWcg55qEIGRyYWZ0IHJlbGVhc2Ug5LiK44CCCiMKIyDov5nmoLfkuIDmnaXvvJoKIyAgIDEpIOWIm+W7uiBkcmFmdCByZWxlYXNl77yIdGFnIOWQjSA9IOacrOasoeWPkeeJiCB0YWfvvIkKIyAgIDIpIOinpuWPkSBidWlsZC1tYWMtYXBw77yIdGFnIOinpuWPkeaXtiBydW4g55qEIGhlYWRfYnJhbmNoIOWwseaYryB0YWcg5ZCN77yJCiMgICAzKSDmnoTlu7rlrozmiJDlkI7ov5nkuKrlt6XkvZzmtYHoh6rliqjmioogYXJ0aWZhY3Qg6JC95Yiw6YKj5LiqIGRyYWZ0IOS4igojICAgNCkg6LWE5Lqn6b2Q5LqG6Ieq5YqoIHB1Ymxpc2jvvJvkuI3pvZDliJnkv53mjIEgZHJhZnQg562J5Lq65bel5LuL5YWlCiMKIyDljoblj7LmlZnorq3vvIjlm5vkuKrlnZHvvIzlhajpg6jouKnov4flubblt7Lkv67vvInvvJoKIyAgIDEuIOaXp+eJiOimgeaxgiBgdGFyZ2V0X2NvbW1pdGlzaCA9PSBoZWFkX3NoYWDjgILkvYYgcmVsZWFzZSDnmoQgdGFyZ2V0X2NvbW1pdGlzaAojICAgICAg5a2Y55qE5pivKirliIbmlK/lkI0qKu+8iG1hc3Rlcu+8ie+8jOS4jeaYryBTSEHvvJvogIwgdGFnIOinpuWPkeaehOW7uueahCBoZWFkX2JyYW5jaCDmmK8KIyAgICAgIHRhZyDlkI3jgILkuKTogIXmsLjov5zkuI3nm7jnrYkg4oaSIHRhZyDlj5HniYjml7bov5nkuKogd29ya2Zsb3cg5LuO5p2l5rKh55Sf5pWI6L+H44CCCiMgICAgICDnjrDlnKjmjInjgIx0YWcg5ZCN44CN5Yy56YWN77yacmVsZWFzZS50YWdfbmFtZSA9PSBydW4uaGVhZF9icmFuY2jjgIIKIyAgIDIuIOaXp+eJiOeUqCBgL3JlbGVhc2VzL3RhZ3MvPHRhZz5gIOivu+i1hOS6p+a4heWNleOAguivpeerr+eCueWvuSBkcmFmdCDkuIDlvosgNDA077yMCiMgICAgICDkuo7mmK/jgIznvLrkuI3nvLrotYTkuqfjgI3msLjov5zliKTlrprkuLrlhajnvLrvvIxhdXRvLXB1Ymxpc2gg5LuO5LiN6Kem5Y+RCiMgICAgICDvvIgyMDI2LTA4LTA4IOaXpeW/l+mHjOWwseaciSBgZ2g6IE5vdCBGb3VuZCAoSFRUUCA0MDQpYO+8ieOAggojICAgICAgR2l0SHViIOWvuSBkcmFmdCDmsqHmnIkgYnktdGFnIOerr+eCuSDihpIg5YWo56iL5pS555SoIGAvcmVsZWFzZXMvPGlkPmDjgIIKIyAgIDMuIOaXp+eJiOaUvuihjOadoeS7tuaYr+WGmeatu+eahCA0IOS4qui1hOS6p++8jOWFtuS4reWQqyBkZWJ1ZyBwcm9maWxlIOeahCBhcHAvZG1n44CCCiMgICAgICDml6XluLjlj6rlh7ogcmVsZWFzZSDljIXvvIxkZWJ1ZyDotYTkuqfmsLjov5zkuI3kvJrlh7rnjrAg4oaSIGRyYWZ0IOiiq+awuOS5heWNoeatuwojICAgICAg77yIdjAuMjAyNi4wOC4yNS1jbi4wIOWwsei/meagt+WNoeS6huS4pOS4quaciO+8jOacgOWQjuWPquiDveaJi+WIoO+8ieOAggojICAgICAg546w5Zyo5oyJ44CM5a6e6ZmF6K+l5pyJ55qE5Lic6KW/44CN5Yik5a6a77ya6Iez5bCR5LiA5Lu9IG1hY09TIOS6p+eJqSArIOavj+S4qiB0YXIuZ3og6YWNCiMgICAgICBtaW5pc2ln44CCCiMgICA0LiDml6fniYjlj6rmib4gZHJhZnTjgIJMaW51eC9XaW5kb3dzIOeahCB0YWcg5p6E5bu65Lya5oqi5YWIIGBnaCByZWxlYXNlIGNyZWF0ZWAKIyAgICAgIOWHuuS4gOS4quW3suWPkeW4g+eahCByZWxlYXNl77yM5a+86Ie0IG1hYyDotYTkuqfmsLjov5zmjILkuI3kuIoKIyAgICAgIO+8iHYwLjIwMjYuMTAuMTgg5bCRIDQg5Liq6LWE5Lqn5bCx5piv6L+Z5LmI5p2l55qE77yJ44CC546w5Zyo5bey5Y+R5biDIHJlbGVhc2Ug5Lmf5LyaCiMgICAgICDlm57loavjgIIKCm9uOgogIHdvcmtmbG93X3J1bjoKICAgIHdvcmtmbG93czogWyJCdWlsZCBNYWMgQXBwICh1bnNpZ25lZCkiXQogICAgdHlwZXM6IFtjb21wbGV0ZWRdCgpwZXJtaXNzaW9uczoKICBjb250ZW50czogd3JpdGUKICBhY3Rpb25zOiByZWFkCgpjb25jdXJyZW5jeToKICBncm91cDogYXV0by1hdHRhY2gtJHt7IGdpdGh1Yi5ldmVudC53b3JrZmxvd19ydW4uaGVhZF9zaGEgfX0KICBjYW5jZWwtaW4tcHJvZ3Jlc3M6IGZhbHNlCgpqb2JzOgogIGF0dGFjaDoKICAgIGlmOiBnaXRodWIuZXZlbnQud29ya2Zsb3dfcnVuLmNvbmNsdXNpb24gPT0gJ3N1Y2Nlc3MnCiAgICBydW5zLW9uOiB1YnVudHUtbGF0ZXN0CiAgICB0aW1lb3V0LW1pbnV0ZXM6IDIwCiAgICBzdGVwczoKICAgICAgLSBuYW1lOiBGaW5kIHJlbGVhc2UgbWF0Y2hpbmcgYnVpbGQgcmVmCiAgICAgICAgaWQ6IGZpbmQKICAgICAgICBlbnY6CiAgICAgICAgICBHSF9UT0tFTjogJHt7IGdpdGh1Yi50b2tlbiB9fQogICAgICAgICAgQlVJTERfUkVGOiAke3sgZ2l0aHViLmV2ZW50LndvcmtmbG93X3J1bi5oZWFkX2JyYW5jaCB9fQogICAgICAgICAgQlVJTERfU0hBOiAke3sgZ2l0aHViLmV2ZW50LndvcmtmbG93X3J1bi5oZWFkX3NoYSB9fQogICAgICAgIHJ1bjogfAogICAgICAgICAgc2V0IC1ldQogICAgICAgICAgaWYgWyAteiAiJEJVSUxEX1JFRiIgXTsgdGhlbgogICAgICAgICAgICBlY2hvICI6Om5vdGljZTo6QnVpbGQgcnVuIGhhcyBubyBoZWFkX2JyYW5jaCDigJQgc2tpcHBpbmcgYXR0YWNoIgogICAgICAgICAgICBlY2hvICJza2lwPXRydWUiID4+ICIkR0lUSFVCX09VVFBVVCIKICAgICAgICAgICAgZXhpdCAwCiAgICAgICAgICBmaQogICAgICAgICAgIyDmjIkgdGFnIOWQjeWMuemFje+8iOingeaWh+S7tuWktOOAjOWOhuWPsuaVmeiurSAx44CN77yJ44CC5ZCMIHRhZyDoi6XmnInlpJrmnaHvvIjljoblj7LkuIoKICAgICAgICAgICMg6YeN6LeR6L+H77yJ77yMZHJhZnQg5LyY5YWI44CB5YW25qyh5pyA5paw5Yib5bu655qE6YKj5p2h44CCCiAgICAgICAgICByb3c9JChnaCBhcGkgIi9yZXBvcy8ke3sgZ2l0aHViLnJlcG9zaXRvcnkgfX0vcmVsZWFzZXM/cGVyX3BhZ2U9MTAwIiBcCiAgICAgICAgICAgICAgICB8IGpxIC1yIC0tYXJnIHJlZiAiJEJVSUxEX1JFRiIgJwogICAgICAgICAgICAgICAgICAgIFsgLltdCiAgICAgICAgICAgICAgICAgICAgICB8IHNlbGVjdCgudGFnX25hbWUgPT0gJHJlZikKICAgICAgICAgICAgICAgICAgICAgIHwgc2VsZWN0KC50YWdfbmFtZSB8IHN0YXJ0c3dpdGgoInp6LSIpIHwgbm90KQogICAgICAgICAgICAgICAgICAgIF0KICAgICAgICAgICAgICAgICAgICB8IHNvcnRfYnkoWyguZHJhZnQgfCBpZiAuIHRoZW4gMSBlbHNlIDAgZW5kKSwgLmNyZWF0ZWRfYXRdKQogICAgICAgICAgICAgICAgICAgIHwgbGFzdAogICAgICAgICAgICAgICAgICAgIHwgWyguaWQgLy8gIiIpLCAoLnRhZ19uYW1lIC8vICIiKSwgKC5kcmFmdCB8IHRvc3RyaW5nKV0gfCBAdHN2CiAgICAgICAgICAgICAgICAgICcpCiAgICAgICAgICBpZD0kKGVjaG8gIiRyb3ciIHwgY3V0IC1mMSkKICAgICAgICAgIHRhZz0kKGVjaG8gIiRyb3ciIHwgY3V0IC1mMikKICAgICAgICAgIGlzX2RyYWZ0PSQoZWNobyAiJHJvdyIgfCBjdXQgLWYzKQogICAgICAgICAgaWYgWyAteiAiJGlkIiBdIHx8IFsgIiRpZCIgPSAibnVsbCIgXTsgdGhlbgogICAgICAgICAgICBlY2hvICI6Om5vdGljZTo6Tm8gcmVsZWFzZSB3aXRoIHRhZyAkQlVJTERfUkVGIChzaGEgJEJVSUxEX1NIQSkg4oCUIHNraXBwaW5nIGF0dGFjaCIKICAgICAgICAgICAgZWNobyAic2tpcD10cnVlIiA+PiAiJEdJVEhVQl9PVVRQVVQiCiAgICAgICAgICAgIGV4aXQgMAogICAgICAgICAgZmkKICAgICAgICAgIHsKICAgICAgICAgICAgZWNobyAiaWQ9JGlkIgogICAgICAgICAgICBlY2hvICJ0YWc9JHRhZyIKICAgICAgICAgIH0gPj4gIiRHSVRIVUJfT1VUUFVUIgogICAgICAgICAgaWYgWyAiJGlzX2RyYWZ0IiA9ICJ0cnVlIiBdOyB0aGVuCiAgICAgICAgICAgIGVjaG8gIjo6bm90aWNlOjpXaWxsIGF0dGFjaCBhcnRpZmFjdHMgdG8gZHJhZnQgcmVsZWFzZSAkdGFnIChpZCAkaWQpIgogICAgICAgICAgZWxzZQogICAgICAgICAgICAjIOW3suWPkeW4g+eahCByZWxlYXNlIOS5n+imgeWbnuWhq++8mkxpbnV4L1dpbmRvd3Mg5YWIIGNyZWF0ZSDnmoTmg4XlhrXkuIvvvIwKICAgICAgICAgICAgIyBtYWMg5Lqn54mp5Y+q5pyJ6Z2g6L+Z6YeM5omN6IO96KGl5LiK44CCCiAgICAgICAgICAgIGVjaG8gIjo6bm90aWNlOjpXaWxsIGF0dGFjaCBhcnRpZmFjdHMgdG8gYWxyZWFkeS1wdWJsaXNoZWQgcmVsZWFzZSAkdGFnIChpZCAkaWQpIGFuZCBiYWNrZmlsbCBtaXNzaW5nIGFzc2V0cyIKICAgICAgICAgIGZpCgogICAgICAtIG5hbWU6IERvd25sb2FkIGJ1aWxkIGFydGlmYWN0cwogICAgICAgIGlmOiBzdGVwcy5maW5kLm91dHB1dHMuc2tpcCAhPSAndHJ1ZScKICAgICAgICBlbnY6CiAgICAgICAgICBHSF9UT0tFTjogJHt7IGdpdGh1Yi50b2tlbiB9fQogICAgICAgIHJ1bjogfAogICAgICAgICAgc2V0IC1ldQogICAgICAgICAgbWtkaXIgLXAgYXJ0aWZhY3RzCiAgICAgICAgICBnaCBydW4gZG93bmxvYWQgIiR7eyBnaXRodWIuZXZlbnQud29ya2Zsb3dfcnVuLmlkIH19IiBcCiAgICAgICAgICAgIC0tcmVwbyAiJHt7IGdpdGh1Yi5yZXBvc2l0b3J5IH19IiBcCiAgICAgICAgICAgIC0tZGlyIGFydGlmYWN0cwogICAgICAgICAgZWNobyAiOjpncm91cDo6RG93bmxvYWRlZCBsYXlvdXQiCiAgICAgICAgICBmaW5kIGFydGlmYWN0cyAtbWF4ZGVwdGggMyAtdHlwZSBmIC1leGVjIGxzIC1sYSB7fSBcOwogICAgICAgICAgZWNobyAiOjplbmRncm91cDo6IgoKICAgICAgLSBuYW1lOiBTdGFnZSB3aXRoIGZyaWVuZGx5IG5hbWVzCiAgICAgICAgaWY6IHN0ZXBzLmZpbmQub3V0cHV0cy5za2lwICE9ICd0cnVlJwogICAgICAgIHJ1bjogfAogICAgICAgICAgc2V0IC1ldQogICAgICAgICAgbWtkaXIgLXAgc3RhZ2VkCiAgICAgICAgICAjIOavj+S4qiBhcnRpZmFjdCDmmK8gYXJ0aWZhY3RzLyDkuIvkuIDkuKrlrZDnm67lvZXvvJvmiorlroPnmoTmlofku7bmjIkgYXJ0aWZhY3Qg5ZCN6YeN5ZG95ZCN5ZCO6JC95YWlIHN0YWdlZC/jgIIKICAgICAgICAgIGZvciBkaXIgaW4gYXJ0aWZhY3RzLyovOyBkbwogICAgICAgICAgICBuYW1lPSQoYmFzZW5hbWUgIiRkaXIiKQogICAgICAgICAgICBjb3VudD0kKGZpbmQgIiRkaXIiIC1tYXhkZXB0aCAxIC10eXBlIGYgfCB3YyAtbCB8IHRyIC1kICcgJykKICAgICAgICAgICAgZm9yIGYgaW4gIiRkaXIiKjsgZG8KICAgICAgICAgICAgICBbIC1mICIkZiIgXSB8fCBjb250aW51ZQogICAgICAgICAgICAgIGV4dD0iJHtmIyMqLn0iCiAgICAgICAgICAgICAgaWYgWyAiJGNvdW50IiA9ICIxIiBdOyB0aGVuCiAgICAgICAgICAgICAgICBjcCAiJGYiICJzdGFnZWQvJHtuYW1lfS4ke2V4dH0iCiAgICAgICAgICAgICAgZWxzZQogICAgICAgICAgICAgICAgY3AgIiRmIiAic3RhZ2VkLyR7bmFtZX0tJChiYXNlbmFtZSAiJGYiKSIKICAgICAgICAgICAgICBmaQogICAgICAgICAgICBkb25lCiAgICAgICAgICBkb25lCiAgICAgICAgICBlY2hvICI6Omdyb3VwOjpTdGFnZWQiCiAgICAgICAgICBscyAtbGEgc3RhZ2VkLwogICAgICAgICAgZWNobyAiOjplbmRncm91cDo6IgoKICAgICAgLSBuYW1lOiBVcGxvYWQgdG8gcmVsZWFzZQogICAgICAgIGlmOiBzdGVwcy5maW5kLm91dHB1dHMuc2tpcCAhPSAndHJ1ZScKICAgICAgICBlbnY6CiAgICAgICAgICBHSF9UT0tFTjogJHt7IGdpdGh1Yi50b2tlbiB9fQogICAgICAgICAgUkVMRUFTRV9JRDogJHt7IHN0ZXBzLmZpbmQub3V0cHV0cy5pZCB9fQogICAgICAgIHJ1bjogfAogICAgICAgICAgc2V0IC1ldQogICAgICAgICAgIyDmjIkgcmVsZWFzZSBpZCDkuIrkvKDvvJpkcmFmdCDmsqHmnInlj6/nlKjnmoQgYnktdGFnIOerr+eCue+8jGdoIHJlbGVhc2UgdXBsb2FkCiAgICAgICAgICAjIOi1sCB0YWdzIOS8miA0MDTvvIjop4Hmlofku7blpLTjgIzljoblj7LmlZnorq0gMuOAje+8ieOAguebtOaOpeaJkyBhc3NldHMgQVBJ44CCCiAgICAgICAgICB1cGxvYWRfdXJsPSJodHRwczovL3VwbG9hZHMuZ2l0aHViLmNvbS9yZXBvcy8ke3sgZ2l0aHViLnJlcG9zaXRvcnkgfX0vcmVsZWFzZXMvJHtSRUxFQVNFX0lEfS9hc3NldHMiCiAgICAgICAgICBhdHRhY2hlZD0wCiAgICAgICAgICBmb3IgZiBpbiBzdGFnZWQvKjsgZG8KICAgICAgICAgICAgWyAtZiAiJGYiIF0gfHwgY29udGludWUKICAgICAgICAgICAgYmFzZT0kKGJhc2VuYW1lICIkZiIpCiAgICAgICAgICAgICMgLS1jbG9iYmVyIOivreS5ie+8muWFiOWIoOWQjOWQjeaXp+i1hOS6p++8jOWGjeS8oOaWsOeahAogICAgICAgICAgICAj77yIR2l0SHViIOeahCBhc3NldHMgQVBJIOWvueWQjOWQjei1hOS6p+ebtOaOpSA0MjLvvIzkuI3kvJroh6rliqjmm7/mjaLvvInjgIIKICAgICAgICAgICAgZ2ggYXBpICIvcmVwb3MvJHt7IGdpdGh1Yi5yZXBvc2l0b3J5IH19L3JlbGVhc2VzLyR7UkVMRUFTRV9JRH0iIFwKICAgICAgICAgICAgICAtLWpxICIuYXNzZXRzW10gfCBzZWxlY3QoLm5hbWUgPT0gXCIkYmFzZVwiKSB8IC5pZCIgXAogICAgICAgICAgICAgIHwgd2hpbGUgSUZTPSByZWFkIC1yIGFzc2V0X2lkOyBkbwogICAgICAgICAgICAgICAgICBbIC1uICIkYXNzZXRfaWQiIF0gfHwgY29udGludWUKICAgICAgICAgICAgICAgICAgZ2ggYXBpIC1YIERFTEVURSAiL3JlcG9zLyR7eyBnaXRodWIucmVwb3NpdG9yeSB9fS9yZWxlYXNlcy9hc3NldHMvJGFzc2V0X2lkIiB8fCB0cnVlCiAgICAgICAgICAgICAgICBkb25lCiAgICAgICAgICAgICMgLS1pbnB1dCDnlKggQC0g5LmL5aSW55qE5YaZ5rOV77yaZ2ggYXBpIOeahCAtZiDkvJrmiorkuozov5vliLbmkJ7lnY/vvIzlv4XpobsgLS1pbnB1dOOAggogICAgICAgICAgICBnaCBhcGkgLVggUE9TVCAiJHVwbG9hZF91cmw/bmFtZT0kYmFzZSIgXAogICAgICAgICAgICAgIC1IICJDb250ZW50LVR5cGU6IGFwcGxpY2F0aW9uL29jdGV0LXN0cmVhbSIgXAogICAgICAgICAgICAgIC0taW5wdXQgIiRmIiA+IC9kZXYvbnVsbAogICAgICAgICAgICBlY2hvICIgIHVwbG9hZGVkICRiYXNlIgogICAgICAgICAgICBhdHRhY2hlZD0kKChhdHRhY2hlZCArIDEpKQogICAgICAgICAgZG9uZQogICAgICAgICAgZWNobyAiOjpub3RpY2U6OkF0dGFjaGVkICRhdHRhY2hlZCBmaWxlKHMpIHRvICR7eyBzdGVwcy5maW5kLm91dHB1dHMudGFnIH19IgoKICAgICAgIyDotYTkuqfpvZDkuobmiY3oh6rliqggcHVibGlzaOOAguWIpOWumueahOaYr+OAjOeUqOaIt+WunumZhemcgOimgeS7gOS5iOOAje+8jOS4jeaYr+OAjOabvue7jwogICAgICAjIOacn+acm+i/h+S7gOS5iOOAje+8iOingeaWh+S7tuWktOOAjOWOhuWPsuaVmeiurSAz44CN77yJ77yaCiAgICAgICMgICAtIOiHs+WwkeS4gOS7vSBtYWNPUyDkuIvovb3nianvvIhkbWcgLyB0YXIuZ3ogLyBhcHAuemlwIOS4iemAieS4gO+8iQogICAgICAjICAgLSDmr4/kuKogLnRhci5neiDpg73opoHmnInlkIzlkI0gLm1pbmlzaWfvvIhpbi1hcHAg6Ieq5pu05paw5L6d6LWW6L+Z5LiA5a+577yJCiAgICAgICMg6LWE5Lqn5riF5Y2V5b+F6aG75oyJIGlkIOivu++8mmJ5LXRhZyDnq6/ngrnlr7kgZHJhZnQg6L+U5ZueIDQwNOOAggogICAgICAtIG5hbWU6IEF1dG8tcHVibGlzaCB3aGVuIGFzc2V0IHNldCBpcyBjb21wbGV0ZQogICAgICAgIGlmOiBzdGVwcy5maW5kLm91dHB1dHMuc2tpcCAhPSAndHJ1ZScKICAgICAgICBlbnY6CiAgICAgICAgICBHSF9UT0tFTjogJHt7IGdpdGh1Yi50b2tlbiB9fQogICAgICAgICAgVEFHOiAke3sgc3RlcHMuZmluZC5vdXRwdXRzLnRhZyB9fQogICAgICAgICAgUkVMRUFTRV9JRDogJHt7IHN0ZXBzLmZpbmQub3V0cHV0cy5pZCB9fQogICAgICAgIHJ1bjogfAogICAgICAgICAgc2V0IC1ldQogICAgICAgICAgbWV0YT0kKGdoIGFwaSAiL3JlcG9zLyR7eyBnaXRodWIucmVwb3NpdG9yeSB9fS9yZWxlYXNlcy8ke1JFTEVBU0VfSUR9IikKICAgICAgICAgIGlzX2RyYWZ0PSQoZWNobyAiJG1ldGEiIHwganEgLXIgJy5kcmFmdCcpCiAgICAgICAgICBoYXZlPSQoZWNobyAiJG1ldGEiIHwganEgLXIgJy5hc3NldHNbXS5uYW1lJyB8IHNvcnQgLXUpCiAgICAgICAgICBlY2hvICI6Omdyb3VwOjpDdXJyZW50IGFzc2V0cyBvbiAkVEFHIgogICAgICAgICAgZWNobyAiJGhhdmUiCiAgICAgICAgICBlY2hvICI6OmVuZGdyb3VwOjoiCgogICAgICAgICAgbWlzc2luZz0iIgogICAgICAgICAgaWYgISBlY2hvICIkaGF2ZSIgfCBncmVwIC1xRSAnXldhcnAtY24tKGFhcmNoNjR8eDg2XzY0KVwuKGRtZ3x0YXJcLmd6KSR8XndhcnAtb3NzLShhYXJjaDY0fHg4Nl82NCktcmVsZWFzZS0oYXBwXC56aXB8ZG1nXC5kbWcpJCc7IHRoZW4KICAgICAgICAgICAgbWlzc2luZz0iJG1pc3NpbmcgbWFjb3MtYXJ0aWZhY3QiCiAgICAgICAgICBmaQogICAgICAgICAgd2hpbGUgSUZTPSByZWFkIC1yIHRnejsgZG8KICAgICAgICAgICAgWyAtbiAiJHRneiIgXSB8fCBjb250aW51ZQogICAgICAgICAgICBlY2hvICIkaGF2ZSIgfCBncmVwIC1xeCAiJHt0Z3p9Lm1pbmlzaWciIHx8IG1pc3Npbmc9IiRtaXNzaW5nICR7dGd6fS5taW5pc2lnIgogICAgICAgICAgZG9uZSA8IDwoZWNobyAiJGhhdmUiIHwgZ3JlcCAtRSAnXC50YXJcLmd6JCcgfHwgdHJ1ZSkKCiAgICAgICAgICBpZiBbIC1uICIkbWlzc2luZyIgXTsgdGhlbgogICAgICAgICAgICBlY2hvICI6Om5vdGljZTo6UmVsZWFzZSAkVEFHIHN0aWxsIG1pc3Npbmc6JG1pc3Npbmcg4oCUIGxlYXZpbmcgYXMtaXMiCiAgICAgICAgICAgIGV4aXQgMAogICAgICAgICAgZmkKCiAgICAgICAgICBpZiBbICIkaXNfZHJhZnQiID0gInRydWUiIF07IHRoZW4KICAgICAgICAgICAgZWNobyAiOjpub3RpY2U6OkFzc2V0IHNldCBjb21wbGV0ZSBvbiBkcmFmdCAkVEFHLCBwdWJsaXNoaW5nIgogICAgICAgICAgICBnaCBhcGkgLVggUEFUQ0ggIi9yZXBvcy8ke3sgZ2l0aHViLnJlcG9zaXRvcnkgfX0vcmVsZWFzZXMvJHtSRUxFQVNFX0lEfSIgXAogICAgICAgICAgICAgIC1mIGRyYWZ0PWZhbHNlIC1mIG1ha2VfbGF0ZXN0PXRydWUgPiAvZGV2L251bGwKICAgICAgICAgICAgZWNobyAiOjpub3RpY2U6OlB1Ymxpc2hlZCAkVEFHIgogICAgICAgICAgZWxzZQogICAgICAgICAgICBlY2hvICI6Om5vdGljZTo6QXNzZXQgc2V0IGNvbXBsZXRlIG9uIGFscmVhZHktcHVibGlzaGVkICRUQUcg4oCUIGJhY2tmaWxsZWQsIG5vdGhpbmcgdG8gcHVibGlzaCIKICAgICAgICAgIGZpCg==
+name: Auto-attach build artifacts to draft release
+
+# 监听 build-mac-app.yml 成功完成事件，把构建产物挂到同 tag 的 draft release 上。
+#
+# 这样一来：
+#   1) 创建 draft release（tag 名 = 本次发版 tag）
+#   2) 触发 build-mac-app（tag 触发时 run 的 head_branch 就是 tag 名）
+#   3) 构建完成后这个工作流自动把 artifact 落到那个 draft 上
+#   4) 资产齐了自动 publish；不齐则保持 draft 等人工介入
+#
+# 历史教训（四个坑，全部踩过并已修）：
+#   1. 旧版要求 `target_commitish == head_sha`。但 release 的 target_commitish
+#      存的是**分支名**（master），不是 SHA；而 tag 触发构建的 head_branch 是
+#      tag 名。两者永远不相等 → tag 发版时这个 workflow 从来没生效过。
+#      现在按「tag 名」匹配：release.tag_name == run.head_branch。
+#   2. 旧版用 `/releases/tags/<tag>` 读资产清单。该端点对 draft 一律 404，
+#      于是「缺不缺资产」永远判定为全缺，auto-publish 从不触发
+#      （2026-08-08 日志里就有 `gh: Not Found (HTTP 404)`）。
+#      GitHub 对 draft 没有 by-tag 端点 → 全程改用 `/releases/<id>`。
+#   3. 旧版放行条件是写死的 4 个资产，其中含 debug profile 的 app/dmg。
+#      日常只出 release 包，debug 资产永远不会出现 → draft 被永久卡死
+#      （v0.2026.08.25-cn.0 就这样卡了两个月，最后只能手删）。
+#      现在按「实际该有的东西」判定：至少一份 macOS 产物 + 每个 tar.gz 配
+#      minisig。
+#   4. 旧版只找 draft。Linux/Windows 的 tag 构建会抢先 `gh release create`
+#      出一个已发布的 release，导致 mac 资产永远挂不上
+#      （v0.2026.10.18 少 4 个资产就是这么来的）。现在已发布 release 也会
+#      回填。
+
+on:
+  workflow_run:
+    workflows: ["Build Mac App (unsigned)"]
+    types: [completed]
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: auto-attach-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  attach:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Find release matching build ref
+        id: find
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_REF: ${{ github.event.workflow_run.head_branch }}
+          BUILD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -eu
+          if [ -z "$BUILD_REF" ]; then
+            echo "::notice::Build run has no head_branch — skipping attach"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # 按 tag 名匹配（见文件头「历史教训 1」）。同 tag 若有多条（历史上
+          # 重跑过），draft 优先、其次最新创建的那条。
+          row=$(gh api "/repos/${{ github.repository }}/releases?per_page=100" \
+                | jq -r --arg ref "$BUILD_REF" '
+                    [ .[]
+                      | select(.tag_name == $ref)
+                      | select(.tag_name | startswith("zz-") | not)
+                    ]
+                    | sort_by([(.draft | if . then 1 else 0 end), .created_at])
+                    | last
+                    | [(.id // ""), (.tag_name // ""), (.draft | tostring)] | @tsv
+                  ')
+          id=$(echo "$row" | cut -f1)
+          tag=$(echo "$row" | cut -f2)
+          is_draft=$(echo "$row" | cut -f3)
+          if [ -z "$id" ] || [ "$id" = "null" ]; then
+            echo "::notice::No release with tag $BUILD_REF (sha $BUILD_SHA) — skipping attach"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          {
+            echo "id=$id"
+            echo "tag=$tag"
+          } >> "$GITHUB_OUTPUT"
+          if [ "$is_draft" = "true" ]; then
+            echo "::notice::Will attach artifacts to draft release $tag (id $id)"
+          else
+            # 已发布的 release 也要回填：Linux/Windows 先 create 的情况下，
+            # mac 产物只有靠这里才能补上。
+            echo "::notice::Will attach artifacts to already-published release $tag (id $id) and backfill missing assets"
+          fi
+
+      - name: Download build artifacts
+        if: steps.find.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          mkdir -p artifacts
+          gh run download "${{ github.event.workflow_run.id }}" \
+            --repo "${{ github.repository }}" \
+            --dir artifacts
+          echo "::group::Downloaded layout"
+          find artifacts -maxdepth 3 -type f -exec ls -la {} \;
+          echo "::endgroup::"
+
+      - name: Stage with friendly names
+        if: steps.find.outputs.skip != 'true'
+        run: |
+          set -eu
+          mkdir -p staged
+          # 每个 artifact 是 artifacts/ 下一个子目录；把它的文件按 artifact 名重命名后落入 staged/。
+          for dir in artifacts/*/; do
+            name=$(basename "$dir")
+            count=$(find "$dir" -maxdepth 1 -type f | wc -l | tr -d ' ')
+            for f in "$dir"*; do
+              [ -f "$f" ] || continue
+              ext="${f##*.}"
+              if [ "$count" = "1" ]; then
+                cp "$f" "staged/${name}.${ext}"
+              else
+                cp "$f" "staged/${name}-$(basename "$f")"
+              fi
+            done
+          done
+          echo "::group::Staged"
+          ls -la staged/
+          echo "::endgroup::"
+
+      - name: Upload to release
+        if: steps.find.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ steps.find.outputs.id }}
+        run: |
+          set -eu
+          # 按 release id 上传：draft 没有可用的 by-tag 端点，gh release upload
+          # 走 tags 会 404（见文件头「历史教训 2」）。直接打 assets API。
+          upload_url="https://uploads.github.com/repos/${{ github.repository }}/releases/${RELEASE_ID}/assets"
+          attached=0
+          for f in staged/*; do
+            [ -f "$f" ] || continue
+            base=$(basename "$f")
+            # --clobber 语义：先删同名旧资产，再传新的
+            #（GitHub 的 assets API 对同名资产直接 422，不会自动替换）。
+            gh api "/repos/${{ github.repository }}/releases/${RELEASE_ID}" \
+              --jq ".assets[] | select(.name == \"$base\") | .id" \
+              | while IFS= read -r asset_id; do
+                  [ -n "$asset_id" ] || continue
+                  gh api -X DELETE "/repos/${{ github.repository }}/releases/assets/$asset_id" || true
+                done
+            # --input 用 @- 之外的写法：gh api 的 -f 会把二进制搞坏，必须 --input。
+            gh api -X POST "$upload_url?name=$base" \
+              -H "Content-Type: application/octet-stream" \
+              --input "$f" > /dev/null
+            echo "  uploaded $base"
+            attached=$((attached + 1))
+          done
+          echo "::notice::Attached $attached file(s) to ${{ steps.find.outputs.tag }}"
+
+      # 资产齐了才自动 publish。判定的是「用户实际需要什么」，不是「曾经
+      # 期望过什么」（见文件头「历史教训 3」）：
+      #   - 至少一份 macOS 下载物（dmg / tar.gz / app.zip 三选一）
+      #   - 每个 .tar.gz 都要有同名 .minisig（in-app 自更新依赖这一对）
+      # 资产清单必须按 id 读：by-tag 端点对 draft 返回 404。
+      - name: Auto-publish when asset set is complete
+        if: steps.find.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.find.outputs.tag }}
+          RELEASE_ID: ${{ steps.find.outputs.id }}
+        run: |
+          set -eu
+          meta=$(gh api "/repos/${{ github.repository }}/releases/${RELEASE_ID}")
+          is_draft=$(echo "$meta" | jq -r '.draft')
+          have=$(echo "$meta" | jq -r '.assets[].name' | sort -u)
+          echo "::group::Current assets on $TAG"
+          echo "$have"
+          echo "::endgroup::"
+
+          missing=""
+          if ! echo "$have" | grep -qE '^Warp-cn-(aarch64|x86_64)\.(dmg|tar\.gz)$|^warp-oss-(aarch64|x86_64)-release-(app\.zip|dmg\.dmg)$'; then
+            missing="$missing macos-artifact"
+          fi
+          while IFS= read -r tgz; do
+            [ -n "$tgz" ] || continue
+            echo "$have" | grep -qx "${tgz}.minisig" || missing="$missing ${tgz}.minisig"
+          done < <(echo "$have" | grep -E '\.tar\.gz$' || true)
+
+          if [ -n "$missing" ]; then
+            echo "::notice::Release $TAG still missing:$missing — leaving as-is"
+            exit 0
+          fi
+
+          if [ "$is_draft" = "true" ]; then
+            echo "::notice::Asset set complete on draft $TAG, publishing"
+            gh api -X PATCH "/repos/${{ github.repository }}/releases/${RELEASE_ID}" \
+              -f draft=false -f make_latest=true > /dev/null
+            echo "::notice::Published $TAG"
+          else
+            echo "::notice::Asset set complete on already-published $TAG — backfilled, nothing to publish"
+          fi
