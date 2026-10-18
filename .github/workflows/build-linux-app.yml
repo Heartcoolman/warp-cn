@@ -182,10 +182,33 @@ jobs:
           mapfile -t ASSETS < <(find "$PKG_DIR" -maxdepth 1 -type f \( -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' \))
           [ "${#ASSETS[@]}" -gt 0 ] || { echo "无可上传产物"; exit 1; }
           # mac/windows workflow 可能已为同 tag 建好 release；存在则直接上传，否则重试等待其出现。
-          # 注意 draft：`gh release view` 对 draft 返回 404，asset 清单要按 id 读。
+          # 必须能看见 **draft**：`gh release view` 对 draft 一律返回 404，
+          # 而另外两个 workflow 现在都建 draft，用它会把「已存在的 draft」误判为
+          # 「不存在」→ 重试 5 次后去 create，撞 already exists 直接失败。
+          # 因此按 tag 名走 REST 列表，并拿到 release id 供按-id 上传。
+          find_release() {
+            gh api "/repos/${{ github.repository }}/releases?per_page=100" \
+              | jq -r --arg t "$TAG" '.[] | select(.tag_name == $t) | .id' \
+              | head -1
+          }
           for i in 1 2 3 4 5; do
-            if gh release view "$TAG" >/dev/null 2>&1; then
-              gh release upload "$TAG" "${ASSETS[@]}" --clobber
+            rid=$(find_release)
+            if [ -n "$rid" ]; then
+              echo "Release $TAG exists (id $rid); uploading packages"
+              upload_url="https://uploads.github.com/repos/${{ github.repository }}/releases/${rid}/assets"
+              for f in "${ASSETS[@]}"; do
+                base=$(basename "$f")
+                # clobber 语义：先删同名旧资产再传新的
+                gh api "/repos/${{ github.repository }}/releases/${rid}" \
+                  --jq ".assets[] | select(.name == \"$base\") | .id" \
+                  | while IFS= read -r aid; do
+                      [ -n "$aid" ] || continue
+                      gh api -X DELETE "/repos/${{ github.repository }}/releases/assets/$aid" || true
+                    done
+                gh api -X POST "$upload_url?name=$base" \
+                  -H "Content-Type: application/octet-stream" --input "$f" > /dev/null
+                echo "  uploaded $base"
+              done
               exit 0
             fi
             sleep $((i * 3))
