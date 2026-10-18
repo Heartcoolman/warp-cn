@@ -145,6 +145,7 @@ impl AgentNotificationsModel {
                 agent,
                 status,
                 session_context,
+                ..
             } => match status {
                 // When the agent resumes its work we can assume that the previous notification is stale.
                 CLIAgentSessionStatus::InProgress => {
@@ -206,7 +207,7 @@ impl AgentNotificationsModel {
                         ctx,
                     );
                 }
-                CLIAgentSessionStatus::Blocked { message } => {
+                CLIAgentSessionStatus::Blocked { message, .. } => {
                     let title = session_context
                         .display_title()
                         .unwrap_or_else(|| format!("{} needs attention", agent.display_name()));

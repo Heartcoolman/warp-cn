@@ -537,6 +537,10 @@ fn run_shell_result_to_text(r: &api::RunShellCommandResult) -> String {
             s.output
         ),
         Some(R::PermissionDenied(_)) => format!("{preface}\n[user denied permission]"),
+        Some(R::TerminalBusy(b)) => format!(
+            "{preface}\n[terminal busy with running command `{}`]",
+            b.running_command_id
+        ),
         None => format!("{preface}\n[no result body]"),
     }
 }
@@ -833,6 +837,7 @@ fn parse_apply_file_diffs(
             Ok(api::message::tool_call::apply_file_diffs::NewFile {
                 file_path: fp,
                 content: n.content,
+                allow_overwrite: false,
             })
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
@@ -1402,6 +1407,7 @@ fn parse_read_mcp_resource(value: Value) -> anyhow::Result<api::message::tool_ca
     Ok(api::message::tool_call::ReadMcpResource {
         uri: p.uri,
         server_id: p.server_id,
+        server_identity: None,
     })
 }
 
@@ -1502,6 +1508,7 @@ fn parse_call_mcp_tool(value: Value) -> anyhow::Result<api::message::tool_call::
         name: p.name,
         args: Some(args_struct),
         server_id: p.server_id,
+        server_identity: None,
     })
 }
 

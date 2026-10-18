@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use chrono::{Local, Utc};
-use persistence::model::{AgentConversationData, ConversationUsageMetadata};
+use persistence::model::{AgentConversationData, ChargedUsageTotals, ConversationUsageMetadata};
 use warp_cli::agent::Harness;
 use warp_multi_agent_api as api;
 use warpui::{App, EntityId, SingletonEntity};
@@ -11,7 +11,9 @@ use crate::ai::agent::api::ServerConversationToken;
 use crate::ai::agent::conversation::{
     AIAgentHarness, AIConversation, AIConversationId, ServerAIConversationMetadata,
 };
-use crate::ai::ambient_agents::task::{AgentConfigSnapshot, HarnessConfig, TaskPrincipalInfo};
+use crate::ai::ambient_agents::task::{
+    AgentConfigSnapshot, HarnessConfig, RequestUsage, TaskPrincipalInfo,
+};
 use crate::ai::ambient_agents::{AmbientAgentTask, AmbientAgentTaskState};
 use crate::ai::blocklist::history_model::BlocklistAIHistoryModel;
 use crate::auth::UserUid;
@@ -49,6 +51,8 @@ fn create_test_task(task_id: &str) -> AmbientAgentTask {
         is_sandbox_running: false,
         last_event_sequence: None,
         children: vec![],
+        debug_agent_available: false,
+        scope: None,
     }
 }
 
@@ -76,6 +80,7 @@ fn test_from_conversation_prefers_server_creator_profile() {
                 autoexecute_override: None,
                 last_event_sequence: None,
                 pinned: false,
+                use_warp_credits_instead_of_chatgpt: false,
             },
         );
         conversation.set_server_metadata(create_test_server_metadata(
@@ -126,6 +131,7 @@ fn create_message_with_directory(id: &str, task_id: &str, directory: &str) -> ap
             referenced_attachments: HashMap::new(),
             mode: None,
             intended_agent: Default::default(),
+            ..Default::default()
         })),
         request_id: "request-1".to_string(),
         timestamp: None,
@@ -185,7 +191,7 @@ fn create_test_server_metadata(
             context_window_usage: 0.0,
             credits_spent: 0.0,
             platform_credits_spent: 0.0,
-            total_provider_cost_in_cents: None,
+            total_billed_cost_in_cents: None,
             credits_spent_for_last_block: None,
             charged_usage_for_last_block: None,
             total_charged_usage: None,
@@ -242,6 +248,7 @@ fn test_from_task_includes_linked_directory_when_run_id_matches() {
                 autoexecute_override: None,
                 last_event_sequence: None,
                 pinned: false,
+                use_warp_credits_instead_of_chatgpt: false,
             },
         );
 
@@ -388,6 +395,7 @@ fn test_from_conversation_populates_local_conversation_fields() {
                 is_remote_child: false,
                 root_task_is_optimistic: None,
                 pinned: false,
+                use_warp_credits_instead_of_chatgpt: false,
             },
         );
 
@@ -426,6 +434,65 @@ fn test_from_conversation_populates_local_conversation_fields() {
             assert_eq!(data.title, "test query");
             assert_eq!(data.source_prompt.as_deref(), Some("test query"));
             assert!(data.credits.is_some());
+        });
+    });
+}
+
+#[test]
+fn test_from_conversation_uses_charged_usage_dollar_total() {
+    App::test((), |mut app| async move {
+        let mut conversation = AIConversation::new(false, false);
+        conversation.set_charged_usage_for_test(Some(ChargedUsageTotals {
+            input_cost_in_cents: 10.0,
+            output_cost_in_cents: 12.0,
+            platform_cost_in_cents: 8.0,
+            web_search_cost_in_cents: 6.0,
+            ..Default::default()
+        }));
+
+        app.update(|ctx| {
+            let data = ConversationDetailsData::from_conversation(&conversation, ctx);
+
+            assert_eq!(data.cost_in_cents, Some(36.0));
+        });
+    });
+}
+
+/// Without streamed charges, the panel falls back to the server's cumulative billed snapshot;
+/// the provider cost is never used.
+#[test]
+fn test_from_conversation_falls_back_to_the_billed_snapshot() {
+    App::test((), |mut app| async move {
+        let mut conversation = AIConversation::new(false, false);
+        conversation.set_billed_cost_in_cents_for_test(Some(250.0));
+
+        app.update(|ctx| {
+            let data = ConversationDetailsData::from_conversation(&conversation, ctx);
+
+            assert_eq!(data.cost_in_cents, Some(250.0));
+        });
+    });
+}
+
+#[test]
+fn test_from_task_uses_server_reported_dollar_cost() {
+    App::test((), |mut app| async move {
+        app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], vec![], &[]));
+
+        let mut task = create_test_task("550e8400-e29b-41d4-a716-000000004060");
+        task.request_usage = Some(RequestUsage {
+            inference_cost: Some(10.0),
+            compute_cost: Some(2.0),
+            platform_cost: Some(3.0),
+            inference_cost_usd: Some(0.18),
+            compute_cost_usd: Some(0.036),
+            platform_cost_usd: Some(0.054),
+        });
+
+        app.update(|ctx| {
+            let data = ConversationDetailsData::from_task(&task, None, None, ctx);
+
+            assert_eq!(data.cost_in_cents, Some(27.0));
         });
     });
 }
@@ -502,6 +569,7 @@ fn test_from_task_includes_linked_directory_when_server_token_matches() {
                 autoexecute_override: None,
                 last_event_sequence: None,
                 pinned: false,
+                use_warp_credits_instead_of_chatgpt: false,
             },
         );
 
@@ -600,6 +668,7 @@ fn test_conversation_mode_carries_no_runner() {
                 autoexecute_override: None,
                 last_event_sequence: None,
                 pinned: false,
+                use_warp_credits_instead_of_chatgpt: false,
             },
         );
 

@@ -421,6 +421,7 @@ fn compose_system_prompt_appends_mcp_servers() {
                 description: "list issues".into(),
                 input_schema: None,
             }],
+            identity: None,
         }],
         ..Default::default()
     };
@@ -445,6 +446,7 @@ fn compose_system_prompt_neutralizes_prompt_injection() {
             id: "srv-x".into(),
             resources: vec![],
             tools: vec![],
+            identity: None,
         }],
         ..Default::default()
     };
@@ -499,6 +501,7 @@ fn advertised_tools_includes_mcp_when_servers_present() {
             id: "x".into(),
             resources: vec![],
             tools: vec![],
+            identity: None,
         }],
         ..Default::default()
     };

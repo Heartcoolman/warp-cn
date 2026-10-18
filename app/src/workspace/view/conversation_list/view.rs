@@ -53,6 +53,7 @@ use crate::workspace::view::conversation_list::item::{
     render_item, render_static_item,
 };
 use crate::workspace::{ToastStack, WorkspaceAction};
+use crate::workspaces::user_workspaces::UserWorkspaces;
 
 /// Maximum number of past items to show before the user toggles "view all".
 const INITIAL_MAX_PAST_ITEMS: usize = 10;
@@ -211,7 +212,11 @@ pub fn register_conversation_list_view_bindings(app: &mut AppContext) {
 
 impl ConversationListView {
     pub fn new(ctx: &mut ViewContext<Self>) -> Self {
-        let view_model = ctx.add_model(ConversationListViewModel::new);
+        let window_id = ctx.window_id();
+        let team_context_resolver = UserWorkspaces::team_context_resolver(ctx.handle());
+        let view_model = ctx.add_model(move |ctx| {
+            ConversationListViewModel::new(window_id, team_context_resolver, ctx)
+        });
 
         ctx.subscribe_to_model(&view_model, |me, _, _, ctx| {
             me.sync_list_items(ctx);

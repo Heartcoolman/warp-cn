@@ -21,6 +21,7 @@ misc-node-installed-badge = 已安装
 misc-cycle-suggestions = 切换建议
 misc-mermaid-rendering = 正在渲染 Mermaid 图表…
 misc-no-images = 无图片
+misc-image-load-failed = 图片加载失败
 misc-loading = 加载中...
 
 # 笔记本菜单

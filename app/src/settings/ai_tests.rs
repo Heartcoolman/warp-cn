@@ -20,6 +20,8 @@ fn create_test_request_limit_info(
     RequestLimitInfo {
         limit,
         num_requests_used_since_refresh: used,
+        included_usage_cents: None,
+        usage_cents_used_since_last_refresh: None,
         next_refresh_time: ServerTimestamp::new(next_refresh),
         is_unlimited,
         request_limit_refresh_duration: refresh_duration,
@@ -495,6 +497,37 @@ fn test_toolbar_command_map_matched_agent() {
             assert_eq!(agent, None);
         });
     });
+}
+
+#[test]
+fn usage_display_unit_defaults_to_credits_and_round_trips() {
+    App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+
+        AISettings::handle(&app).read(&app, |settings, _ctx| {
+            assert_eq!(settings.usage_display_unit, UsageDisplayUnit::Credits);
+        });
+
+        AISettings::handle(&app).update(&mut app, |settings, ctx| {
+            report_if_error!(
+                settings
+                    .usage_display_unit
+                    .set_value(UsageDisplayUnit::Dollars, ctx)
+            );
+        });
+
+        AISettings::handle(&app).read(&app, |settings, _ctx| {
+            assert_eq!(settings.usage_display_unit, UsageDisplayUnit::Dollars);
+        });
+    });
+}
+
+#[test]
+fn usage_display_unit_toml_path() {
+    assert_eq!(
+        UsageDisplayUnit::toml_path(),
+        Some("agents.warp_agent.other.usage_display_unit")
+    );
 }
 
 #[test]

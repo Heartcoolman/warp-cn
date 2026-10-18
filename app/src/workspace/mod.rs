@@ -55,6 +55,7 @@ use crate::server::telemetry::{AgentModeEntrypoint, PaletteSource};
 use crate::settings::AISettings;
 use crate::settings_view::{self, SettingsSection, flags};
 use crate::tab::{NewSessionMenuItem, uses_vertical_tabs};
+use crate::workspaces::user_workspaces::{ResolvedTeamScope, UserWorkspaces};
 use crate::util::bindings::{
     self, BindingDescriptionFluentExt, CustomAction, cmd_or_ctrl_shift, is_binding_pty_compliant,
 };
@@ -72,8 +73,13 @@ pub fn panel_header_corner_radius() -> warpui::elements::CornerRadius {
 /// Kept in sync with the availability check in `Workspace::send_feedback` so
 /// the command palette label and the menu item behavior never diverge.
 pub fn is_feedback_skill_available(ctx: &AppContext) -> bool {
+    let team_uid = ctx
+        .windows()
+        .active_window()
+        .and_then(|window_id| UserWorkspaces::as_ref(ctx).team_uid_for_window(window_id));
+    let scope = ResolvedTeamScope::from_uid(team_uid);
     AISettings::as_ref(ctx).is_any_ai_enabled(ctx)
-        && AIRequestUsageModel::as_ref(ctx).has_any_ai_remaining(ctx)
+        && AIRequestUsageModel::as_ref(ctx).has_any_ai_remaining(&scope, ctx)
         && SkillManager::as_ref(ctx)
             .active_local_bundled_skill("feedback", ctx)
             .is_some()
@@ -87,11 +93,11 @@ use crate::workspace::view::{
     LEFT_PANEL_AGENT_CONVERSATIONS_BINDING_NAME, LEFT_PANEL_GLOBAL_SEARCH_BINDING_NAME,
     LEFT_PANEL_PROJECT_EXPLORER_BINDING_NAME, LEFT_PANEL_WARP_DRIVE_BINDING_NAME,
     NEW_AGENT_TAB_BINDING_NAME, NEW_AMBIENT_AGENT_TAB_BINDING_NAME, NEW_FILE_BINDING_NAME,
-    NEW_TAB_BINDING_NAME, NEW_TERMINAL_TAB_BINDING_NAME, OPEN_GLOBAL_SEARCH_BINDING_NAME,
-    TOGGLE_CONVERSATION_LIST_VIEW_BINDING_NAME, TOGGLE_NOTIFICATION_MAILBOX_BINDING_NAME,
-    TOGGLE_PROJECT_EXPLORER_BINDING_NAME, TOGGLE_RIGHT_PANEL_BINDING_NAME,
-    TOGGLE_TAB_CONFIGS_MENU_BINDING_NAME, TOGGLE_VERTICAL_TABS_PANEL_BINDING_NAME,
-    TOGGLE_WARP_DRIVE_BINDING_NAME,
+    NEW_TAB_BINDING_NAME, NEW_TERMINAL_TAB_BINDING_NAME, NEW_WINDOW_BINDING_NAME,
+    OPEN_GLOBAL_SEARCH_BINDING_NAME, TOGGLE_CONVERSATION_LIST_VIEW_BINDING_NAME,
+    TOGGLE_NOTIFICATION_MAILBOX_BINDING_NAME, TOGGLE_PROJECT_EXPLORER_BINDING_NAME,
+    TOGGLE_RIGHT_PANEL_BINDING_NAME, TOGGLE_TAB_CONFIGS_MENU_BINDING_NAME,
+    TOGGLE_VERTICAL_TABS_PANEL_BINDING_NAME, TOGGLE_WARP_DRIVE_BINDING_NAME,
 };
 
 pub fn init(app: &mut AppContext) {
@@ -114,6 +120,7 @@ pub fn init(app: &mut AppContext) {
     view::agent_cli_launch_modal::init(app);
     view::feature_intro_modal::init(app);
     view::auto_handoff_sleep_modal::init(app);
+    view::chatgpt_plan_modal::init(app);
     view::cloud_agent_capacity_modal::init(app);
     view::codex_modal::init(app);
     view::free_ai_removal_modal::init(app);
@@ -292,6 +299,18 @@ pub fn init(app: &mut AppContext) {
                 )
                 .with_context_predicate(id!("Workspace")),
                 EditableBinding::new(
+                    "workspace:open_chatgpt_plan_modal",
+                    "[Debug] Open ChatGPT Plan Modal",
+                    WorkspaceAction::OpenChatGPTPlanModal,
+                )
+                .with_context_predicate(id!("Workspace")),
+                EditableBinding::new(
+                    "workspace:reset_chatgpt_plan_modal_state",
+                    "[Debug] Reset ChatGPT Plan Modal State",
+                    WorkspaceAction::ResetChatGPTPlanModalState,
+                )
+                .with_context_predicate(id!("Workspace")),
+                EditableBinding::new(
                     "workspace:trigger_auto_handoff_to_cloud",
                     "[Debug] Trigger Auto-Handoff to Cloud",
                     WorkspaceAction::TriggerAutoHandoffToCloud,
@@ -372,14 +391,16 @@ pub fn init(app: &mut AppContext) {
             BindingDescription::fluent("binding-workspace-cycle-prev-session"),
             id!("Workspace") & id!("Workspace_MultipleTabs"),
         ),
-        FixedBinding::custom(
-            CustomAction::AddWindow,
-            WorkspaceAction::AddWindow,
-            BindingDescription::fluent("binding-workspace-add-window"),
-            id!("Workspace"),
-        )
-        .with_enabled(|| ContextFlag::CreateNewSession.is_enabled()),
     ]);
+
+    app.register_editable_bindings([EditableBinding::new(
+        NEW_WINDOW_BINDING_NAME,
+        BindingDescription::fluent("binding-workspace-add-window"),
+        WorkspaceAction::AddWindow,
+    )
+    .with_custom_action(CustomAction::AddWindow)
+    .with_context_predicate(id!("Workspace"))
+    .with_enabled(|| ContextFlag::CreateNewSession.is_enabled())]);
 
     app.register_editable_bindings([EditableBinding::new(
         NEW_FILE_BINDING_NAME,

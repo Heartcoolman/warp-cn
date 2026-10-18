@@ -5,6 +5,7 @@ pub(super) mod edit_documents;
 pub(super) mod fetch_conversation;
 pub(super) mod file_glob;
 pub(super) mod grep;
+pub(super) mod lrc_activity;
 pub(super) mod read_documents;
 pub(super) mod read_files;
 pub(super) mod read_mcp_resource;
@@ -60,10 +61,10 @@ pub use run_agents::{RunAgentsExecutor, RunAgentsExecutorEvent, RunAgentsSpawnin
 pub use run_agents::{compose_run_agents_child_prompt, run_agents_to_start_agent_mode};
 pub use send_message::SendMessageToAgentExecutor;
 use serde::{Deserialize, Serialize};
-pub use shell_command::{ShellCommandExecutor, ShellCommandExecutorEvent};
+pub use shell_command::{ShellCommandExecutor, ShellCommandExecutorEvent, ShellRecoveryResult};
 pub use start_agent::{
     StartAgentExecutor, StartAgentExecutorEvent, StartAgentOutcome, StartAgentRequest,
-    StartAgentRequestId,
+    StartAgentRequestId, TEAM_CHANGED_DURING_CHILD_LAUNCH_ERROR,
 };
 use start_recording::StartRecordingExecutor;
 use stop_recording::StopRecordingExecutor;
@@ -97,6 +98,7 @@ use crate::ai::blocklist::telemetry::send_run_agents_completed_telemetry;
 use crate::ai::get_relevant_files::controller::GetRelevantFilesController;
 #[cfg(feature = "local_fs")]
 use crate::ai::{agent::AnyFileContent, paths::host_native_absolute_path};
+use crate::server::team_scope::RequestTeamScope;
 use crate::terminal::model::session::active_session::ActiveSession;
 use crate::terminal::model::session::command_executor::shell_quote_arg;
 use crate::terminal::model::session::{ExecuteCommandOptions, Session};
@@ -343,8 +345,14 @@ impl BlocklistAIActionExecutor {
         let read_skill_executor = ctx.add_model(|_| ReadSkillExecutor::new(active_session.clone()));
         let fetch_conversation_executor = ctx.add_model(|_| FetchConversationExecutor::new());
         let start_agent_executor = ctx.add_model(StartAgentExecutor::new);
-        let run_agents_executor = ctx
-            .add_model(|_| RunAgentsExecutor::new(start_agent_executor.clone(), terminal_view_id));
+        let team_context_resolver_for_run_agents = team_context_resolver.clone();
+        let run_agents_executor = ctx.add_model(|_| {
+            RunAgentsExecutor::new(
+                start_agent_executor.clone(),
+                terminal_view_id,
+                team_context_resolver_for_run_agents,
+            )
+        });
         let send_message_executor = ctx.add_model(|_| SendMessageToAgentExecutor::new());
         let ask_user_question_executor =
             ctx.add_model(|_| AskUserQuestionExecutor::new(terminal_view_id));
@@ -690,10 +698,15 @@ impl BlocklistAIActionExecutor {
             AIAgentActionType::UploadArtifact(..) => self
                 .upload_artifact_executor
                 .update(ctx, |executor, ctx| executor.execute(input, ctx)),
-            AIAgentActionType::SearchCodebase(..) => self
-                .search_codebase_executor
-                .update(ctx, |executor, ctx| executor.execute(input, ctx))
-                .into(),
+            AIAgentActionType::SearchCodebase(..) => {
+                let team_context_resolver = self.team_context_resolver.clone();
+                self.search_codebase_executor
+                    .update(ctx, |executor, ctx| {
+                        let team_scope = RequestTeamScope::from_scope(&team_context_resolver(ctx));
+                        executor.execute(input, team_scope, ctx)
+                    })
+                    .into()
+            }
             AIAgentActionType::Grep { .. } => self
                 .grep_executor
                 .update(ctx, |executor, ctx| executor.execute(input, ctx))

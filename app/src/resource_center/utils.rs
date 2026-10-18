@@ -119,11 +119,6 @@ pub const FUNDAMENTALS_KEYBINDINGS: &[&str] = &[
 pub fn get_additional_keybindings() -> Vec<CommandBinding> {
     vec![
         CommandBinding::new(
-            "workspace:new_window".into(),
-            t!("resource-center-keybindings-open-new-window"),
-            Some(Keystroke::parse("cmd-n").expect("Valid keystroke")),
-        ),
-        CommandBinding::new(
             "workspace:hide_warp".into(),
             t!("resource-center-keybindings-hide-warp"),
             Some(Keystroke::parse("cmd-h").expect("Valid keystroke")),

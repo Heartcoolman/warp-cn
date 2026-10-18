@@ -56,8 +56,6 @@ mod notification;
 mod palette;
 mod persistence;
 mod platform;
-#[cfg(feature = "plugin_host")]
-mod plugin;
 mod prefix;
 #[cfg(target_os = "macos")]
 mod preview_config_migration;
@@ -155,11 +153,12 @@ use ai::agent_conversations_model::AgentConversationsModel;
 use ai::agent_management::AgentNotificationsModel;
 use ai::ambient_agents::scheduled::ScheduledAgentManager;
 use ai::blocklist::{BlocklistAIHistoryModel, BlocklistAIPermissions};
+use ai::chatgpt_subscription::ChatGPTSubscriptionModel;
 use ai::execution_profiles::editor::ExecutionProfileEditorManager;
 use ai::execution_profiles::profiles::AIExecutionProfilesModel;
 use ai::metadata_project_rules::read_project_rule_contents;
 use ai::persisted_workspace::PersistedWorkspace;
-use auth::auth_manager::AuthManager;
+use auth::auth_manager::{AuthManager, AuthManagerEvent};
 use auth::auth_state::{AuthState, AuthStateProvider};
 use code::editor_management::CodeManager;
 use code::opened_files::OpenedFilesModel;
@@ -215,8 +214,6 @@ use interval_timer::IntervalTimer;
 use itertools::Itertools;
 #[cfg(feature = "integration_tests")]
 pub use persistence::testing as sqlite_testing;
-#[cfg(feature = "plugin_host")]
-pub use plugin::{PLUGIN_HOST_FLAG, run_plugin_host};
 use referral_theme_status::ReferralThemeStatus;
 use server::server_api::ServerApiProvider;
 use settings::{ExtraMetaKeys, PrivacySettings};
@@ -237,7 +234,6 @@ use warp_errors::{report_error, report_if_error};
 #[cfg(feature = "local_fs")]
 use warp_files::FileModel;
 use warp_logging::{LogDestination, LogFrontend};
-use warp_managed_secrets::ManagedSecretManager;
 use warp_server_client::iap::{IapManager, IapManagerEvent, IapState, ManagedIapMint};
 use warp_server_client::network_logging::NetworkLogModel;
 use warpui::integration::TestDriver;
@@ -310,13 +306,16 @@ use crate::server::cloud_objects::update_manager::UpdateManager;
 use crate::server::experiments::ServerExperiments;
 #[cfg(not(target_family = "wasm"))]
 use crate::server::iap_identity_minter::ManagedSecretsIapMinter;
+use crate::server::server_api::managed_secrets::AppManagedSecretManager as ManagedSecretManager;
 use crate::server::sync_queue::{QueueItem, SyncQueue};
 pub use crate::server::telemetry::{
     AgentModeEntrypoint, AgentModeEntrypointSelectionType, TelemetryEvent,
 };
 use crate::server::telemetry::{AppStartupInfo, CloseTarget, PaletteSource, TelemetryCollector};
 use crate::session_management::{RunningSessionSummary, SessionNavigationData};
-use crate::settings::cloud_preferences_syncer::initialize_cloud_preferences_syncer;
+use crate::settings::cloud_preferences_syncer::{
+    CloudPreferencesSyncerEvent, initialize_cloud_preferences_syncer,
+};
 use crate::settings::manager::SettingsManager;
 use crate::settings::{AISettings, AccessibilitySettings, ScrollSettings, SelectionSettings};
 use crate::settings_view::DisplayCount;
@@ -582,7 +581,21 @@ impl LaunchMode {
         }
     }
 
-    /// Returns `true` if Warp should run headlessly, without a visible UI.
+    /// Returns `true` if Warp renders to native GUI windows on the platform app backend.
+    fn is_gui(&self) -> bool {
+        match self {
+            LaunchMode::App { .. } | LaunchMode::Test { .. } => true,
+            LaunchMode::CommandLine { command, .. } => {
+                matches!(command, CliCommand::Agent(AgentCommand::Run(args)) if args.gui)
+            }
+            LaunchMode::RemoteServerProxy
+            | LaunchMode::RemoteServerDaemon { .. }
+            | LaunchMode::Tui { .. } => false,
+        }
+    }
+
+    /// Returns `true` if Warp runs with no user interface at all. The TUI is not headless:
+    /// it has no GUI window, but it renders to the terminal.
     fn is_headless(&self) -> bool {
         match self {
             LaunchMode::CommandLine { command, .. } => match command {
@@ -590,19 +603,17 @@ impl LaunchMode {
                 _ => true,
             },
             LaunchMode::RemoteServerProxy | LaunchMode::RemoteServerDaemon { .. } => true,
-            // The TUI front-end renders to the terminal, with no GUI window.
-            LaunchMode::Tui { .. } => true,
-            LaunchMode::App { .. } | LaunchMode::Test { .. } => false,
+            LaunchMode::App { .. } | LaunchMode::Test { .. } | LaunchMode::Tui { .. } => false,
         }
     }
 
     /// Whether this launch mode should start the local loopback HTTP server
     /// (`crates/http_server`), which serves app-installation detection and profiling on a
-    /// fixed port. Only non-headless GUI instances start it, since co-located headless
-    /// processes (daemon, CLI, proxy, TUI) would otherwise contend for the fixed port.
+    /// fixed port. Only GUI instances start it, since co-located windowless processes (daemon,
+    /// CLI, proxy, TUI) would otherwise contend for the fixed port.
     #[cfg_attr(target_family = "wasm", allow(dead_code))]
     fn should_start_local_http_server(&self) -> bool {
-        !self.is_headless()
+        self.is_gui()
     }
 
     /// Returns `true` if this process can build and sync codebase indices.
@@ -829,6 +840,19 @@ pub fn run() -> Result<()> {
                 return warp_cli::completions::generate_to_stdout(*shell);
             }
             warp_cli::Command::CommandLine(cmd) => {
+                #[cfg(not(target_family = "wasm"))]
+                if let CliCommand::EnvironmentCheckout(args) = cmd.as_ref() {
+                    let (mut tracing_initialization, parent_context) =
+                        tracing::init_child_process(&args.requests_file)?;
+                    let _parent_context = parent_context.attach();
+                    warp_logging::init(warp_logging::LogConfig {
+                        frontend: warp_logging::LogFrontend::Cli,
+                        log_destination: Some(warp_logging::LogDestination::Stderr),
+                        ..Default::default()
+                    })?;
+                    tracing_initialization.log_initialization_warning();
+                    return ai::agent_sdk::run_environment_checkout(args);
+                }
                 let (is_sandboxed, computer_use_override) = match cmd.as_ref() {
                     warp_cli::CliCommand::Agent(warp_cli::agent::AgentCommand::Run(run_args)) => (
                         run_args.sandboxed,
@@ -887,8 +911,6 @@ fn run_worker_command(worker: &warp_cli::WorkerCommand) -> Result<()> {
             crate::terminal::local_tty::run_terminal_server(args);
             Ok(())
         }
-        #[cfg(feature = "plugin_host")]
-        warp_cli::WorkerCommand::PluginHost { .. } => crate::run_plugin_host(),
         #[cfg(feature = "local_tty")]
         warp_cli::WorkerCommand::MinidumpServer { socket_name } => {
             cfg_if::cfg_if! {
@@ -922,6 +944,12 @@ fn run_worker_command(worker: &warp_cli::WorkerCommand) -> Result<()> {
             crate::remote_server::run_daemon(args.identity_key.clone())
         }
         #[cfg(not(target_family = "wasm"))]
+        warp_cli::WorkerCommand::AcpBridge { launch_file } => {
+            // Stdout belongs to the agent's protocol stream, so there is no logging and no
+            // initialize_app.
+            crate::ai::agent_sdk::driver::harness::acp::run_bridge(launch_file)
+        }
+        #[cfg(not(target_family = "wasm"))]
         warp_cli::WorkerCommand::RipgrepSearch {
             parent,
             ignore_case,
@@ -939,11 +967,7 @@ fn run_worker_command(worker: &warp_cli::WorkerCommand) -> Result<()> {
             .map_err(|err| anyhow!(err.to_string()))?;
             Ok(())
         }
-        #[cfg(not(any(
-            feature = "local_tty",
-            feature = "plugin_host",
-            not(target_family = "wasm")
-        )))]
+        #[cfg(all(target_family = "wasm", not(feature = "local_tty")))]
         worker => {
             // On wasm, specifically, we should fail spectacularly if we get here.
             #[cfg(target_family = "wasm")]
@@ -1082,9 +1106,9 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
     timer.mark_interval_end("LOG_FILE_SETUP_COMPLETE");
 
     // Claim a background-only process type before anything else can reach
-    // AppKit, so a headless launch never acquires a Dock tile. See APP-2946.
+    // AppKit, so a windowless launch never acquires a Dock tile. See APP-2946.
     #[cfg(target_os = "macos")]
-    if launch_mode.is_headless()
+    if !launch_mode.is_gui()
         && let Err(e) = platform::mac::mark_process_as_background_only()
     {
         log::warn!("Failed to mark process as background-only: {e:#}");
@@ -1135,6 +1159,9 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
             Err(app_services::linux::StartupArgsForwardingError::NoExistingInstance) => {}
             // If we just finished an auto-update, we should continue running.
             Err(app_services::linux::StartupArgsForwardingError::IgnoredAfterAutoUpdate) => {}
+            Err(
+                app_services::linux::StartupArgsForwardingError::IgnoredForCrashRecoveryProcess,
+            ) => {}
             // If we were unable to perform the forwarding for an unknown reason,
             // it's better to run a second instance than potentially end up in a
             // state where Warp refuses to run even a first instance.
@@ -1158,6 +1185,9 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
             Err(app_services::windows::StartupArgsForwardingError::NoExistingInstance) => {}
             // If we just finished an auto-update, we should continue running.
             Err(app_services::windows::StartupArgsForwardingError::IgnoredAfterAutoUpdate) => {}
+            Err(
+                app_services::windows::StartupArgsForwardingError::IgnoredForCrashRecoveryProcess,
+            ) => {}
             // If we were unable to perform the forwarding for an unknown reason,
             // it's better to run a second instance than potentially end up in a
             // state where Warp refuses to run even a first instance.
@@ -1242,28 +1272,29 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
             tracing_initialization.take(),
         )
     };
-    let mut app_builder = if launch_mode.is_headless() {
-        warpui::platform::AppBuilder::new_headless(
+    let mut app_builder = if launch_mode.is_gui() {
+        warpui::platform::AppBuilder::new(
             callbacks,
             Box::new(ASSETS),
             launch_mode.take_test_driver(),
         )
     } else {
-        warpui::platform::AppBuilder::new(
+        warpui::platform::AppBuilder::new_windowless(
             callbacks,
             Box::new(ASSETS),
             launch_mode.take_test_driver(),
         )
     };
 
-    if matches!(launch_mode, LaunchMode::Tui { .. }) {
-        app_builder.enable_headless_microphone_access_query();
+    // A user is present for any launch with a UI, so it may query microphone authorization.
+    if !launch_mode.is_headless() {
+        app_builder.enable_windowless_microphone_access_query();
     }
 
-    // A headless invocation has no Dock presence, so it performs no Dock-visible
+    // A windowless invocation has no Dock presence, so it performs no Dock-visible
     // setup at all (Dock icon, Dock menu, menu bar). See APP-2946.
     #[cfg(target_os = "macos")]
-    if !launch_mode.is_headless() {
+    if launch_mode.is_gui() {
         use warpui::AssetProvider as _;
         use warpui::platform::mac::AppExt;
 
@@ -1364,10 +1395,6 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
         #[cfg(enable_crash_recovery)]
         ctx.add_singleton_model(move |_ctx| crash_recovery);
 
-        #[cfg(feature = "plugin_host")]
-        ctx.add_singleton_model(move |ctx| {
-            plugin::PluginHost::new(ctx).expect("Could not instantiate PluginHost")
-        });
         let app_state = initialize_app(
             &launch_mode,
             timer,
@@ -1596,6 +1623,12 @@ pub(crate) fn initialize_app(
                 None
             }
         });
+    #[cfg(all(not(target_family = "wasm"), feature = "crash_reporting"))]
+    if matches!(launch_mode, LaunchMode::CommandLine { .. })
+        && let Some(task_id) = ambient_agent_task_id
+    {
+        crash_reporting::set_task_id_tag(&task_id.to_string());
+    }
     #[cfg(not(target_family = "wasm"))]
     server_api.set_ambient_agent_task_id(ambient_agent_task_id);
     let ai_client = server_api_provider.as_ref(ctx).get_ai_client();
@@ -1831,12 +1864,25 @@ pub(crate) fn initialize_app(
     ctx.subscribe_to_model(
         &::ai::api_keys::ApiKeyManager::handle(ctx),
         |_, event, ctx| {
-            let ::ai::api_keys::ApiKeyManagerEvent::KeysUpdated = event;
-            AIRequestUsageModel::handle(ctx).update(ctx, |usage_model, ctx| {
-                usage_model.request_availability_refresh(ctx);
-            });
+            if let ::ai::api_keys::ApiKeyManagerEvent::KeysUpdated = event {
+                AIRequestUsageModel::handle(ctx).update(ctx, |usage_model, ctx| {
+                    usage_model.request_availability_refresh(ctx);
+                });
+            }
         },
     );
+    if FeatureFlag::ChatGPTSubscription.is_enabled() {
+        let ai_client = server_api_provider.as_ref(ctx).get_ai_client();
+        ctx.add_singleton_model(|_| ChatGPTSubscriptionModel::new(ai_client));
+        ChatGPTSubscriptionModel::handle(ctx).update(ctx, |model, ctx| model.refresh(ctx));
+        ctx.subscribe_to_model(&AuthManager::handle(ctx), |_, event, ctx| {
+            if matches!(event, AuthManagerEvent::AuthComplete) {
+                ChatGPTSubscriptionModel::handle(ctx).update(ctx, |model, ctx| {
+                    model.refresh(ctx);
+                });
+            }
+        });
+    }
 
     // warp-cn fork: per-provider base_url + custom model_id overrides for the
     // Direct LLM backend. Registered alongside ApiKeyManager so settings UI
@@ -1906,7 +1952,7 @@ pub(crate) fn initialize_app(
     });
 
     #[cfg(target_os = "macos")]
-    if !launch_mode.is_headless() {
+    if launch_mode.is_gui() {
         AppearanceManager::as_ref(ctx).set_app_icon(ctx);
     }
 
@@ -2301,6 +2347,9 @@ pub(crate) fn initialize_app(
         ai::blocklist::local_agent_task_sync_model::LocalAgentTaskSyncModel::new,
     );
     ctx.add_singleton_model(
+        ai::blocklist::pending_cli_harness_prompt_queue::PendingCliHarnessPromptQueue::new,
+    );
+    ctx.add_singleton_model(
         ai::blocklist::orchestration_event_streamer::OrchestrationEventStreamer::new,
     );
 
@@ -2343,13 +2392,19 @@ pub(crate) fn initialize_app(
     });
 
     let toml_file_path = settings::user_preferences_toml_file_path();
-    ctx.add_singleton_model(move |ctx| {
+    let cloud_preferences_syncer = ctx.add_singleton_model(move |ctx| {
         initialize_cloud_preferences_syncer(
             toml_file_path,
             startup_toml_parse_error_for_syncer.as_deref(),
             ctx,
         )
     });
+    ctx.subscribe_to_model(&cloud_preferences_syncer, |_, event, ctx| {
+        if let CloudPreferencesSyncerEvent::InitialLoadCompleted = event {
+            window_settings::migrate_legacy_background_backdrop(ctx);
+        }
+    });
+    ai::custom_endpoints::init(launch_mode, ctx);
 
     // LogManager must be registered before any subsystem (e.g. MCP, LSP) that creates file-based loggers.
     ctx.add_singleton_model(|_| simple_logger::manager::LogManager::new());

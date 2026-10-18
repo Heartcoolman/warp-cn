@@ -177,6 +177,8 @@ pub fn byok_unlimited_request_limit() -> RequestLimitInfo {
     RequestLimitInfo {
         limit: usize::MAX,
         num_requests_used_since_refresh: 0,
+        included_usage_cents: None,
+        usage_cents_used_since_last_refresh: None,
         next_refresh_time,
         is_unlimited: true,
         request_limit_refresh_duration: RequestLimitRefreshDuration::Monthly,

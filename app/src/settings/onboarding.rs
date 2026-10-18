@@ -8,7 +8,7 @@ use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
 use crate::ai::execution_profiles::{ActionPermission, WriteToPtyPermission};
 use crate::drive::settings::WarpDriveSettings;
 use crate::settings::ai::DefaultSessionMode;
-use crate::settings::{AISettings, CodeSettings};
+use crate::settings::{AISettings, CodeSettings, UsageDisplayUnit};
 use crate::workspace::tab_settings::TabSettings;
 use crate::workspaces::user_workspaces::{TeamContextForOperation, UserWorkspaces};
 use crate::workspaces::workspace::FtueAccountClass;
@@ -16,6 +16,7 @@ use crate::workspaces::workspace::FtueAccountClass;
 pub(crate) fn apply_account_first_onboarding_settings(
     selected_settings: &SelectedSettings,
     account_class: Option<FtueAccountClass>,
+    is_new_account: bool,
     team_context: TeamContextForOperation,
     app: &mut AppContext,
 ) {
@@ -28,6 +29,17 @@ pub(crate) fn apply_account_first_onboarding_settings(
             FtueAccountClass::Paid | FtueAccountClass::FreeIcp | FtueAccountClass::FreeStandard,
         ) => true,
     };
+
+    // Preserve an existing account's synced preference on a new device.
+    if account_class.is_some() && is_new_account {
+        AISettings::handle(app).update(app, |settings, ctx| {
+            report_if_error!(
+                settings
+                    .usage_display_unit
+                    .set_value(UsageDisplayUnit::Dollars, ctx)
+            );
+        });
+    }
 
     match selected_settings {
         SelectedSettings::AgentDrivenDevelopment {
@@ -227,11 +239,9 @@ fn apply_agent_settings(
             return;
         }
 
-        profiles.set_base_model(
-            &default_profile_id,
-            Some(agent_settings.selected_model_id.clone()),
-            ctx,
-        );
+        if let Some(model_id) = &agent_settings.selected_model_id {
+            profiles.set_base_model(&default_profile_id, Some(model_id.clone()), ctx);
+        }
 
         // If autonomy is None, the workspace enforces autonomy settings, so skip setting them.
         let Some(autonomy) = agent_settings.autonomy else {

@@ -6,7 +6,8 @@ use chrono::{Local, NaiveDateTime};
 use vim::vim::{MotionType, VimMode};
 use warp::settings::{AISettings, TuiStatuslineConfig, TuiStatuslineItem};
 use warp::tui_export::{
-    ConversationUsageTotals, GitRepoModels, GitStatusMetadata, LLMPreferences, UserWorkspaces,
+    ConversationUsageTotals, GitRepoModels, GitStatusMetadata, LLMPreferences, ResolvedTeamScope,
+    UserWorkspaces,
 };
 use warp_util::local_or_remote_path::LocalOrRemotePath;
 use warpui::SingletonEntity;
@@ -487,8 +488,12 @@ impl TuiTerminalSessionView {
                     .vim_mode_indicator(ctx)
                     .map(FooterSegment::VimIndicator),
                 TuiStatuslineItem::Model => (!shell_mode).then(|| {
+                    let scope = ResolvedTeamScope::from_scope(
+                        &UserWorkspaces::as_ref(ctx)
+                            .team_context_for_window(self.input_view.window_id(ctx)),
+                    );
                     let model_name = LLMPreferences::as_ref(ctx)
-                        .get_active_base_model(ctx, Some(self.terminal_surface_id))
+                        .get_active_base_model(&scope, ctx, Some(self.terminal_surface_id))
                         .display_name
                         .clone();
                     let model_label_hovered = self
@@ -568,9 +573,11 @@ impl TuiTerminalSessionView {
                     .flatten()
                     .map(|totals| {
                         let mode = AISettings::as_ref(ctx).usage_display_mode;
+                        let charge_unit = UserWorkspaces::as_ref(ctx).charge_unit();
                         FooterSegment::CreditUsage(self.usage_toggle.render_entry(
                             mode,
                             totals,
+                            charge_unit,
                             ctx,
                             |event_ctx, _| {
                                 event_ctx.dispatch_typed_action(

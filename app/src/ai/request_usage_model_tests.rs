@@ -17,17 +17,40 @@ use crate::server::server_api::ServerApiProvider;
 use crate::server::server_api::ai::MockAIClient;
 use crate::server::server_api::team::MockTeamClient;
 use crate::server::server_api::workspace::MockWorkspaceClient;
-use crate::workspaces::user_workspaces::UserWorkspaces;
+use crate::workspaces::team::{Team, TeamVisibility};
+use crate::workspaces::user_workspaces::{
+    TeamContextForOperation, TeamlessScopeForTest, UserWorkspaces,
+};
 use crate::workspaces::workspace::{
     AiOverages, ByoApiKeyPolicy, CustomerType, EnterpriseCreditsAutoReloadPolicy,
-    EnterprisePayAsYouGoPolicy, PurchaseAddOnCreditsPolicy, Workspace, WorkspaceUid,
+    EnterprisePayAsYouGoPolicy, HostEnablementSetting, LlmHostSettings, ManagedByokByoePolicy,
+    PurchaseAddOnCreditsPolicy, TeamByoSettings, Workspace, WorkspaceUid,
 };
 
 fn create_test_workspace() -> (WorkspaceUid, Workspace) {
     let server_id: crate::server::ids::ServerId = 1_i64.into();
     let uid = WorkspaceUid::from(server_id);
-    let workspace = Workspace::from_local_cache(uid, "Test Workspace".to_string(), None);
+    let workspace = Workspace::from_local_cache(uid, "Test Workspace".to_string(), None, None);
     (uid, workspace)
+}
+
+fn create_test_team(uid: i64) -> Team {
+    Team {
+        uid: uid.into(),
+        name: format!("Team {uid}"),
+        color: None,
+        invite_link: None,
+        members: vec![],
+        pending_email_invites: vec![],
+        invite_link_domain_restrictions: vec![],
+        billing_metadata: Default::default(),
+        stripe_customer_id: None,
+        settings: Default::default(),
+        feature_model_choice: Default::default(),
+        is_eligible_for_discovery: false,
+        has_billing_history: false,
+        visibility: TeamVisibility::Open,
+    }
 }
 
 fn add_user_workspaces_with_workspace(app: &mut App, workspace: Workspace) {
@@ -99,6 +122,7 @@ fn set_addon_credits_pricing_info(app: &mut App) {
                 addon_credits_options: vec![AddonCreditsOption {
                     credits: 1000,
                     price_usd_cents: 1000,
+                    usage_cents: None,
                 }],
                 promotion_message: None,
             },
@@ -152,6 +176,8 @@ fn test_request_limit_info() {
             request_usage_model.request_limit_info = RequestLimitInfo {
                 limit: 200,
                 num_requests_used_since_refresh: 39,
+                included_usage_cents: None,
+                usage_cents_used_since_last_refresh: None,
                 next_refresh_time: ServerTimestamp::new(Utc::now() + Duration::days(1)),
                 is_unlimited: false,
                 request_limit_refresh_duration: RequestLimitRefreshDuration::Monthly,
@@ -171,6 +197,80 @@ fn test_request_limit_info() {
 }
 
 #[test]
+fn test_cached_request_limit_info_without_usage_cents_deserializes() {
+    let mut cached = serde_json::to_value(RequestLimitInfo::default()).unwrap();
+    let cached_object = cached.as_object_mut().unwrap();
+    cached_object.remove("included_usage_cents");
+    cached_object.remove("usage_cents_used_since_last_refresh");
+
+    let request_limit_info: RequestLimitInfo = serde_json::from_value(cached).unwrap();
+
+    assert_eq!(request_limit_info.included_usage_cents, None);
+    assert_eq!(request_limit_info.usage_cents_used_since_last_refresh, None);
+}
+
+#[test]
+fn test_request_limit_info_round_trips_usage_cents() {
+    let request_limit_info = RequestLimitInfo {
+        included_usage_cents: Some(1800.0),
+        usage_cents_used_since_last_refresh: Some(70.2),
+        ..RequestLimitInfo::default()
+    };
+
+    let serialized = serde_json::to_string(&request_limit_info).unwrap();
+    let deserialized: RequestLimitInfo = serde_json::from_str(&serialized).unwrap();
+
+    assert_eq!(deserialized.included_usage_cents, Some(1800.0));
+    assert_eq!(deserialized.usage_cents_used_since_last_refresh, Some(70.2));
+}
+
+#[test]
+fn test_dollar_accessors_expose_the_server_supplied_cents() {
+    App::test((), |mut app| async move {
+        let request_usage_model = add_request_usage_model(&mut app);
+        request_usage_model.update(&mut app, |model, _ctx| {
+            model.request_limit_info = RequestLimitInfo {
+                included_usage_cents: Some(1800.0),
+                usage_cents_used_since_last_refresh: Some(70.2),
+                next_refresh_time: ServerTimestamp::new(Utc::now() + Duration::days(1)),
+                ..RequestLimitInfo::default()
+            };
+            assert_eq!(model.included_usage_cents(), Some(1800.0));
+            assert_eq!(model.usage_cents_used(), Some(70.2));
+        })
+    });
+}
+
+#[test]
+fn test_usage_cents_used_is_zero_past_refresh_time() {
+    App::test((), |mut app| async move {
+        let request_usage_model = add_request_usage_model(&mut app);
+        request_usage_model.update(&mut app, |model, _ctx| {
+            model.request_limit_info = RequestLimitInfo {
+                included_usage_cents: Some(1800.0),
+                usage_cents_used_since_last_refresh: Some(70.2),
+                next_refresh_time: ServerTimestamp::new(Utc::now() - Duration::seconds(1)),
+                ..RequestLimitInfo::default()
+            };
+            assert_eq!(model.usage_cents_used(), Some(0.));
+            assert_eq!(model.included_usage_cents(), Some(1800.0));
+        })
+    });
+}
+
+#[test]
+fn test_dollar_accessors_are_none_without_server_supplied_cents() {
+    App::test((), |mut app| async move {
+        let request_usage_model = add_request_usage_model(&mut app);
+        request_usage_model.update(&mut app, |model, _ctx| {
+            model.request_limit_info = RequestLimitInfo::new_for_test(200, 39);
+            assert_eq!(model.included_usage_cents(), None);
+            assert_eq!(model.usage_cents_used(), None);
+        })
+    });
+}
+
+#[test]
 fn test_request_limit_info_with_limit() {
     App::test((), |mut app| async move {
         let request_usage_model = add_request_usage_model(&mut app);
@@ -178,6 +278,8 @@ fn test_request_limit_info_with_limit() {
             request_usage_model.request_limit_info = RequestLimitInfo {
                 limit: 999999999,
                 num_requests_used_since_refresh: 39,
+                included_usage_cents: None,
+                usage_cents_used_since_last_refresh: None,
                 next_refresh_time: ServerTimestamp::new(Utc::now() + Duration::minutes(1)),
                 is_unlimited: false,
                 request_limit_refresh_duration: RequestLimitRefreshDuration::Monthly,
@@ -204,6 +306,8 @@ fn test_request_limit_info_past_refresh_time() {
             request_usage_model.request_limit_info = RequestLimitInfo {
                 limit: 200,
                 num_requests_used_since_refresh: 39,
+                included_usage_cents: None,
+                usage_cents_used_since_last_refresh: None,
                 next_refresh_time: ServerTimestamp::new(Utc::now() - Duration::seconds(1)),
                 is_unlimited: false,
                 request_limit_refresh_duration: RequestLimitRefreshDuration::Monthly,
@@ -230,6 +334,8 @@ fn test_request_limit_info_is_unlimited_true() {
             request_usage_model.request_limit_info = RequestLimitInfo {
                 limit: 999999999,
                 num_requests_used_since_refresh: 39,
+                included_usage_cents: None,
+                usage_cents_used_since_last_refresh: None,
                 next_refresh_time: ServerTimestamp::new(Utc::now() + Duration::minutes(1)),
                 is_unlimited: true,
                 request_limit_refresh_duration: RequestLimitRefreshDuration::Monthly,
@@ -257,7 +363,7 @@ fn test_has_any_ai_remaining_true_with_remaining_requests() {
         request_usage_model.update(&mut app, |model, ctx| {
             // Some requests remaining, no bonus or overages needed.
             model.request_limit_info = RequestLimitInfo::new_for_test(10, 5);
-            assert!(model.has_any_ai_remaining(ctx));
+            assert!(model.has_any_ai_remaining(&TeamlessScopeForTest, ctx));
         });
     });
 }
@@ -285,11 +391,13 @@ fn test_buy_credits_banner_shows_with_only_ambient_bonus_credits() {
                 user_facing_message: None,
                 request_credits_granted: 1000,
                 request_credits_remaining: 1000,
+                usage_cents_granted: None,
+                usage_cents_remaining: None,
                 scope: BonusGrantScope::User,
             }];
 
             assert_eq!(
-                model.compute_buy_addon_credits_banner_display_state(ctx),
+                model.compute_buy_addon_credits_banner_display_state(&TeamlessScopeForTest, ctx),
                 BuyCreditsBannerDisplayState::OutOfCredits,
             );
         });
@@ -320,7 +428,7 @@ fn test_buy_credits_banner_shows_for_premium_enabled_plan_out_of_credits() {
             model.bonus_grants.clear();
 
             assert_eq!(
-                model.compute_buy_addon_credits_banner_display_state(ctx),
+                model.compute_buy_addon_credits_banner_display_state(&TeamlessScopeForTest, ctx),
                 BuyCreditsBannerDisplayState::OutOfCredits,
             );
         });
@@ -350,7 +458,7 @@ fn test_buy_credits_banner_hidden_when_policy_fully_disabled() {
             model.bonus_grants.clear();
 
             assert_eq!(
-                model.compute_buy_addon_credits_banner_display_state(ctx),
+                model.compute_buy_addon_credits_banner_display_state(&TeamlessScopeForTest, ctx),
                 BuyCreditsBannerDisplayState::Hidden,
             );
         });
@@ -380,11 +488,13 @@ fn test_buy_credits_banner_hidden_with_non_ambient_bonus_credits() {
                 user_facing_message: None,
                 request_credits_granted: 100,
                 request_credits_remaining: 100,
+                usage_cents_granted: None,
+                usage_cents_remaining: None,
                 scope: BonusGrantScope::User,
             }];
 
             assert_eq!(
-                model.compute_buy_addon_credits_banner_display_state(ctx),
+                model.compute_buy_addon_credits_banner_display_state(&TeamlessScopeForTest, ctx),
                 BuyCreditsBannerDisplayState::Hidden,
             );
         });
@@ -414,11 +524,13 @@ fn test_buy_credits_banner_shows_when_non_ambient_bonus_credits_are_depleted() {
                 user_facing_message: None,
                 request_credits_granted: 100,
                 request_credits_remaining: 0,
+                usage_cents_granted: None,
+                usage_cents_remaining: None,
                 scope: BonusGrantScope::User,
             }];
 
             assert_eq!(
-                model.compute_buy_addon_credits_banner_display_state(ctx),
+                model.compute_buy_addon_credits_banner_display_state(&TeamlessScopeForTest, ctx),
                 BuyCreditsBannerDisplayState::OutOfCredits,
             );
         });
@@ -450,7 +562,7 @@ fn test_buy_credits_banner_hidden_when_server_reports_available() {
             );
 
             assert_eq!(
-                model.compute_buy_addon_credits_banner_display_state(ctx),
+                model.compute_buy_addon_credits_banner_display_state(&TeamlessScopeForTest, ctx),
                 BuyCreditsBannerDisplayState::Hidden,
             );
         });
@@ -482,7 +594,7 @@ fn test_buy_credits_banner_shows_when_server_reports_out_of_credits() {
             );
 
             assert_eq!(
-                model.compute_buy_addon_credits_banner_display_state(ctx),
+                model.compute_buy_addon_credits_banner_display_state(&TeamlessScopeForTest, ctx),
                 BuyCreditsBannerDisplayState::OutOfCredits,
             );
         });
@@ -512,7 +624,7 @@ fn test_buy_credits_banner_shows_when_server_source_is_ambient_only() {
             );
 
             assert_eq!(
-                model.compute_buy_addon_credits_banner_display_state(ctx),
+                model.compute_buy_addon_credits_banner_display_state(&TeamlessScopeForTest, ctx),
                 BuyCreditsBannerDisplayState::OutOfCredits,
             );
         });
@@ -548,11 +660,11 @@ fn test_buy_credits_banner_hidden_when_out_of_credits_refined_by_local_byo() {
             );
 
             assert!(
-                model.has_any_ai_remaining(ctx),
+                model.has_any_ai_remaining(&TeamlessScopeForTest, ctx),
                 "local BYO should refine OutOfCredits into available AI"
             );
             assert_eq!(
-                model.compute_buy_addon_credits_banner_display_state(ctx),
+                model.compute_buy_addon_credits_banner_display_state(&TeamlessScopeForTest, ctx),
                 BuyCreditsBannerDisplayState::Hidden,
             );
         });
@@ -589,7 +701,7 @@ fn test_buy_credits_banner_respects_monthly_limit_under_server_out_of_credits() 
             );
 
             assert_eq!(
-                model.compute_buy_addon_credits_banner_display_state(ctx),
+                model.compute_buy_addon_credits_banner_display_state(&TeamlessScopeForTest, ctx),
                 BuyCreditsBannerDisplayState::MonthlyLimitReached,
             );
         });
@@ -643,7 +755,7 @@ fn test_has_any_ai_remaining_false_when_no_requests_or_bonus() {
         request_usage_model.update(&mut app, |model, ctx| {
             // At limit, no bonus credits and no overages.
             model.request_limit_info = RequestLimitInfo::new_for_test(10, 10);
-            assert!(!model.has_any_ai_remaining(ctx));
+            assert!(!model.has_any_ai_remaining(&TeamlessScopeForTest, ctx));
         });
     });
 }
@@ -668,11 +780,13 @@ fn test_has_any_ai_remaining_true_with_user_bonus_credits() {
                 user_facing_message: None,
                 request_credits_granted: 5,
                 request_credits_remaining: 5,
+                usage_cents_granted: None,
+                usage_cents_remaining: None,
                 scope: BonusGrantScope::User,
             }];
 
             assert!(
-                model.has_any_ai_remaining(ctx),
+                model.has_any_ai_remaining(&TeamlessScopeForTest, ctx),
                 "expected has_any_ai_remaining to be true when user bonus credits exist",
             );
         });
@@ -704,7 +818,7 @@ fn test_has_any_ai_remaining_true_with_workspace_overages() {
             model.bonus_grants.clear();
 
             assert!(
-                model.has_any_ai_remaining(ctx),
+                model.has_any_ai_remaining(&TeamlessScopeForTest, ctx),
                 "expected overages to count as remaining AI when standard requests are exhausted",
             );
         });
@@ -732,11 +846,13 @@ fn test_has_any_ai_remaining_true_with_workspace_bonus_credits() {
                 user_facing_message: None,
                 request_credits_granted: 5,
                 request_credits_remaining: 5,
+                usage_cents_granted: None,
+                usage_cents_remaining: None,
                 scope: BonusGrantScope::Workspace(uid),
             }];
 
             assert!(
-                model.has_any_ai_remaining(ctx),
+                model.has_any_ai_remaining(&TeamlessScopeForTest, ctx),
                 "expected has_any_ai_remaining to be true when workspace bonus credits exist",
             );
         });
@@ -761,6 +877,8 @@ fn test_total_workspace_and_team_bonus_credits_counts_both_scopes() {
                 user_facing_message: None,
                 request_credits_granted: remaining,
                 request_credits_remaining: remaining,
+                usage_cents_granted: None,
+                usage_cents_remaining: None,
                 scope,
             };
             model.bonus_grants = vec![
@@ -775,6 +893,115 @@ fn test_total_workspace_and_team_bonus_credits_counts_both_scopes() {
                 18
             );
             assert_eq!(model.total_user_interactive_bonus_credits_remaining(), 5);
+        });
+    });
+}
+
+#[test]
+fn test_bonus_usage_cents_remaining_sums_grants_with_dollar_values() {
+    App::test((), |mut app| async move {
+        let (uid, workspace) = create_test_workspace();
+        add_user_workspaces_with_workspace(&mut app, workspace);
+        let request_usage_model = add_request_usage_model(&mut app);
+
+        request_usage_model.update(&mut app, |model, _ctx| {
+            let make = |scope, grant_type, remaining, usage_cents_remaining| BonusGrant {
+                created_at: Utc::now(),
+                cost_cents: 0,
+                expiration: None,
+                grant_type,
+                reason: "test".to_string(),
+                user_facing_message: None,
+                request_credits_granted: remaining,
+                request_credits_remaining: remaining,
+                usage_cents_granted: usage_cents_remaining,
+                usage_cents_remaining,
+                scope,
+            };
+            // The sums report the server-supplied cents regardless of the billing unit; the
+            // tier decides whether a surface shows them.
+            model.request_limit_info = RequestLimitInfo::new_for_test(10, 0);
+            model.bonus_grants = vec![
+                make(BonusGrantScope::User, BonusGrantType::Any, 5, Some(9.0)),
+                make(
+                    BonusGrantScope::User,
+                    BonusGrantType::AmbientOnly,
+                    100,
+                    Some(180.0),
+                ),
+                make(
+                    BonusGrantScope::Team(uid),
+                    BonusGrantType::Any,
+                    7,
+                    Some(12.5),
+                ),
+                make(
+                    BonusGrantScope::Workspace(uid),
+                    BonusGrantType::Any,
+                    11,
+                    Some(19.75),
+                ),
+            ];
+
+            assert_eq!(
+                model.total_workspace_and_team_bonus_usage_cents_remaining(uid),
+                Some(32.25)
+            );
+            assert_eq!(
+                model.total_user_interactive_bonus_usage_cents_remaining(),
+                Some(9.0)
+            );
+            assert_eq!(model.ambient_only_usage_cents_remaining(), Some(180.0));
+
+            // A grant without a dollar value makes its total fall back to credits.
+            model.bonus_grants.push(make(
+                BonusGrantScope::Team(uid),
+                BonusGrantType::Any,
+                3,
+                None,
+            ));
+            model.bonus_grants.push(make(
+                BonusGrantScope::User,
+                BonusGrantType::AmbientOnly,
+                3,
+                None,
+            ));
+            assert_eq!(
+                model.total_workspace_and_team_bonus_usage_cents_remaining(uid),
+                None
+            );
+            assert_eq!(
+                model.total_workspace_and_team_bonus_credits_remaining(uid),
+                21
+            );
+            assert_eq!(model.ambient_only_usage_cents_remaining(), None);
+            assert_eq!(model.ambient_only_credits_remaining(), Some(103));
+        });
+    });
+}
+
+#[test]
+fn test_bonus_usage_cents_remaining_without_grants() {
+    App::test((), |mut app| async move {
+        let (uid, workspace) = create_test_workspace();
+        add_user_workspaces_with_workspace(&mut app, workspace);
+        let request_usage_model = add_request_usage_model(&mut app);
+
+        request_usage_model.update(&mut app, |model, _ctx| {
+            model.bonus_grants.clear();
+
+            // An empty pool is a known zero-dollar balance, while "no ambient grants" stays
+            // unknown like its credit counterpart.
+            assert_eq!(
+                model.total_workspace_and_team_bonus_usage_cents_remaining(uid),
+                Some(0.0)
+            );
+            assert_eq!(
+                model.total_user_interactive_bonus_usage_cents_remaining(),
+                Some(0.0)
+            );
+            assert_eq!(model.ambient_only_usage_cents_remaining(), None);
+            assert_eq!(model.ambient_only_credits_remaining(), None);
         });
     });
 }
@@ -799,7 +1026,7 @@ fn test_has_any_ai_remaining_true_with_payg_enabled() {
             model.bonus_grants.clear();
 
             assert!(
-                model.has_any_ai_remaining(ctx),
+                model.has_any_ai_remaining(&TeamlessScopeForTest, ctx),
                 "expected has_any_ai_remaining to be true when pay-as-you-go is enabled",
             );
         });
@@ -827,7 +1054,7 @@ fn test_has_any_ai_remaining_true_with_enterprise_auto_reload() {
             model.bonus_grants.clear();
 
             assert!(
-                model.has_any_ai_remaining(ctx),
+                model.has_any_ai_remaining(&TeamlessScopeForTest, ctx),
                 "expected has_any_ai_remaining to be true when enterprise auto-reload is enabled",
             );
         });
@@ -852,7 +1079,7 @@ fn test_has_any_ai_remaining_false_with_enterprise_auto_reload_policy_on_non_ent
             model.bonus_grants.clear();
 
             assert!(
-                !model.has_any_ai_remaining(ctx),
+                !model.has_any_ai_remaining(&TeamlessScopeForTest, ctx),
                 "expected has_any_ai_remaining to be false when enterprise auto-reload policy is enabled for a non-enterprise workspace",
             );
         });
@@ -878,7 +1105,7 @@ fn test_has_any_ai_remaining_true_with_self_serve_auto_reload() {
             model.bonus_grants.clear();
 
             assert!(
-                model.has_any_ai_remaining(ctx),
+                model.has_any_ai_remaining(&TeamlessScopeForTest, ctx),
                 "expected has_any_ai_remaining to be true when self-serve auto-reload is enabled",
             );
         });
@@ -904,7 +1131,7 @@ fn test_has_any_ai_remaining_true_with_premium_auto_reload() {
             model.bonus_grants.clear();
 
             assert!(
-                model.has_any_ai_remaining(ctx),
+                model.has_any_ai_remaining(&TeamlessScopeForTest, ctx),
                 "expected has_any_ai_remaining to be true when premium-plan auto-reload is enabled",
             );
         });
@@ -937,7 +1164,7 @@ fn test_has_any_ai_remaining_false_when_premium_auto_reload_would_exceed_limit()
             model.bonus_grants.clear();
 
             assert!(
-                !model.has_any_ai_remaining(ctx),
+                !model.has_any_ai_remaining(&TeamlessScopeForTest, ctx),
                 "expected has_any_ai_remaining to be false when the premium-priced reload would exceed the monthly spend limit",
             );
         });
@@ -965,7 +1192,7 @@ fn test_has_any_ai_remaining_true_with_self_serve_auto_reload_and_billing_v2_dis
             model.bonus_grants.clear();
 
             assert!(
-                model.has_any_ai_remaining(ctx),
+                model.has_any_ai_remaining(&TeamlessScopeForTest, ctx),
                 "expected has_any_ai_remaining to be true when self-serve auto-reload is enabled without Billing and Usage V2",
             );
         });
@@ -996,7 +1223,7 @@ fn test_has_any_ai_remaining_false_with_add_on_credits_policy_when_purchase_woul
             model.bonus_grants.clear();
 
             assert!(
-                !model.has_any_ai_remaining(ctx),
+                !model.has_any_ai_remaining(&TeamlessScopeForTest, ctx),
                 "expected has_any_ai_remaining to be false when add-on credit purchase would exceed the monthly spend limit",
             );
         });
@@ -1018,7 +1245,7 @@ fn test_has_any_ai_remaining_false_with_workspace_no_pricing_no_overages_no_cred
             model.bonus_grants.clear();
 
             assert!(
-                !model.has_any_ai_remaining(ctx),
+                !model.has_any_ai_remaining(&TeamlessScopeForTest, ctx),
                 "expected has_any_ai_remaining to be false with no pricing, no overages, no credits",
             );
         });
@@ -1049,7 +1276,7 @@ fn test_has_any_ai_remaining_false_both_payg_and_autoreload_disabled() {
             model.bonus_grants.clear();
 
             assert!(
-                !model.has_any_ai_remaining(ctx),
+                !model.has_any_ai_remaining(&TeamlessScopeForTest, ctx),
                 "expected has_any_ai_remaining to be false with policies but payg and auto-reload disabled",
             );
         });
@@ -1077,7 +1304,7 @@ fn test_has_any_ai_remaining_true_with_byok_enabled_and_key_provided() {
             model.bonus_grants.clear();
 
             assert!(
-                model.has_any_ai_remaining(ctx),
+                model.has_any_ai_remaining(&TeamlessScopeForTest, ctx),
                 "expected has_any_ai_remaining to be true when BYOK is enabled and a key is provided",
             );
         });
@@ -1101,7 +1328,7 @@ fn test_has_any_ai_remaining_false_with_byok_enabled_but_no_key() {
             model.bonus_grants.clear();
 
             assert!(
-                !model.has_any_ai_remaining(ctx),
+                !model.has_any_ai_remaining(&TeamlessScopeForTest, ctx),
                 "expected has_any_ai_remaining to be false when BYOK is enabled but no key is provided",
             );
         });
@@ -1137,7 +1364,7 @@ fn test_has_any_ai_remaining_true_with_grok_subscription_connected() {
             model.bonus_grants.clear();
 
             assert!(
-                model.has_any_ai_remaining(ctx),
+                model.has_any_ai_remaining(&TeamlessScopeForTest, ctx),
                 "expected has_any_ai_remaining to be true when a Grok subscription is connected and BYO is enabled",
             );
         });
@@ -1169,7 +1396,7 @@ fn test_has_any_ai_remaining_false_with_grok_subscription_but_byo_disabled() {
             model.bonus_grants.clear();
 
             assert!(
-                !model.has_any_ai_remaining(ctx),
+                !model.has_any_ai_remaining(&TeamlessScopeForTest, ctx),
                 "expected has_any_ai_remaining to be false when a Grok subscription is connected but BYO is disabled",
             );
         });
@@ -1195,7 +1422,7 @@ fn test_has_any_ai_remaining_true_with_byo_key_and_no_workspace() {
             model.bonus_grants.clear();
 
             assert!(
-                model.has_any_ai_remaining(ctx),
+                model.has_any_ai_remaining(&TeamlessScopeForTest, ctx),
                 "expected has_any_ai_remaining to be true when user has a BYO key but no workspace",
             );
         });
@@ -1226,7 +1453,7 @@ fn test_byo_api_key_disabled_for_anonymous_firebase_user() {
             model.bonus_grants.clear();
 
             assert!(
-                !model.has_any_ai_remaining(ctx),
+                !model.has_any_ai_remaining(&TeamlessScopeForTest, ctx),
                 "expected has_any_ai_remaining to be false for anonymous Firebase user even with BYO key and SoloUserByok enabled",
             );
         });
@@ -1253,11 +1480,13 @@ fn test_has_any_ai_remaining_false_with_only_ambient_bonus_credits() {
                 user_facing_message: None,
                 request_credits_granted: 1000,
                 request_credits_remaining: 1000,
+                usage_cents_granted: None,
+                usage_cents_remaining: None,
                 scope: BonusGrantScope::User,
             }];
 
             assert!(
-                !model.has_any_ai_remaining(ctx),
+                !model.has_any_ai_remaining(&TeamlessScopeForTest, ctx),
                 "expected has_any_ai_remaining to be false when only ambient-only bonus credits exist",
             );
         });
@@ -1273,7 +1502,7 @@ fn test_server_availability_overrides_locally_derived_state() {
         request_usage_model.update(&mut app, |model, ctx| {
             // Local state says AI is available.
             model.request_limit_info = RequestLimitInfo::new_for_test(10, 5);
-            assert!(model.has_any_ai_remaining(ctx));
+            assert!(model.has_any_ai_remaining(&TeamlessScopeForTest, ctx));
 
             // The server-authoritative decision wins over local state.
             model.apply_server_availability(
@@ -1282,7 +1511,7 @@ fn test_server_availability_overrides_locally_derived_state() {
                 )),
                 ctx,
             );
-            assert!(!model.has_any_ai_remaining(ctx));
+            assert!(!model.has_any_ai_remaining(&TeamlessScopeForTest, ctx));
 
             // And in the other direction: local state is exhausted, but the
             // server reports a usable fallback source.
@@ -1293,7 +1522,7 @@ fn test_server_availability_overrides_locally_derived_state() {
                 ))),
                 ctx,
             );
-            assert!(model.has_any_ai_remaining(ctx));
+            assert!(model.has_any_ai_remaining(&TeamlessScopeForTest, ctx));
         });
     });
 }
@@ -1317,7 +1546,7 @@ fn test_availability_refresh_failure_keeps_last_known_good() {
             // recorded but neither flips availability nor re-enables the
             // pre-server-decision fallback.
             assert_eq!(model.server_availability(), Some(denied));
-            assert!(!model.has_any_ai_remaining(ctx));
+            assert!(!model.has_any_ai_remaining(&TeamlessScopeForTest, ctx));
             assert_eq!(
                 model.server_availability.last_error.as_deref(),
                 Some("transient failure")
@@ -1339,7 +1568,7 @@ fn test_availability_refresh_failure_before_first_success_uses_prefetch_fallback
             // Without any successful fetch (e.g. server doesn't support the
             // field yet), the pre-server-decision fallback still applies.
             assert_eq!(model.server_availability(), None);
-            assert!(model.has_any_ai_remaining(ctx));
+            assert!(model.has_any_ai_remaining(&TeamlessScopeForTest, ctx));
         });
     });
 }
@@ -1358,13 +1587,13 @@ fn test_reset_server_availability_restores_prefetch_fallback() {
                 )),
                 ctx,
             );
-            assert!(!model.has_any_ai_remaining(ctx));
+            assert!(!model.has_any_ai_remaining(&TeamlessScopeForTest, ctx));
 
             // On logout the server decision is cleared and the pre-server-decision
             // fallback is restored for the next principal.
             model.reset_server_availability(ctx);
             assert_eq!(model.server_availability(), None);
-            assert!(model.has_any_ai_remaining(ctx));
+            assert!(model.has_any_ai_remaining(&TeamlessScopeForTest, ctx));
         });
     });
 }
@@ -1390,7 +1619,7 @@ fn test_out_of_credits_refined_by_local_byo_key() {
                 ctx,
             );
             assert!(
-                !model.has_any_ai_remaining(ctx),
+                !model.has_any_ai_remaining(&TeamlessScopeForTest, ctx),
                 "out of credits without a stored key should gate AI",
             );
         });
@@ -1401,13 +1630,57 @@ fn test_out_of_credits_refined_by_local_byo_key() {
         });
         request_usage_model.read(&app, |model, ctx| {
             assert!(
-                model.has_any_ai_remaining(ctx),
+                model.has_any_ai_remaining(&TeamlessScopeForTest, ctx),
                 "out of credits with a stored key should permit AI",
             );
         });
     });
 }
 
+#[test]
+fn test_out_of_credits_with_local_byo_key_respects_each_teams_policy() {
+    App::test((), |mut app| async move {
+        let (_uid, mut workspace) = create_test_workspace();
+        workspace.billing_metadata.tier.byo_api_key_policy =
+            Some(ByoApiKeyPolicy { enabled: true });
+        workspace.billing_metadata.tier.managed_byok_byoe_policy =
+            Some(ManagedByokByoePolicy { enabled: true });
+        let mut permissive_team = create_test_team(1);
+        permissive_team.settings.team_byo = Some(TeamByoSettings {
+            first_party_enabled: true,
+            allow_user_keys: true,
+            ..Default::default()
+        });
+        let mut restrictive_team = create_test_team(2);
+        restrictive_team.settings.team_byo = Some(TeamByoSettings {
+            first_party_enabled: true,
+            allow_user_keys: false,
+            ..Default::default()
+        });
+        workspace.teams = vec![permissive_team.clone(), restrictive_team.clone()];
+        add_user_workspaces_with_workspace(&mut app, workspace);
+        let request_usage_model = add_request_usage_model(&mut app);
+
+        ApiKeyManager::handle(&app).update(&mut app, |manager, ctx| {
+            manager.set_provider_key(LLMProvider::OpenAI, Some("test-key".to_string()), ctx);
+        });
+        request_usage_model.update(&mut app, |model, ctx| {
+            model.apply_server_availability(
+                Ok(AICreditAvailability::unavailable(
+                    AICreditDenialReason::OutOfCredits,
+                )),
+                ctx,
+            );
+        });
+
+        request_usage_model.read(&app, |model, ctx| {
+            let permissive_scope = TeamContextForOperation::new_for_test(permissive_team.uid);
+            let restrictive_scope = TeamContextForOperation::new_for_test(restrictive_team.uid);
+            assert!(model.has_any_ai_remaining(&permissive_scope, ctx));
+            assert!(!model.has_any_ai_remaining(&restrictive_scope, ctx));
+        });
+    });
+}
 #[test]
 fn test_out_of_credits_refined_by_local_bedrock_credentials() {
     App::test((), |mut app| async move {
@@ -1434,7 +1707,7 @@ fn test_out_of_credits_refined_by_local_bedrock_credentials() {
                 )),
                 ctx,
             );
-            assert!(!model.has_any_ai_remaining(ctx));
+            assert!(!model.has_any_ai_remaining(&TeamlessScopeForTest, ctx));
         });
 
         ApiKeyManager::handle(&app).update(&mut app, |manager, ctx| {
@@ -1452,11 +1725,61 @@ fn test_out_of_credits_refined_by_local_bedrock_credentials() {
             );
         });
         request_usage_model.read(&app, |model, ctx| {
-            assert!(model.has_any_ai_remaining(ctx));
+            assert!(model.has_any_ai_remaining(&TeamlessScopeForTest, ctx));
         });
     });
 }
 
+#[test]
+fn test_out_of_credits_with_loaded_bedrock_credentials_respects_each_teams_policy() {
+    App::test((), |mut app| async move {
+        let (_uid, mut workspace) = create_test_workspace();
+        let mut enabled_team = create_test_team(1);
+        enabled_team.settings.llm_settings.enabled = true;
+        enabled_team.settings.llm_settings.host_configs.insert(
+            crate::ai::llms::LLMModelHost::AwsBedrock,
+            LlmHostSettings {
+                enabled: true,
+                enablement_setting: HostEnablementSetting::Enforce,
+                ..Default::default()
+            },
+        );
+        let disabled_team = create_test_team(2);
+        workspace.teams = vec![enabled_team.clone(), disabled_team.clone()];
+        add_user_workspaces_with_workspace(&mut app, workspace);
+        let request_usage_model = add_request_usage_model(&mut app);
+
+        ApiKeyManager::handle(&app).update(&mut app, |manager, ctx| {
+            manager.set_aws_credentials_state(
+                AwsCredentialsState::Loaded {
+                    credentials: AwsCredentials::new(
+                        "access".to_string(),
+                        "secret".to_string(),
+                        None,
+                        None,
+                    ),
+                    loaded_at: SystemTime::now(),
+                },
+                ctx,
+            );
+        });
+        request_usage_model.update(&mut app, |model, ctx| {
+            model.apply_server_availability(
+                Ok(AICreditAvailability::unavailable(
+                    AICreditDenialReason::OutOfCredits,
+                )),
+                ctx,
+            );
+        });
+
+        request_usage_model.read(&app, |model, ctx| {
+            let enabled_scope = TeamContextForOperation::new_for_test(enabled_team.uid);
+            let disabled_scope = TeamContextForOperation::new_for_test(disabled_team.uid);
+            assert!(model.has_any_ai_remaining(&enabled_scope, ctx));
+            assert!(!model.has_any_ai_remaining(&disabled_scope, ctx));
+        });
+    });
+}
 #[test]
 fn test_server_managed_availability_trusted_without_local_keys() {
     App::test((), |mut app| async move {
@@ -1472,7 +1795,7 @@ fn test_server_managed_availability_trusted_without_local_keys() {
                 Ok(AICreditAvailability::available_with_source(None)),
                 ctx,
             );
-            assert!(model.has_any_ai_remaining(ctx));
+            assert!(model.has_any_ai_remaining(&TeamlessScopeForTest, ctx));
         });
     });
 }
@@ -1499,7 +1822,7 @@ fn test_server_unavailable_overrides_local_byo_key() {
                 )),
                 ctx,
             );
-            assert!(!model.has_any_ai_remaining(ctx));
+            assert!(!model.has_any_ai_remaining(&TeamlessScopeForTest, ctx));
         });
     });
 }

@@ -21,6 +21,7 @@ misc-node-installed-badge = Installed
 misc-cycle-suggestions = Cycle suggestions
 misc-mermaid-rendering = Rendering Mermaid diagram…
 misc-no-images = No images
+misc-image-load-failed = Failed to load image
 misc-loading = Loading...
 
 # Notebook menus
