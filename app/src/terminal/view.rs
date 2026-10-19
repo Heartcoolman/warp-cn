@@ -223,8 +223,7 @@ use crate::ai::agent::{
 use crate::ai::agent::{CurrentHead, DiffBase};
 use crate::ai::agent_conversations_model::{AgentConversationsModel, AgentConversationsModelEvent};
 use crate::ai::ambient_agents::{
-    AmbientAgentTask, AmbientAgentTaskId, AmbientConversationStatus,
-    conversation_output_status_from_conversation,
+    AmbientAgentTaskId, AmbientConversationStatus, conversation_output_status_from_conversation,
 };
 use crate::ai::blocklist::agent_view::agent_input_footer::toolbar_item::AgentToolbarItemKind;
 use crate::ai::blocklist::agent_view::orchestration_conversation_links::pane_group_id_containing_terminal_view;
@@ -269,15 +268,15 @@ use crate::ai::blocklist::{
     BlocklistAIActionEvent, BlocklistAIActionModel, BlocklistAIContextEvent,
     BlocklistAIContextModel, BlocklistAIController, BlocklistAIControllerEvent,
     BlocklistAIHistoryEvent, BlocklistAIHistoryModel, BlocklistAIInputEvent, BlocklistAIInputModel,
-    ClientIdentifiers, ConversationSelection, ConversationStatusUpdate, InputConfig, InputType,
-    InputTypeAutoDetectionSource, LegacyPassiveSuggestionsEvent, LegacyPassiveSuggestionsModel,
-    MaaPassiveSuggestionsEvent, MaaPassiveSuggestionsModel, PRE_REWIND_PREFIX,
-    PassiveSuggestionsModels, PendingAttachment, PendingQueryState, QueuedQuery, QueuedQueryId,
-    QueuedQueryModel, QueuedQueryOrigin, RequestFileEditsFormatKind, ShellCommandExecutor,
-    ShellCommandExecutorEvent, ShellRecoveryResult, SlashCommandRequest, StartAgentExecutor,
-    StartAgentExecutorEvent, StartAgentRequest, ai_brand_color, block_context_from_terminal_model,
-    get_ai_block_overflow_menu_element_position_id, get_attached_blocks_chip_element_position_id,
-    is_lrc_auto_queue_active,
+    CancellationRoute, ClientIdentifiers, ConversationSelection, ConversationStatusUpdate,
+    InputConfig, InputType, InputTypeAutoDetectionSource, LegacyPassiveSuggestionsEvent,
+    LegacyPassiveSuggestionsModel, MaaPassiveSuggestionsEvent, MaaPassiveSuggestionsModel,
+    PRE_REWIND_PREFIX, PassiveSuggestionsModels, PendingAttachment, PendingQueryState, QueuedQuery,
+    QueuedQueryId, QueuedQueryModel, QueuedQueryOrigin, RequestFileEditsFormatKind,
+    ShellCommandExecutor, ShellCommandExecutorEvent, ShellRecoveryResult, SlashCommandRequest,
+    StartAgentExecutor, StartAgentExecutorEvent, StartAgentRequest, ai_brand_color,
+    block_context_from_terminal_model, get_ai_block_overflow_menu_element_position_id,
+    get_attached_blocks_chip_element_position_id, is_lrc_auto_queue_active,
 };
 use crate::ai::conversation_details_panel::ConversationDetailsPanelEvent;
 use crate::ai::conversation_utils;
@@ -2097,12 +2096,6 @@ pub enum Event {
     /// The pane group swaps visibility instead of cloning the conversation.
     SwapPaneToConversation {
         conversation_id: AIConversationId,
-    },
-    /// Carries the fetched task snapshot so pane construction uses the same
-    /// current-state materialization decision as pill-click restoration.
-    EnsureUnifiedViewerChildPane {
-        conversation_id: AIConversationId,
-        task: Box<AmbientAgentTask>,
     },
     /// A unified-stack child viewer could not join its dedicated live
     /// execution session. The pane group keeps the child passive and
@@ -9202,13 +9195,18 @@ impl TerminalView {
             .as_ref(ctx)
             .has_active_stream_for_conversation(conversation_id, ctx);
 
-        self.ai_controller.update(ctx, |controller, ctx| {
-            controller.cancel_conversation_progress(
+        let route = self.ai_controller.update(ctx, |controller, ctx| {
+            controller.cancel_conversation_progress_routed(
                 conversation_id,
                 CancellationReason::ManuallyCancelled,
                 ctx,
-            );
+            )
         });
+        // An external harness interrupts its own agent's turn and settles the conversation's
+        // status itself; a Ctrl-C to the PTY would kill the agent instead.
+        if route == CancellationRoute::ExternalHarness {
+            return;
+        }
 
         let visible_conversation_id = self
             .agent_view_controller
@@ -9255,19 +9253,22 @@ impl TerminalView {
     /// Handles a shared-session cancel control action (a viewer's stop or a server-side steering
     /// interrupt) for the live conversation bound to `server_conversation_token`. The conversation
     /// is stopped the same way a local stop is, so an in-flight agent command is interrupted along
-    /// with the turn rather than left running to completion.
+    /// with the turn rather than left running to completion. Returns `false` when the token names
+    /// no live, unfinished conversation, in which case nothing was cancelled.
     #[cfg(feature = "local_tty")]
     pub(crate) fn handle_shared_session_cancel_action(
         &mut self,
         server_conversation_token: SessionSharingServerConversationToken,
         ctx: &mut ViewContext<Self>,
-    ) {
+    ) -> bool {
         let conversation_id = self.ai_controller.update(ctx, |controller, ctx| {
             controller.conversation_for_shared_session_cancel_action(server_conversation_token, ctx)
         });
-        if let Some(conversation_id) = conversation_id {
-            self.stop_local_agent_conversation(conversation_id, ctx);
-        }
+        let Some(conversation_id) = conversation_id else {
+            return false;
+        };
+        self.stop_local_agent_conversation(conversation_id, ctx);
+        true
     }
 
     fn user_write_ctrl_c_to_pty(&mut self, ctx: &mut ViewContext<Self>) {
@@ -24069,6 +24070,7 @@ impl TerminalView {
         };
 
         let request = RunAgentsRequest {
+            metadata: Default::default(),
             summary: summary.clone(),
             base_prompt: "Shared instructions for every child agent.".to_owned(),
             skills: vec![],
@@ -24078,6 +24080,7 @@ impl TerminalView {
             agent_run_configs: agent_names
                 .into_iter()
                 .map(|name| RunAgentsAgentRunConfig {
+                    metadata: Default::default(),
                     name,
                     prompt: "Do the work.".to_owned(),
                     title: String::new(),
@@ -24104,7 +24107,7 @@ impl TerminalView {
                     AIAgentAction {
                         id: AIAgentActionId::from("fake-run-agents-action-id".to_owned()),
                         task_id: TaskId::new("fake-task-id".to_owned()),
-                        action: AIAgentActionType::RunAgents(request),
+                        action: AIAgentActionType::RunAgents(Box::new(request)),
                         requires_result: true,
                     },
                 ),

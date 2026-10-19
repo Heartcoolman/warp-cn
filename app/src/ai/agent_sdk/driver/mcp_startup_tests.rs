@@ -14,16 +14,21 @@ use instant::Instant;
 use uuid::Uuid;
 use warp_cli::mcp::MCPSpec;
 use warp_core::channel::ChannelState;
+use warp_core::execution_mode::{AppExecutionMode, ExecutionMode};
 use warp_core::features::FeatureFlag;
 use warp_graphql::mutations::create_managed_mcp_client_config::{
     CreateManagedMcpClientConfigOutput, ManagedMcpTransportKind,
 };
 use warp_graphql::response_context::ResponseContext;
 use warp_managed_secrets::ManagedSecretValue;
+use warp_server_client::base_client::{AMBIENT_WORKLOAD_TOKEN_HEADER, CLOUD_AGENT_ID_HEADER};
 use warpui::r#async::{FutureExt as _, Timer};
 use warpui::{App, ModelContext, ModelHandle, SingletonEntity as _};
 
-use super::{AgentDriver, AgentDriverError, MANAGED_MCP_RESOLVE_MAX_ATTEMPTS};
+use super::{
+    AgentDriver, AgentDriverError, MANAGED_MCP_RESOLVE_MAX_ATTEMPTS, McpStartupMode,
+    attach_builtin_mcp_servers,
+};
 use crate::ai::agent_sdk::driver::environment::WorkspaceConfiguration;
 use crate::ai::agent_sdk::driver::harness::HarnessKind;
 use crate::ai::agent_sdk::driver::terminal::TerminalDriver;
@@ -32,7 +37,9 @@ use crate::ai::agent_sdk::setup_observability::{SetupClientEventReporter, SetupS
 use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::cloud_environments::AmbientAgentEnvironment;
 use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
-use crate::ai::mcp::builtin::{FACTORY_MCP_INSTALLATION_UUID, FACTORY_MCP_SERVER_NAME};
+use crate::ai::mcp::builtin::{
+    FACTORY_MCP_INSTALLATION_UUID, FACTORY_MCP_SERVER_NAME, PREVIEW_URLS_MCP_SERVER_NAME,
+};
 use crate::ai::mcp::file_based_manager::{FileBasedMCPManager, FileBasedMCPManagerEvent};
 use crate::ai::mcp::file_mcp_watcher::PendingScan;
 use crate::ai::mcp::parsing::normalize_mcp_json;
@@ -145,8 +152,53 @@ fn test_normalize_sse_server_with_headers() {
 
 #[test]
 #[serial_test::serial]
+fn resolve_mcp_specs_to_json_skips_preview_urls_without_ambient_task() {
+    let _factory_flag = FeatureFlag::FactoryMcp.override_enabled(true);
+    let _preview_flag = FeatureFlag::PreviewUrlsMcp.override_enabled(true);
+
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        app.update(|ctx| {
+            AuthStateProvider::as_ref(ctx)
+                .get()
+                .set_credentials(Some(api_key_credentials()));
+        });
+        let driver_handle = setup_agent_driver(&mut app);
+        let foreground = driver_handle.update(&mut app, |_, ctx| ctx.spawner());
+
+        let resolved = AgentDriver::resolve_mcp_specs_to_json(
+            &[],
+            Arc::new(HashMap::new()),
+            Arc::new(MockManagedMcpClient::new()),
+            &foreground,
+        )
+        .await
+        .unwrap();
+
+        let server_root = ChannelState::server_root_url();
+        assert_eq!(
+            resolved,
+            HashMap::from([(
+                FACTORY_MCP_SERVER_NAME.to_string(),
+                JSONMCPServer {
+                    transport_type: JSONTransportType::SSEServer {
+                        url: format!("{server_root}/api/v1/mcp/factory"),
+                        headers: HashMap::from([(
+                            "Authorization".to_string(),
+                            "Bearer wk-test-key".to_string(),
+                        )]),
+                    },
+                },
+            )])
+        );
+    });
+}
+
+#[test]
+#[serial_test::serial]
 fn resolve_mcp_specs_to_json_attaches_factory_and_preserves_explicit_specs() {
     let _flag = FeatureFlag::FactoryMcp.override_enabled(true);
+    let _preview_flag = FeatureFlag::PreviewUrlsMcp.override_enabled(false);
 
     App::test((), |mut app| async move {
         initialize_app_for_terminal_view(&mut app);
@@ -810,6 +862,71 @@ fn builtin_factory_mcp_for_oz_uses_stable_installation() {
 
 #[test]
 #[serial_test::serial]
+fn builtin_mcp_servers_are_deferred_only_for_standby() {
+    let _factory_flag = FeatureFlag::FactoryMcp.override_enabled(true);
+    let _preview_flag = FeatureFlag::PreviewUrlsMcp.override_enabled(true);
+
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        // The driver only hosts built-ins outside an interactive client, where
+        // `TemplatableMCPServerManager::sync_builtin_servers` owns them instead.
+        let sdk_mode = app.add_model(|ctx| AppExecutionMode::new(ExecutionMode::Sdk, true, ctx));
+        AppExecutionMode::handle(&app).update(&mut app, |mode, ctx| {
+            *mode = sdk_mode.as_ref(ctx).clone();
+        });
+        app.update(|ctx| {
+            AuthStateProvider::as_ref(ctx)
+                .get()
+                .set_credentials(Some(api_key_credentials()));
+            // Use a fixed token so the host's workload credentials cannot change the test result.
+            ServerApiProvider::as_ref(ctx)
+                .get()
+                .set_ambient_workload_token_for_test("test-workload-token".to_string(), None);
+        });
+        let driver_handle = setup_agent_driver(&mut app);
+        let foreground = driver_handle.update(&mut app, |_, ctx| ctx.spawner());
+
+        let task_id: AmbientAgentTaskId = "550e8400-e29b-41d4-a716-446655440014".parse().unwrap();
+        for (task_id, expected_names) in [
+            (None, vec![FACTORY_MCP_SERVER_NAME]),
+            (
+                Some(task_id),
+                vec![FACTORY_MCP_SERVER_NAME, PREVIEW_URLS_MCP_SERVER_NAME],
+            ),
+        ] {
+            let mut installations = Vec::new();
+            attach_builtin_mcp_servers(
+                McpStartupMode::Standby,
+                task_id,
+                &[],
+                &mut installations,
+                &foreground,
+            )
+            .await
+            .unwrap();
+            assert!(installations.is_empty());
+            attach_builtin_mcp_servers(
+                McpStartupMode::Run,
+                task_id,
+                &[],
+                &mut installations,
+                &foreground,
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                installations
+                    .iter()
+                    .map(|installation| installation.templatable_mcp_server().name.as_str())
+                    .collect::<Vec<_>>(),
+                expected_names
+            );
+        }
+    });
+}
+
+#[test]
+#[serial_test::serial]
 fn builtin_factory_mcp_for_oz_skips_without_flag_or_credentials() {
     let flag = FeatureFlag::FactoryMcp.override_enabled(false);
     assert!(
@@ -837,6 +954,130 @@ fn builtin_factory_mcp_for_oz_preserves_exact_name_collision() {
             Some(&api_key_credentials()),
             &taken_server_names,
             &[]
+        )
+        .is_none()
+    );
+}
+
+#[test]
+#[serial_test::serial]
+fn builtin_preview_urls_mcp_for_oz_attaches_when_eligible() {
+    let _flag = FeatureFlag::PreviewUrlsMcp.override_enabled(true);
+    let ambient_headers = vec![
+        (CLOUD_AGENT_ID_HEADER.to_string(), "task-abc".to_string()),
+        (
+            AMBIENT_WORKLOAD_TOKEN_HEADER.to_string(),
+            "test-workload-token".to_string(),
+        ),
+    ];
+
+    let installation = AgentDriver::builtin_preview_urls_mcp_for_run(
+        Some(&api_key_credentials()),
+        &HashSet::new(),
+        &ambient_headers,
+    )
+    .expect("built-in preview URLs MCP should attach when eligible");
+
+    assert_eq!(
+        installation.templatable_mcp_server().name,
+        PREVIEW_URLS_MCP_SERVER_NAME
+    );
+    let resolved =
+        AgentDriver::mcp_installations_to_json(vec![installation], &HashMap::new()).unwrap();
+    let JSONTransportType::SSEServer { headers, .. } =
+        &resolved[PREVIEW_URLS_MCP_SERVER_NAME].transport_type
+    else {
+        panic!("built-in preview URLs MCP must use HTTP transport");
+    };
+    assert_eq!(
+        headers.get(CLOUD_AGENT_ID_HEADER).map(String::as_str),
+        Some("task-abc")
+    );
+    assert_eq!(
+        headers
+            .get(AMBIENT_WORKLOAD_TOKEN_HEADER)
+            .map(String::as_str),
+        Some("test-workload-token")
+    );
+}
+
+#[test]
+#[serial_test::serial]
+fn builtin_preview_urls_mcp_for_oz_skips_when_flag_disabled() {
+    let _flag = FeatureFlag::PreviewUrlsMcp.override_enabled(false);
+    let ambient_headers = vec![(
+        AMBIENT_WORKLOAD_TOKEN_HEADER.to_string(),
+        "test-workload-token".to_string(),
+    )];
+    assert!(
+        AgentDriver::builtin_preview_urls_mcp_for_run(
+            Some(&api_key_credentials()),
+            &HashSet::new(),
+            &ambient_headers,
+        )
+        .is_none()
+    );
+}
+
+#[test]
+#[serial_test::serial]
+fn builtin_preview_urls_mcp_for_oz_skips_without_credentials() {
+    let _flag = FeatureFlag::PreviewUrlsMcp.override_enabled(true);
+    let ambient_headers = vec![(
+        AMBIENT_WORKLOAD_TOKEN_HEADER.to_string(),
+        "test-workload-token".to_string(),
+    )];
+    assert!(
+        AgentDriver::builtin_preview_urls_mcp_for_run(None, &HashSet::new(), &ambient_headers)
+            .is_none()
+    );
+}
+
+#[test]
+#[serial_test::serial]
+fn builtin_preview_urls_mcp_for_oz_skips_without_workload_token() {
+    let _flag = FeatureFlag::PreviewUrlsMcp.override_enabled(true);
+    let ambient_headers = vec![(CLOUD_AGENT_ID_HEADER.to_string(), "task-abc".to_string())];
+    assert!(
+        AgentDriver::builtin_preview_urls_mcp_for_run(
+            Some(&api_key_credentials()),
+            &HashSet::new(),
+            &ambient_headers,
+        )
+        .is_none()
+    );
+}
+
+#[test]
+#[serial_test::serial]
+fn builtin_preview_urls_mcp_for_oz_skips_with_empty_workload_token() {
+    let _flag = FeatureFlag::PreviewUrlsMcp.override_enabled(true);
+    let ambient_headers = vec![(AMBIENT_WORKLOAD_TOKEN_HEADER.to_string(), String::new())];
+    assert!(
+        AgentDriver::builtin_preview_urls_mcp_for_run(
+            Some(&api_key_credentials()),
+            &HashSet::new(),
+            &ambient_headers,
+        )
+        .is_none()
+    );
+}
+
+#[test]
+#[serial_test::serial]
+fn builtin_preview_urls_mcp_for_oz_preserves_exact_name_collision() {
+    let _flag = FeatureFlag::PreviewUrlsMcp.override_enabled(true);
+    let taken_server_names = HashSet::from([PREVIEW_URLS_MCP_SERVER_NAME.to_string()]);
+    let ambient_headers = vec![(
+        AMBIENT_WORKLOAD_TOKEN_HEADER.to_string(),
+        "test-workload-token".to_string(),
+    )];
+
+    assert!(
+        AgentDriver::builtin_preview_urls_mcp_for_run(
+            Some(&api_key_credentials()),
+            &taken_server_names,
+            &ambient_headers,
         )
         .is_none()
     );

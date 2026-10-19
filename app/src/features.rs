@@ -89,6 +89,8 @@ fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::CloudRunners,
         #[cfg(feature = "cloud_agent_runners")]
         FeatureFlag::CloudAgentRunners,
+        #[cfg(feature = "cloud_agent_execution_config")]
+        FeatureFlag::CloudAgentExecutionConfig,
         #[cfg(feature = "account_first_onboarding")]
         FeatureFlag::AccountFirstOnboarding,
         #[cfg(all(feature = "simulate_github_unauthed", debug_assertions))]
@@ -315,6 +317,8 @@ fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::WellKnownMcpIds,
         #[cfg(feature = "factory_mcp")]
         FeatureFlag::FactoryMcp,
+        #[cfg(feature = "preview_urls_mcp")]
+        FeatureFlag::PreviewUrlsMcp,
         #[cfg(feature = "web_search_ui")]
         FeatureFlag::WebSearchUI,
         #[cfg(feature = "web_fetch_ui")]

@@ -52,18 +52,154 @@ fn write_file(dir: &Path, name: &str, content: &str) {
 }
 
 #[test]
-fn encode_cwd_replaces_slashes_and_dots() {
-    assert_eq!(
-        encode_cwd(Path::new("/Users/ben/src/foo")),
-        "-Users-ben-src-foo"
+fn encode_cwd_matches_claude_project_keys() {
+    for (cwd, expected) in [
+        ("/Users/ben/src/foo", "-Users-ben-src-foo"),
+        ("/", "-"),
+        ("/a/b", "-a-b"),
+        ("/Users/ben/.config/foo", "-Users-ben--config-foo"),
+        ("/a.b/c.d", "-a-b-c-d"),
+        (
+            r"C:\Users\runneradmin\workspace",
+            "C--Users-runneradmin-workspace",
+        ),
+        (
+            "C:/Users/runneradmin/workspace",
+            "C--Users-runneradmin-workspace",
+        ),
+        (r"\\server\share\project", "--server-share-project"),
+        (r"C:\Users\a.b\my_project", "C--Users-a-b-my-project"),
+        ("/Users/ben/my_project", "-Users-ben-my-project"),
+        ("/tmp/my project_@#", "-tmp-my-project---"),
+        ("/tmp/é/项目", "-tmp-----"),
+        ("/tmp/café/😀", "-tmp-caf----"),
+    ] {
+        let encoded = encode_cwd(Path::new(cwd));
+        assert_eq!(encoded, expected, "cwd: {cwd}");
+        assert!(!encoded.contains(['/', '\\', ':', '.']));
+        assert!(!Path::new(&encoded).has_root());
+    }
+}
+
+#[test]
+fn encode_cwd_matches_claude_long_path_hashes() {
+    let prefix = format!("/{}", "a".repeat(199));
+    let expected_prefix = format!("-{}", "a".repeat(199));
+    for (cwd, expected) in [
+        (prefix.clone(), expected_prefix.clone()),
+        (format!("{prefix}a"), format!("{expected_prefix}-b6ymvl")),
+        (format!("{prefix}😀"), format!("{expected_prefix}-86sic5")),
+        (
+            format!("/{}Gjox13", "a".repeat(203)),
+            format!("{expected_prefix}-zik0zk"),
+        ),
+    ] {
+        assert_eq!(encode_cwd(Path::new(&cwd)), expected, "cwd: {cwd}");
+    }
+}
+
+#[test]
+fn capture_reads_literal_windows_claude_layout() {
+    let config = TempDir::new().unwrap();
+    let cwd = Path::new(r"C:\Users\runneradmin\workspace");
+    let session = Uuid::new_v4();
+    let project = config
+        .path()
+        .join("projects")
+        .join("C--Users-runneradmin-workspace");
+    fs::create_dir_all(&project).unwrap();
+    write_file(
+        &project,
+        &format!("{session}.jsonl"),
+        "{\"type\":\"user\"}\n",
     );
-    assert_eq!(encode_cwd(Path::new("/")), "-");
-    assert_eq!(encode_cwd(Path::new("/a/b")), "-a-b");
+    let subagents = project.join(session.to_string()).join("subagents");
+    fs::create_dir_all(&subagents).unwrap();
+    write_file(&subagents, "agent-test.jsonl", "{\"type\":\"assistant\"}\n");
+
+    let (envelope, diagnostics) =
+        read_envelope_with_diagnostics(session, cwd, config.path(), true).unwrap();
+    assert_eq!(envelope.entries, vec![serde_json::json!({"type": "user"})]);
     assert_eq!(
-        encode_cwd(Path::new("/Users/ben/.config/foo")),
-        "-Users-ben--config-foo"
+        envelope.subagents["agent-test"],
+        vec![serde_json::json!({"type": "assistant"})],
     );
-    assert_eq!(encode_cwd(Path::new("/a.b/c.d")), "-a-b-c-d");
+    assert_eq!(envelope.cwd, cwd);
+    assert_eq!(diagnostics.root.status, JsonlReadStatus::Readable);
+}
+
+#[test]
+fn write_envelope_uses_literal_windows_claude_layout() {
+    let config = TempDir::new().unwrap();
+    let cwd = Path::new(r"C:\Users\runneradmin\workspace");
+    let key = encode_cwd(cwd);
+    assert!(!key.contains(['/', '\\', ':', '.']));
+    assert!(!Path::new(&key).has_root());
+    let session = Uuid::new_v4();
+    let envelope = ClaudeTranscriptEnvelope {
+        cwd: cwd.to_path_buf(),
+        uuid: session,
+        claude_version: None,
+        entries: vec![serde_json::json!({"type": "user", "cwd": cwd})],
+        subagents: HashMap::from([(
+            "agent-test".to_owned(),
+            vec![serde_json::json!({"type": "assistant"})],
+        )]),
+        todos: HashMap::new(),
+    };
+
+    write_envelope(&envelope, config.path()).unwrap();
+    let project = config
+        .path()
+        .join("projects")
+        .join("C--Users-runneradmin-workspace");
+    assert_eq!(
+        read_jsonl_capture(&project.join(format!("{session}.jsonl")))
+            .unwrap()
+            .entries,
+        envelope.entries,
+    );
+    assert_eq!(
+        read_jsonl_capture(
+            &project
+                .join(session.to_string())
+                .join("subagents/agent-test.jsonl")
+        )
+        .unwrap()
+        .entries,
+        envelope.subagents["agent-test"],
+    );
+    assert_eq!(envelope.cwd, cwd);
+}
+#[test]
+fn local_continuation_places_windows_files_without_rewriting_cwd() {
+    let config = TempDir::new().unwrap();
+    let storage_cwd = Path::new(r"C:\Users\runneradmin\local_project");
+    let key = encode_cwd(storage_cwd);
+    assert!(!key.contains(['/', '\\', ':', '.']));
+    assert!(!Path::new(&key).has_root());
+    let session = Uuid::new_v4();
+    let cloud_cwd = Path::new(r"C:\cloud\workspace");
+    let envelope = ClaudeTranscriptEnvelope {
+        cwd: cloud_cwd.to_path_buf(),
+        uuid: session,
+        claude_version: None,
+        entries: vec![serde_json::json!({"type": "user", "cwd": cloud_cwd})],
+        subagents: HashMap::new(),
+        todos: HashMap::new(),
+    };
+
+    write_envelope_for_local_continuation(&envelope, storage_cwd, config.path()).unwrap();
+    let session_file = config
+        .path()
+        .join("projects")
+        .join("C--Users-runneradmin-local-project")
+        .join(format!("{session}.jsonl"));
+    assert_eq!(
+        read_jsonl_capture(&session_file).unwrap().entries,
+        envelope.entries
+    );
+    assert_eq!(envelope.cwd, cloud_cwd);
 }
 
 #[test]
@@ -252,12 +388,15 @@ fn rehydrate_claude_transcript_fails_on_cwd_mismatch() {
 #[serial_test::serial]
 fn rehydrate_claude_transcript_succeeds_when_cwd_matches() {
     let config_dir = TempDir::new().unwrap();
+    let cwd = Path::new(r"C:\Users\runneradmin\workspace");
+    let key = encode_cwd(cwd);
+    assert!(!key.contains(['/', '\\', ':', '.']));
+    assert!(!Path::new(&key).has_root());
     let old_config_dir = std::env::var_os("CLAUDE_CONFIG_DIR");
     // SAFETY: `#[serial_test::serial]` ensures no other thread reads or writes the process
     // environment concurrently with this test.
     unsafe { std::env::set_var("CLAUDE_CONFIG_DIR", config_dir.path()) };
 
-    let cwd = Path::new("/matching/cwd");
     let uuid = Uuid::new_v4();
     let mut envelope = ClaudeTranscriptEnvelope {
         cwd: cwd.to_path_buf(),
@@ -274,14 +413,31 @@ fn rehydrate_claude_transcript_succeeds_when_cwd_matches() {
     let session_file = config_dir
         .path()
         .join("projects")
-        .join(encode_cwd(cwd))
+        .join("C--Users-runneradmin-workspace")
         .join(format!("{uuid}.jsonl"));
     assert!(session_file.exists(), "session JSONL missing");
+    assert_eq!(envelope.cwd, cwd);
+    assert_eq!(
+        read_jsonl_capture(&session_file).unwrap().entries,
+        envelope.entries
+    );
 
     let index: serde_json::Value =
         serde_json::from_slice(&fs::read(config_dir.path().join(SESSIONS_INDEX_FILENAME)).unwrap())
             .unwrap();
     assert_eq!(index[uuid.to_string()]["sessionId"], uuid.to_string());
+    assert_eq!(
+        index[uuid.to_string()]["cwd"],
+        cwd.to_string_lossy().as_ref()
+    );
+    assert_eq!(
+        index[uuid.to_string()]["projectPath"],
+        "C--Users-runneradmin-workspace"
+    );
+    assert_eq!(
+        index[uuid.to_string()]["transcriptPath"],
+        format!("projects/C--Users-runneradmin-workspace/{uuid}.jsonl"),
+    );
 
     match old_config_dir {
         // SAFETY: `#[serial_test::serial]` ensures no other thread reads or writes the process

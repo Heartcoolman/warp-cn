@@ -262,12 +262,13 @@ impl HiddenComputerUseArgs {
         }
     }
 }
-const HARNESS_VALUE_VARIANTS: [Harness; 5] = [
+const HARNESS_VALUE_VARIANTS: [Harness; 6] = [
     Harness::Oz,
     Harness::Claude,
     Harness::OpenCode,
     Harness::Gemini,
     Harness::Codex,
+    Harness::Pi,
 ];
 
 /// The execution harness for an agent run.
@@ -285,6 +286,7 @@ pub enum Harness {
     Gemini,
     /// Delegate to the `codex` CLI.
     Codex,
+    Pi,
     /// A harness produced by a newer client/server that this client doesn't
     /// recognize. Surfaced via deserialization fallbacks (e.g. unknown GraphQL
     /// enum values, unknown `harness_type` strings); never selectable from the
@@ -311,6 +313,7 @@ impl ValueEnum for Harness {
                 .help("Delegate to the `opencode` CLI"),
             Harness::Gemini => PossibleValue::new("gemini").help("Delegate to the `gemini` CLI"),
             Harness::Codex => PossibleValue::new("codex").help("Delegate to the `codex` CLI"),
+            Harness::Pi => PossibleValue::new("pi"),
             Harness::Unknown => return None,
         };
         if !self.should_display_in_help_text() {
@@ -329,7 +332,9 @@ impl Harness {
     pub fn parse_local_child_harness(value: &str) -> Option<Self> {
         match Self::parse_orchestration_harness(value) {
             Some(harness @ (Self::Claude | Self::OpenCode | Self::Codex)) => Some(harness),
-            Some(Self::Oz) | Some(Self::Gemini) | Some(Self::Unknown) | None => None,
+            Some(Self::Oz) | Some(Self::Gemini) | Some(Self::Pi) | Some(Self::Unknown) | None => {
+                None
+            }
         }
     }
 
@@ -346,7 +351,7 @@ impl Harness {
     pub fn should_display_in_help_text(self) -> bool {
         match self {
             Self::Oz | Self::Claude | Self::Codex => true,
-            Self::OpenCode | Self::Gemini | Self::Unknown => false,
+            Self::OpenCode | Self::Gemini | Self::Pi | Self::Unknown => false,
         }
     }
 
@@ -357,6 +362,7 @@ impl Harness {
             Self::OpenCode => "OpenCode",
             Self::Gemini => "Gemini CLI",
             Self::Codex => "Codex",
+            Self::Pi => "Pi",
             Self::Unknown => "Unknown",
         }
     }
@@ -375,6 +381,7 @@ impl Harness {
             "opencode" => Some(Harness::OpenCode),
             "gemini" => Some(Harness::Gemini),
             "codex" => Some(Harness::Codex),
+            "pi" => Some(Harness::Pi),
             "unknown" => Some(Harness::Unknown),
             _ => None,
         }
@@ -392,6 +399,7 @@ impl Harness {
             Harness::OpenCode => "opencode",
             Harness::Gemini => "gemini",
             Harness::Codex => "codex",
+            Harness::Pi => "pi",
             Harness::Unknown => "unknown",
         }
     }
@@ -431,6 +439,8 @@ pub enum AgentCommand {
     Run(RunAgentArgs),
     /// Dispatch a cloud agent.
     RunCloud(RunCloudArgs),
+    /// Prepare a pre-warmed sandbox and wait for it to be claimed.
+    RunCloudStandby(RunCloudStandbyArgs),
     /// Manage agent profiles.
     #[command(subcommand)]
     Profile(AgentProfileCommand),
@@ -453,6 +463,7 @@ impl AgentCommand {
         match self {
             AgentCommand::Run(_) => "agent run",
             AgentCommand::RunCloud(_) => "agent run-cloud",
+            AgentCommand::RunCloudStandby(_) => "agent run-cloud-standby",
             AgentCommand::Profile(_) => "agent profile",
             AgentCommand::List(_) => "agent list",
             AgentCommand::Get(_) => "agent get",
@@ -462,6 +473,14 @@ impl AgentCommand {
             AgentCommand::Skills(_) => "agent skills",
         }
     }
+}
+
+/// Identifies the allocated sandbox to prepare without starting an agent task.
+#[derive(Debug, Clone, Args)]
+pub struct RunCloudStandbyArgs {
+    /// UID of the pre-warmed sandbox row this container was allocated for.
+    #[arg(long = "standby-id", value_name = "ID")]
+    pub standby_id: String,
 }
 
 #[derive(Debug, Clone, Args)]

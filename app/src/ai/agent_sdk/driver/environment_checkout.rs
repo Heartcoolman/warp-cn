@@ -112,8 +112,14 @@ async fn run_async(args: &EnvironmentCheckoutArgs) -> anyhow::Result<()> {
     let bytes = fs::read(&args.requests_file)
         .await
         .map_err(|error| sanitized_error("could not read environment checkout requests", error))?;
-    let batch = CheckoutBatch::parse(&bytes)
+    let mut batch = CheckoutBatch::parse(&bytes)
         .map_err(|error| sanitized_error("could not parse environment checkout requests", error))?;
+    super::environment_preparation::resolve_from_environment(
+        &mut batch,
+        args.fail_if_target_exists,
+        args.remove_origins_only,
+    )
+    .map_err(|error| sanitized_error("execution repository preparation rejected", error))?;
     let mirror_root = (!args.remove_origins_only)
         .then(optional_mirror_root)
         .flatten();
@@ -134,6 +140,7 @@ async fn run_async(args: &EnvironmentCheckoutArgs) -> anyhow::Result<()> {
         resolve_heads(&batch, &mut outcomes).await;
     }
     let bytes = serde_json::to_vec(&CheckoutReport {
+        requests: batch.repositories.clone(),
         outcomes,
         identity_diagnostics,
     })?;
@@ -405,6 +412,7 @@ async fn checkout_batch(
             log::info!("Repository {label}: starting checkout");
             let started = Instant::now();
             let mut git = Git::default();
+            let mut resolved_head = None;
             let span = tracing::info_span!(
                 "repository_checkout",
                 tags.cloud_agent = true,
@@ -426,7 +434,36 @@ async fn checkout_batch(
                         fail_if_target_exists,
                         &mut git,
                     )
-                    .await
+                    .await?;
+                    if request.expected_sha.is_some() || fail_if_target_exists {
+                        let head = tokio::time::timeout(
+                            HEAD_CAPTURE_TIMEOUT,
+                            git.run(
+                                "HEAD verification",
+                                &batch.working_dir.join(&request.checkout_name),
+                                &["rev-parse", "--verify", "HEAD"],
+                            ),
+                        )
+                        .await
+                        .map_err(|_| CheckoutFailureKind::VerifyHead)?
+                        .map_err(|_| CheckoutFailureKind::VerifyHead)?;
+                        resolved_head = parse_resolved_head_sha(&head);
+                        if resolved_head.is_none()
+                            || request
+                                .expected_sha
+                                .as_ref()
+                                .is_some_and(|expected| resolved_head.as_ref() != Some(expected))
+                        {
+                            git.record("resolved HEAD does not match expected SHA");
+                            return Err(CheckoutFailureKind::VerifyHead);
+                        }
+                    }
+                    if request.remove_origin {
+                        remove_origin(&batch.working_dir.join(&request.checkout_name), &mut git)
+                            .await
+                            .map_err(|_| CheckoutFailureKind::RemoveOrigin)?;
+                    }
+                    Ok(())
                 }
             }
             .instrument(span.clone())
@@ -446,7 +483,7 @@ async fn checkout_batch(
                 failure: result.err(),
                 diagnostics: git.diagnostics,
                 duration_ms: u64::try_from(duration.as_millis()).unwrap_or(u64::MAX),
-                resolved_head: None,
+                resolved_head,
             });
         }
         outcomes
@@ -641,7 +678,7 @@ async fn checkout(
     if existing {
         return checkout_existing(request, &url, &target, git).await;
     }
-    if let Some(root) = mirror_root {
+    if let Some(root) = mirror_root.filter(|_| request.expected_sha.is_none()) {
         let mirror = root.join(mirror_key(request).as_str());
         if attempt_cached_checkout(request, &url, &target, &mirror, git).await?
             == CachedCheckout::Built

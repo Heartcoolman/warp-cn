@@ -348,10 +348,9 @@ impl PaneContent for TerminalPane {
             } = event
                 && display_mode.is_fullscreen()
             {
-                group.restore_missing_child_agent_panes_for_parent(
+                group.restore_child_agents_for_parent(
                     *conversation_id,
                     terminal_pane_id.into(),
-                    true,
                     ctx,
                 );
             }
@@ -1382,16 +1381,6 @@ fn handle_terminal_view_event(
                     );
                 }
             }
-            Event::EnsureUnifiedViewerChildPane {
-                conversation_id,
-                task,
-            } => {
-                group.materialize_viewer_child_pane_from_task(
-                    *conversation_id,
-                    task.as_ref().clone(),
-                    ctx,
-                );
-            }
             Event::OrchestrationChildSharedSessionJoinFailed {
                 conversation_id,
                 session_id,
@@ -1692,6 +1681,7 @@ fn launch_local_no_harness_child(
         &request.name,
         &request.prompt,
         request.parent_run_id.as_deref(),
+        &request.metadata,
         request_team_scope,
         ctx,
     );
@@ -1829,6 +1819,7 @@ fn launch_local_harness_child(
     let model_id_for_harness_env = model_id.clone();
     let agent_name_for_task = agent_name.clone();
     let request_team_scope = request.request_team_scope;
+    let metadata = request.metadata.clone();
     let _ = ctx.spawn(
         async move {
             prepare_local_harness_child_launch(
@@ -1837,6 +1828,7 @@ fn launch_local_harness_child(
                 model_id_for_harness_env,
                 parent_run_id,
                 agent_name_for_task,
+                metadata,
                 shell_type,
                 startup_directory,
                 ai_client,

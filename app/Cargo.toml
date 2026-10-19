@@ -451,7 +451,7 @@ warp_files = { workspace = true, features = ["test-util"] }
 repo_metadata = { workspace = true, features = ["test-util"] }
 
 [target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
-tokio = { workspace = true, features = ["rt-multi-thread", "macros", "process", "time"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "process", "time", "test-util"] }
 
 [build-dependencies]
 anyhow = "1.0"
@@ -510,6 +510,7 @@ codebase_index_persistence = ["full_source_code_embedding"]
 auggie_codebase_index = []
 well_known_mcp_ids = []
 factory_mcp = []
+preview_urls_mcp = []
 default = [
     "agent_mode",
     "osc_hyperlinks",
@@ -710,6 +711,7 @@ default = [
     "terminal_lifecycle_recovery",
     "cloud_runners",
     "cloud_agent_runners",
+    "cloud_agent_execution_config",
     "file_backed_execution_profiles",
     "well_known_mcp_ids",
     "factory_mcp",
@@ -967,6 +969,7 @@ artifact_command = []
 cloud_environments = []
 cloud_runners = []
 cloud_agent_runners = []
+cloud_agent_execution_config = []
 create_environment_slash_command = []
 summarize_conversation_command = []
 mcp_grouped_server_context = []

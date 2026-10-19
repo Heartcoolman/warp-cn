@@ -18,9 +18,10 @@ use super::super::terminal::{CommandHandle, TerminalDriver};
 use super::super::{AgentDriver, AgentDriverError};
 use super::harness_persistence::{HarnessPersistence, PersistenceOutcome};
 use super::json_utils::{read_json_file_or_default, write_json_file};
+use super::skill_dirs_publish::HarnessSupportSkills;
 use super::{
     HarnessCleanupDisposition, HarnessRunner, JSONMCPServer, ResumePayload, SavePoint,
-    ThirdPartyHarness, write_temp_file,
+    ThirdPartyHarness, install_docs_url, write_temp_file,
 };
 use crate::ai::agent::api::ServerConversationToken;
 use crate::ai::agent_sdk::setup_observability::{SetupClientEventReporter, SetupStep};
@@ -50,7 +51,7 @@ impl ThirdPartyHarness for GeminiHarness {
     }
 
     fn install_docs_url(&self) -> Option<&'static str> {
-        Some("https://geminicli.com/")
+        install_docs_url(self.harness())
     }
 
     fn build_runner(
@@ -67,7 +68,7 @@ impl ThirdPartyHarness for GeminiHarness {
         _resume: Option<ResumePayload>,
         _resolved_env_vars: &HashMap<OsString, OsString>,
         skill_dirs: &[PathBuf],
-        has_deferred_repositories: bool,
+        factory_repository_contract: bool,
         _resolved_secrets: &HashMap<String, ManagedSecretValue>,
         _resolved_mcp_servers: &HashMap<String, JSONMCPServer>,
         _third_party_harness_model_config: Option<&HarnessModelConfig>,
@@ -83,7 +84,8 @@ impl ThirdPartyHarness for GeminiHarness {
             workspace_root,
             harness_working_dir,
             skill_dirs,
-            has_deferred_repositories,
+            factory_repository_contract,
+            HarnessSupportSkills::Plugin,
         )
         .map_err(|error| AgentDriverError::HarnessConfigSetupFailed {
             harness: self.cli_agent().command_prefix().to_owned(),
@@ -113,9 +115,10 @@ pub(super) fn publish_skills_for_gemini(
     workspace_root: &Path,
     harness_working_dir: &Path,
     skill_dirs: &[PathBuf],
-    has_deferred_repositories: bool,
+    factory_repository_contract: bool,
+    harness_support_skills: HarnessSupportSkills,
 ) -> Result<()> {
-    if !has_deferred_repositories {
+    if !factory_repository_contract && harness_support_skills == HarnessSupportSkills::Plugin {
         return Ok(());
     }
     let skill_root = harness_working_dir.join(".gemini").join("skills");
@@ -124,7 +127,8 @@ pub(super) fn publish_skills_for_gemini(
         workspace_root,
         warp_isolation_platform::detect().is_some(),
         skill_dirs,
-        has_deferred_repositories,
+        factory_repository_contract,
+        harness_support_skills,
     )?;
     super::skill_dirs_publish::exclude_published_skill_paths_from_git(
         harness_working_dir,
@@ -203,7 +207,7 @@ impl HarnessRunner for GeminiHarnessRunner {
         let conversation_id = setup_events
             .record_result(SetupStep::ThirdPartyHarnessExternalConversation, async {
                 self.client
-                    .create_external_conversation(GEMINI_CLI_FORMAT)
+                    .create_external_conversation(GEMINI_CLI_FORMAT, Harness::Gemini)
                     .await
                     .map_err(|e| {
                         report_error!(&e);
@@ -253,13 +257,13 @@ impl HarnessRunner for GeminiHarnessRunner {
             && !super::has_running_cli_agent(&self.terminal_driver, foreground).await
         {
             log::debug!("Will not save conversation, Gemini not in progress");
-            return PersistenceOutcome::block_only(Ok(()));
+            return PersistenceOutcome::without_transcript(Ok(()));
         }
 
         let (conversation_id, block_id) = match &*self.state.lock() {
             GeminiRunnerState::Preexec => {
                 log::warn!("save_conversation called before start");
-                return PersistenceOutcome::block_only(Ok(()));
+                return PersistenceOutcome::without_transcript(Ok(()));
             }
             GeminiRunnerState::Running {
                 conversation_id,
@@ -268,7 +272,7 @@ impl HarnessRunner for GeminiHarnessRunner {
         };
 
         // TODO(REMOTE-1408) Also save the conversation transcript.
-        PersistenceOutcome::block_only(
+        PersistenceOutcome::without_transcript(
             super::upload_current_block_snapshot(
                 foreground,
                 &self.terminal_driver,

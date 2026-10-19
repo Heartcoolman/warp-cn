@@ -12,6 +12,7 @@ use mockito::{Matcher, Server};
 use tempfile::TempDir;
 use tokio::sync::oneshot;
 use uuid::Uuid;
+use warp_cli::agent::Harness;
 
 use super::*;
 use crate::ai::agent::api::ServerConversationToken;
@@ -91,7 +92,19 @@ impl FailingUploadTargetsClient {
 
 #[async_trait]
 impl HarnessSupportClient for FailingUploadTargetsClient {
-    async fn create_external_conversation(&self, _format: &str) -> Result<ServerConversationToken> {
+    async fn create_external_conversation(
+        &self,
+        _format: &str,
+        _harness: Harness,
+    ) -> Result<ServerConversationToken> {
+        unimplemented!("not used by the coordinator")
+    }
+
+    async fn upload_conversation_data(
+        &self,
+        _conversation_id: &ServerConversationToken,
+        _conversation_data: &[u8],
+    ) -> Result<()> {
         unimplemented!("not used by the coordinator")
     }
     async fn get_transcript_upload_target(
@@ -148,7 +161,7 @@ impl HarnessSupportClient for FailingUploadTargetsClient {
     async fn fetch_transcript(&self) -> Result<bytes::Bytes> {
         unimplemented!("not used by the coordinator")
     }
-    fn http_client(&self) -> &http_client::Client {
+    fn external_http_client(&self) -> &http_client::Client {
         &self.http
     }
 }
@@ -192,7 +205,19 @@ impl RecordingClient {
 
 #[async_trait]
 impl HarnessSupportClient for RecordingClient {
-    async fn create_external_conversation(&self, _format: &str) -> Result<ServerConversationToken> {
+    async fn create_external_conversation(
+        &self,
+        _format: &str,
+        _harness: Harness,
+    ) -> Result<ServerConversationToken> {
+        unimplemented!("not used by the coordinator")
+    }
+
+    async fn upload_conversation_data(
+        &self,
+        _conversation_id: &ServerConversationToken,
+        _conversation_data: &[u8],
+    ) -> Result<()> {
         unimplemented!("not used by the coordinator")
     }
     async fn get_transcript_upload_target(
@@ -267,7 +292,7 @@ impl HarnessSupportClient for RecordingClient {
     async fn fetch_transcript(&self) -> Result<bytes::Bytes> {
         unimplemented!("not used by the coordinator")
     }
-    fn http_client(&self) -> &http_client::Client {
+    fn external_http_client(&self) -> &http_client::Client {
         &self.http
     }
 }

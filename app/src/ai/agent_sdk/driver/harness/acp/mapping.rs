@@ -28,6 +28,7 @@ use warp_multi_agent_api::{
 use super::protocol::{
     PlanEntry, SessionUpdate, ToolCallContent, ToolCallFields, ToolCallStatus, ToolKind,
 };
+use crate::ai::agent::BaseUserQuery;
 use crate::ai::agent::api::serde_json_to_prost;
 
 const AGENT_OUTPUT_TEXT_PATH: &str = "agent_output.text";
@@ -68,7 +69,7 @@ enum ToolProjection {
     /// matches, and ACP search output is free text whose shape differs per agent.
     Generic {
         name: String,
-        args: Option<prost_types::Struct>,
+        args: prost_types::Struct,
     },
 }
 
@@ -101,13 +102,7 @@ impl ToolProjection {
         }
         Self::Generic {
             name: mcp_tool_name(kind, title),
-            args: raw_input
-                .cloned()
-                .and_then(|input| serde_json_to_prost(input).ok())
-                .and_then(|value| match value.kind {
-                    Some(prost_types::value::Kind::StructValue(fields)) => Some(fields),
-                    _ => None,
-                }),
+            args: generic_args(raw_input),
         }
     }
 
@@ -148,7 +143,7 @@ impl ToolProjection {
             }),
             Self::Generic { name, args } => Tool::CallMcpTool(CallMcpTool {
                 name: name.clone(),
-                args: args.clone(),
+                args: Some(args.clone()),
                 ..Default::default()
             }),
         }
@@ -318,14 +313,31 @@ impl AcpTurnMapper {
                     ..Default::default()
                 }),
             })),
-            self.user_query_action(prompt),
+            self.user_query_action(prompt, None),
         ]
     }
 
-    /// Echoes a user prompt into the task, as the MAA server does for each request.
-    pub(super) fn user_query_action(&self, prompt: &str) -> ClientAction {
+    /// Echoes a user prompt into the task, as the MAA server does for each request. The
+    /// attribution of `base` (who injected the prompt and from where), when there is one, is
+    /// carried onto the echoed query so viewers see the follow-up's author rather than the
+    /// sharer's.
+    pub(super) fn user_query_action(
+        &self,
+        prompt: &str,
+        base: Option<&BaseUserQuery>,
+    ) -> ClientAction {
+        let (origin, author, source_message) = match base {
+            Some(base) => {
+                let base = base.to_proto();
+                (base.origin, base.author, base.source_message)
+            }
+            None => (None, None, None),
+        };
         self.add_messages(vec![self.new_message(MessageKind::UserQuery(UserQuery {
             query: prompt.to_owned(),
+            origin,
+            author,
+            source_message,
             ..Default::default()
         }))])
     }
@@ -810,6 +822,25 @@ fn thought_text(call: &ToolCallFields) -> String {
         .filter(|text| !text.is_empty())
         .or_else(|| call.title.clone())
         .unwrap_or_default()
+}
+
+/// The arguments shown for a generic tool call. The conversation rejects a `CallMcpTool` without
+/// args, so an absent or non-object `rawInput` still yields a struct: a non-object input is
+/// carried under `input`, and no input is an empty struct.
+fn generic_args(raw_input: Option<&Value>) -> prost_types::Struct {
+    let Some(input) = raw_input else {
+        return prost_types::Struct::default();
+    };
+    let input = match input {
+        Value::Object(_) => input.clone(),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Array(_) => {
+            serde_json::json!({ "input": input })
+        }
+    };
+    match serde_json_to_prost(input).ok().and_then(|value| value.kind) {
+        Some(prost_types::value::Kind::StructValue(fields)) => fields,
+        _ => prost_types::Struct::default(),
+    }
 }
 
 fn mcp_tool_name(kind: Option<ToolKind>, title: &str) -> String {

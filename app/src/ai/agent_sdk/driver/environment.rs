@@ -30,6 +30,7 @@ use super::environment_checkout_protocol::{
     CloneFailureIdentityDiagnostics, ResolvedHeads, parse_resolved_head_sha,
     sanitize_git_author_name, sanitize_git_credential_username,
 };
+use super::environment_preparation::{PreparationPolicy, PreparationRepository};
 use super::terminal::TerminalDriver;
 use super::{AgentDriverError, Harness, failure_output, git_credentials};
 use crate::ai::agent_sdk::environment_snapshot::{
@@ -237,25 +238,80 @@ fn environment_snapshot(
     }
 }
 
-/// Workspace inputs used to prepare a run's repositories, commands, and skills.
+/// Holds shared workspace inputs for normal run setup and standby preparation.
 #[derive(Default)]
 pub(crate) struct WorkspaceConfiguration {
     pub source_repos: Vec<SourceRepo>,
-    pub deferred_repos: Vec<SourceRepo>,
+    pub deferred_repos: Vec<ResolvedRepository>,
     pub setup_commands: Vec<String>,
+    /// Overrides `WARP_SKILL_DIRS` when present, including an empty list.
     pub factory_skill_dirs: Option<Vec<PathBuf>>,
+    /// Retains an explicitly selected environment even when it has no repositories or commands.
     pub has_environment: bool,
+    pub(super) preparation_policy: Option<PreparationPolicy>,
+    resolved_repos: Vec<ResolvedRepository>,
     clone_requests: Vec<RepositoryCloneRequest>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct ResolvedRepository {
     pub source: SourceRepo,
     pub checkout: Option<RepositoryHeadRef>,
     pub clone_from: Option<SourceRepo>,
     pub preserve_origin: bool,
+    pub expected_sha: Option<String>,
 }
+
 impl WorkspaceConfiguration {
+    pub(crate) fn bind_execution(
+        &mut self,
+        task_id: String,
+        execution_id: String,
+        working_dir: PathBuf,
+        supports_deferred_repositories: bool,
+    ) -> anyhow::Result<()> {
+        let records = |repos: &[ResolvedRepository]| -> anyhow::Result<Vec<PreparationRepository>> {
+            repos
+                .iter()
+                .map(|repo| {
+                    let clones = resolved_repository_clone_requests(std::slice::from_ref(repo))?;
+                    let batch = checkout_requests_batch(&clones, &working_dir)?;
+                    let mut request = batch
+                        .repositories
+                        .into_iter()
+                        .next()
+                        .ok_or(PrepareEnvironmentError::InvalidRuntimeState)?;
+                    request.remove_origin = clones[0].remove_origin;
+                    Ok(PreparationRepository {
+                        source: RepositoryIdentity {
+                            code_forge: repository_forge_for_repo(&repo.source)
+                                .ok_or(PrepareEnvironmentError::InvalidRuntimeState)?,
+                            repo_owner: repo.source.owner.clone(),
+                            repo_name: repo.source.repo.clone(),
+                        },
+                        request,
+                    })
+                })
+                .collect()
+        };
+        let policy = PreparationPolicy {
+            task_id,
+            execution_id,
+            working_dir: working_dir.clone(),
+            supports_deferred_repositories,
+            eager: records(&self.resolved_repos)?,
+            deferred: records(&self.deferred_repos)?,
+        };
+        policy.validate()?;
+        self.preparation_policy = Some(policy);
+        Ok(())
+    }
+
+    /// Reports whether the workspace requires setup before harness startup.
+    pub fn needs_preparation(&self) -> bool {
+        self.has_environment || !self.source_repos.is_empty() || !self.setup_commands.is_empty()
+    }
+    /// Builds a workspace from a locally resolved environment and CLI repository overrides.
     pub fn from_legacy(
         environment: Option<&AmbientAgentEnvironment>,
         additional_source_repos: Vec<SourceRepo>,
@@ -280,12 +336,15 @@ impl WorkspaceConfiguration {
             factory_skill_dirs: None,
             has_environment: environment.is_some(),
             clone_requests,
+            preparation_policy: None,
+            resolved_repos: Vec::new(),
         })
     }
 
+    /// Builds a workspace from server-selected checkouts without resolving an environment locally.
     pub fn from_resolved(
         repositories: Vec<ResolvedRepository>,
-        deferred_repos: Vec<SourceRepo>,
+        deferred_repos: Vec<ResolvedRepository>,
         setup_commands: Vec<String>,
     ) -> Result<Self, PrepareEnvironmentError> {
         let clone_requests = resolved_repository_clone_requests(&repositories)?;
@@ -299,6 +358,8 @@ impl WorkspaceConfiguration {
             factory_skill_dirs: None,
             has_environment: false,
             clone_requests,
+            preparation_policy: None,
+            resolved_repos: repositories,
         })
     }
 }
@@ -380,11 +441,13 @@ pub(crate) fn prepare_environment(
     async move {
         let WorkspaceConfiguration {
             source_repos,
-            deferred_repos: _,
             setup_commands,
             factory_skill_dirs: _,
             clone_requests,
             has_environment: _,
+            deferred_repos: _,
+            preparation_policy: _,
+            resolved_repos: _,
         } = workspace;
         // Only index the codebase for the Oz harness; third-party harnesses (e.g. Claude)
         // have their own methods for navigating a codebase.
@@ -457,130 +520,14 @@ pub(crate) fn merge_repos_deduped(
     Ok(merged)
 }
 
-/// Builds the inventory for a run with deferred Factory repositories.
-pub(crate) fn build_deferred_repos_instruction(
-    working_dir: &Path,
-    eager_repos: &[SourceRepo],
-    deferred_repos: &[SourceRepo],
-    executable: &Path,
-    shell_type: ShellType,
-) -> Result<Option<String>, PrepareEnvironmentError> {
-    if deferred_repos.is_empty() {
-        return Ok(None);
-    }
-
-    let mut sorted_deferred = deferred_repos.to_vec();
-    sorted_deferred.sort_by(|a, b| {
-        a.code_forge
-            .unwrap_or_default()
-            .to_string()
-            .cmp(&b.code_forge.unwrap_or_default().to_string())
-            .then_with(|| a.owner.to_lowercase().cmp(&b.owner.to_lowercase()))
-            .then_with(|| a.repo.to_lowercase().cmp(&b.repo.to_lowercase()))
-    });
-
-    let entries = sorted_deferred
-        .iter()
-        .map(|repo| {
-            let forge = repo.code_forge.unwrap_or_default();
-            let clone_url = repo.https_clone_url();
-            let identity = format!("{forge} {}/{}", repo.owner, repo.repo);
-            let code_forge = repository_forge_for_repo(repo).ok_or_else(|| {
-                PrepareEnvironmentError::UnsupportedRepositoryForge {
-                    repo_name: format!("{}/{}", repo.owner, repo.repo),
-                }
-            })?;
-            let request = serde_json::to_string(&CheckoutRequest {
-                source: RepositoryIdentity {
-                    code_forge,
-                    repo_owner: repo.owner.clone(),
-                    repo_name: repo.repo.clone(),
-                },
-                checkout_name: repo.repo.clone(),
-                head: None,
-                fetch_branch_only: false,
-            })
-            .map_err(|_| PrepareEnvironmentError::CheckoutHelper {
-                reason: "could not serialize deferred checkout request",
-            })?;
-            let target = if let Some(conflicting) =
-                target_name_conflict(repo, eager_repos, &sorted_deferred)
-            {
-                format!(
-                    "- {identity} — {clone_url}; target '{}' conflicts with {conflicting}; set checkout_name to an unused single directory name under the workspace root",
-                    repo.repo
-                )
-            } else {
-                let target = deferred_repo_target(working_dir, &repo.repo);
-                format!("- {identity} — {clone_url}; preferred target: {target}")
-            };
-            Ok(format!("{target}; checkout request: {request}"))
-        })
-        .collect::<Result<Vec<_>, PrepareEnvironmentError>>()?;
-    let command = build_checkout_helper_command(
-        executable,
-        Path::new("<requests-file>"),
-        Path::new("<report-file>"),
-        false,
-        shell_type,
-    );
-    let runtime = serde_json::json!({
-        "working_dir": working_dir.to_string_lossy(),
-        "command_template": format!("{command} --fail-if-target-exists"),
-    });
-
-    Ok(Some(format!(
-        "Deferred Factory repositories (not yet cloned):\nCheckout runtime: {runtime}\n{}\n\
-         When needed, read the built-in factory-deferred-repositories skill before cloning.",
-        entries.join("\n\n")
-    )))
-}
-
-/// Uses POSIX separators because the target belongs to the agent's shell, not the host OS.
-fn deferred_repo_target(working_dir: &Path, repo_name: &str) -> String {
-    format!(
-        "{}/{repo_name}",
-        working_dir.to_string_lossy().trim_end_matches('/')
-    )
-}
-
-/// Names other repository identities sharing the same checkout directory.
-fn target_name_conflict(
-    repo: &SourceRepo,
-    eager_repos: &[SourceRepo],
-    deferred_repos: &[SourceRepo],
-) -> Option<String> {
-    let conflicting: Vec<String> = eager_repos
-        .iter()
-        .chain(deferred_repos.iter())
-        .filter(|other| {
-            other.repo == repo.repo
-                && (other.owner != repo.owner || other.code_forge != repo.code_forge)
-        })
-        .map(|other| {
-            format!(
-                "{} {}/{}",
-                other.code_forge.unwrap_or_default(),
-                other.owner,
-                other.repo
-            )
-        })
-        .collect();
-    if conflicting.is_empty() {
-        None
-    } else {
-        Some(conflicting.join(", "))
-    }
-}
-
 /// Environment variable carrying the authenticated remote URL of a Factory's
 /// definition repository. Dispatch attaches it only to runs that execute as a
 /// Factory agent whose Factory definition lives in a Warp-managed repository.
-const FACTORY_REPO_CLONE_URL_ENV_VAR: &str = "WARP_FACTORY_REPO_CLONE_URL";
+pub(crate) const FACTORY_REPO_CLONE_URL_ENV_VAR: &str = "WARP_FACTORY_REPO_CLONE_URL";
 
 /// Environment variable carrying the directory, relative to the working
 /// directory, that the Factory definition repository is cloned into.
-const FACTORY_REPO_DIR_ENV_VAR: &str = "WARP_FACTORY_REPO_DIR";
+pub(crate) const FACTORY_REPO_DIR_ENV_VAR: &str = "WARP_FACTORY_REPO_DIR";
 
 /// Prepends the setup command that clones a Factory's definition repository
 /// when the dispatch attached the clone variables to this run, so the checkout
@@ -599,7 +546,8 @@ pub(super) fn prepend_factory_definition_clone(
     );
 }
 
-fn prepend_factory_definition_clone_for_values(
+/// Adds the Factory clone command from supplied variables without reading process state.
+pub(crate) fn prepend_factory_definition_clone_for_values(
     clone_url: &str,
     clone_dir: &str,
     shell_type: ShellType,
@@ -962,6 +910,7 @@ pub(super) struct RepositoryCloneRequest {
     pub(super) checkout: Option<RepositoryHeadRef>,
     pub(super) remove_origin: bool,
     pub(super) fetch_branch_only: bool,
+    pub(super) expected_sha: Option<String>,
 }
 
 fn repository_clone_requests(
@@ -1001,6 +950,7 @@ fn repository_clone_requests(
                     preparation_override.clone_from.is_some()
                         && matches!(preparation_override.head, RepositoryHeadRef::Branch(_))
                 }),
+                expected_sha: None,
             })
         })
         .collect()
@@ -1033,6 +983,7 @@ fn resolved_repository_clone_requests(
                 remove_origin: !repo.preserve_origin,
                 fetch_branch_only: repo.clone_from.is_some()
                     && matches!(repo.checkout, Some(RepositoryHeadRef::Branch(_))),
+                expected_sha: repo.expected_sha.clone(),
             })
         })
         .collect()
@@ -1226,6 +1177,8 @@ fn checkout_requests_batch(
                     checkout_name: request.checkout_name.clone(),
                     head: request.checkout.clone(),
                     fetch_branch_only: request.fetch_branch_only,
+                    expected_sha: request.expected_sha.clone(),
+                    remove_origin: false,
                 })
             })
             .collect::<Result<Vec<_>, PrepareEnvironmentError>>()?,
