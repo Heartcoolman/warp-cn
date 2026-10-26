@@ -7,6 +7,7 @@ pub(super) const PROTOCOL_VERSION: u16 = 1;
 
 pub(super) const METHOD_INITIALIZE: &str = "initialize";
 pub(super) const METHOD_SESSION_NEW: &str = "session/new";
+pub(super) const METHOD_SESSION_SET_CONFIG_OPTION: &str = "session/set_config_option";
 pub(super) const METHOD_SESSION_PROMPT: &str = "session/prompt";
 pub(super) const METHOD_SESSION_CANCEL: &str = "session/cancel";
 pub(super) const METHOD_SESSION_UPDATE: &str = "session/update";
@@ -48,8 +49,30 @@ pub(super) struct ClientInfo {
 pub(super) struct InitializeResponse {
     pub protocol_version: u16,
     pub agent_info: Option<AgentInfo>,
-    pub agent_capabilities: Value,
+    pub agent_capabilities: AgentCapabilities,
     pub auth_methods: Vec<Value>,
+}
+
+/// What the agent announced it supports at `initialize`. Every field defaults to "unsupported"
+/// so an agent that omits the whole object is treated as a baseline ACP agent.
+#[derive(Deserialize, Default, Debug, Clone)]
+#[serde(rename_all = "camelCase", default)]
+pub(super) struct AgentCapabilities {
+    pub load_session: bool,
+    pub prompt_capabilities: PromptCapabilities,
+    /// Capabilities this client does not model (e.g. `mcpCapabilities`), kept for logging.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, Value>,
+}
+
+/// The prompt content kinds the agent accepts beyond text and resource links, which every ACP
+/// agent must take.
+#[derive(Deserialize, Default, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", default)]
+pub(super) struct PromptCapabilities {
+    pub image: bool,
+    pub audio: bool,
+    pub embedded_context: bool,
 }
 
 #[derive(Deserialize, Default, Debug)]
@@ -102,6 +125,64 @@ pub(super) struct HttpHeader {
 #[serde(rename_all = "camelCase")]
 pub(super) struct NewSessionResponse {
     pub session_id: String,
+    #[serde(default)]
+    pub config_options: Vec<AcpAdvertisedSetting>,
+    /// Adapter-specific extension data.
+    #[serde(rename = "_meta", default)]
+    pub meta: Value,
+}
+
+/// An adapter-advertised ACP setting. Model and thinking settings share this wire representation.
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct AcpAdvertisedSetting {
+    /// Adapter-specific identifier passed to `session/set_config_option`.
+    pub id: String,
+    pub category: Option<String>,
+    #[serde(rename = "type")]
+    pub input_type: String,
+    #[serde(rename = "options", default)]
+    pub choices: Vec<AcpSettingChoice>,
+}
+
+/// Selectable values advertised by an ACP adapter.
+#[derive(Deserialize, Debug)]
+#[serde(untagged)]
+pub(super) enum AcpSettingChoice {
+    Value {
+        value: String,
+    },
+    Group {
+        #[serde(rename = "options")]
+        choices: Vec<AcpSettingChoice>,
+    },
+    Unsupported {},
+}
+
+impl AcpSettingChoice {
+    pub(super) fn supports_value(&self, requested: &str) -> bool {
+        match self {
+            Self::Value { value } => value == requested,
+            Self::Group { choices } => choices
+                .iter()
+                .any(|choice| choice.supports_value(requested)),
+            Self::Unsupported {} => false,
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct AcpSetSettingParams {
+    pub session_id: String,
+    pub config_id: String,
+    pub value: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct AcpSetSettingResponse {
+    pub config_options: Vec<AcpAdvertisedSetting>,
 }
 
 #[derive(Serialize)]
@@ -130,10 +211,23 @@ pub(super) enum ContentBlock {
         name: Option<String>,
     },
     Resource {
-        resource: Value,
+        resource: EmbeddedResource,
     },
     #[serde(other)]
     Unsupported,
+}
+
+/// The contents of a `resource` block, carried inline as text or base64 `blob`.
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub(super) struct EmbeddedResource {
+    pub uri: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mime_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blob: Option<String>,
 }
 
 impl ContentBlock {
@@ -147,10 +241,9 @@ impl ContentBlock {
                 None => uri.clone(),
             },
             ContentBlock::Resource { resource } => resource
-                .get("text")
-                .and_then(Value::as_str)
-                .map(str::to_owned)
-                .unwrap_or_else(|| resource.to_string()),
+                .text
+                .clone()
+                .unwrap_or_else(|| resource.uri.clone()),
             ContentBlock::Unsupported => String::new(),
         }
     }
@@ -363,3 +456,7 @@ pub(super) struct WriteTextFileParams {
 pub(super) struct CancelParams {
     pub session_id: String,
 }
+
+#[cfg(test)]
+#[path = "protocol_tests.rs"]
+mod tests;

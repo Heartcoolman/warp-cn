@@ -1,5 +1,6 @@
 use std::future::Future;
 use std::sync::{Arc, Weak};
+use std::time::Duration;
 
 use anyhow::{Context, Error, Result, anyhow};
 use warp_errors::report_if_error;
@@ -40,8 +41,9 @@ impl PersistenceOutcome {
         }
     }
 
-    pub(super) fn block_only(result: Result<()>) -> Self {
-        // Harnesses without transcript persistence can still report their block-save result.
+    pub(super) fn without_transcript(result: Result<()>) -> Self {
+        // Harnesses without transcript persistence still report the result of their other
+        // artifact (a block snapshot or native conversation data).
         Self {
             result,
             uploaded_usage: None,
@@ -63,6 +65,12 @@ pub(crate) struct HarnessPersistence {
 }
 
 impl HarnessPersistence {
+    /// Overrides how long a save request is held for coalescing before it runs.
+    pub(super) fn with_save_debounce(mut self, interval: Duration) -> Self {
+        self.saves = SaveCoordinator::new(interval);
+        self
+    }
+
     pub(crate) fn initialize(
         &self,
         client: Arc<ServerApi>,
@@ -174,32 +182,47 @@ pub(super) async fn save_transcript_and_block(
     transcript: impl Future<Output = Result<UploadedTranscriptUsage>>,
     block: impl Future<Output = Result<()>>,
 ) -> PersistenceOutcome {
-    // The transcript and terminal block are independent artifacts, so neither upload should delay
+    save_transcript_and_artifact(transcript, block, "block snapshot").await
+}
+
+pub(super) async fn save_transcript_and_conversation_data(
+    transcript: impl Future<Output = Result<UploadedTranscriptUsage>>,
+    conversation_data: impl Future<Output = Result<()>>,
+) -> PersistenceOutcome {
+    save_transcript_and_artifact(transcript, conversation_data, "conversation data").await
+}
+
+async fn save_transcript_and_artifact(
+    transcript: impl Future<Output = Result<UploadedTranscriptUsage>>,
+    artifact: impl Future<Output = Result<()>>,
+    artifact_name: &str,
+) -> PersistenceOutcome {
+    // The transcript and the other artifact are independent, so neither upload should delay
     // starting the other.
-    let (transcript, block) = futures::join!(transcript, block);
-    match (transcript, block) {
+    let (transcript, artifact) = futures::join!(transcript, artifact);
+    match (transcript, artifact) {
         (Ok(uploaded_usage), Ok(())) => PersistenceOutcome {
             result: Ok(()),
             uploaded_usage: Some(uploaded_usage),
         },
         // Preserve eligible usage from the successfully uploaded transcript while still surfacing
-        // the block failure to the save coordinator.
+        // the artifact failure to the save coordinator.
         (Ok(uploaded_usage), Err(error)) => PersistenceOutcome {
-            result: Err(error.context("Harness block snapshot save failed")),
+            result: Err(error.context(format!("Harness {artifact_name} save failed"))),
             uploaded_usage: Some(uploaded_usage),
         },
         // A failed transcript upload makes its derived usage ineligible, regardless of whether the
-        // independent block snapshot succeeded.
+        // independent artifact succeeded.
         (Err(error), Ok(())) => PersistenceOutcome {
             result: Err(error.context("Harness transcript save failed")),
             uploaded_usage: None,
         },
         // Concurrent uploads do not short-circuit, so retain both causes when neither artifact was
         // persisted.
-        (Err(transcript), Err(block)) => PersistenceOutcome {
+        (Err(transcript), Err(artifact)) => PersistenceOutcome {
             result: Err(anyhow!(
-                "Harness transcript and block snapshot saves failed: \
-                 transcript={transcript:#}; block={block:#}"
+                "Harness transcript and {artifact_name} saves failed: \
+                 transcript={transcript:#}; {artifact_name}={artifact:#}"
             )),
             uploaded_usage: None,
         },

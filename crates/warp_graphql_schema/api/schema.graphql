@@ -289,6 +289,7 @@ enum AgentHarness {
   CODEX
   GEMINI
   OZ
+  PI
 }
 
 """Controls whether a team can configure settings for agent harnesses."""
@@ -981,6 +982,9 @@ input CreateAgentTaskInput {
 
   """Optional environment UID to run the task in."""
   environmentUid: ID
+
+  """Optional JSON-serialized string-to-string run metadata."""
+  metadata: String
 
   """Optional run ID of the parent that spawned this local task."""
   parentRunId: ID
@@ -2173,6 +2177,7 @@ union ListWarpDevImagesResult = ListWarpDevImagesOutput | UserFacingError
 type ListedHarnessAuthSecretsConfig {
   claudeAuthSecretName: String
   codexAuthSecretName: String
+  piAuthSecretName: String
 }
 
 type ListedHarnessConfig {
@@ -2844,6 +2849,39 @@ type PopulateMerkleTreeCacheOutput implements Response {
 
 union PopulateMerkleTreeCacheResult = PopulateMerkleTreeCacheOutput | UserFacingError
 
+input PrewarmedSandboxConfigInput {
+  sandboxId: ID!
+}
+
+union PrewarmedSandboxConfigResult = PrewarmedSandboxConfiguration | UserFacingError
+
+type PrewarmedSandboxConfiguration {
+  environmentVariables: [PrewarmedSandboxVariable!]!
+  expiresAt: Time!
+  fingerprint: String!
+  gitCredentials: [TaskGitCredential!]!
+  managedSecrets: [TaskSecretEntry!]!
+  sandboxId: ID!
+  spec: PrewarmedSandboxSpec!
+}
+
+type PrewarmedSandboxSpec {
+  computerUseEnabled: Boolean!
+  deferredRepositories: [SourceRepo!]!
+  factorySkillDirs: [String!]!
+  harness: String!
+  mcpServersJson: String!
+  providers: CloudProviderClientConfigs
+  repositories: [ExecutionRepository!]!
+  setupCommands: [String!]!
+  skills: [String!]!
+}
+
+type PrewarmedSandboxVariable {
+  name: String!
+  value: String!
+}
+
 type PricingInfo {
   addonCreditsOptions: [AddonCreditsOption!]!
   overages: OveragesPricing!
@@ -3329,6 +3367,7 @@ type RootMutation {
   mintCustomToken(requestContext: RequestContext!): MintCustomTokenResult!
   moveObject(input: MoveObjectInput!, requestContext: RequestContext!): MoveObjectResult!
   populateMerkleTreeCache(input: PopulateMerkleTreeCacheInput!, requestContext: RequestContext!): PopulateMerkleTreeCacheResult!
+  prewarmedSandboxConfig(input: PrewarmedSandboxConfigInput!, requestContext: RequestContext!): PrewarmedSandboxConfigResult!
   provideNegativeFeedbackResponseForAiConversation(input: ProvideNegativeFeedbackResponseForAiConversationInput!, requestContext: RequestContext!): RequestsRefundedResult!
   purchaseAddonCredits(input: PurchaseAddonCreditsInput!, requestContext: RequestContext!): PurchaseAddonCreditsResult!
 
@@ -4722,9 +4761,11 @@ input UsageBasedPricingSettingsInput {
 
 type UsageEntry {
   attributedTeamUid: String
-  costCents: Int!
+  costCents: Int! @deprecated(reason: "Use costCentsExact instead to avoid integer rounding")
+  costCentsExact: Float!
   costType: AICreditsUsageAndCostType!
-  creditsUsed: Int!
+  creditsUsed: Int! @deprecated(reason: "Use creditsUsedExact instead to avoid integer rounding")
+  creditsUsedExact: Float!
   subjectDisplayName: String
   subjectType: AICreditsUsageAndCostSubjectType!
   subjectUid: String
@@ -5169,6 +5210,7 @@ type ExecutionRepository {
   ref: ExecutionRepositoryRef
   cloneFrom: SourceRepo
   preserveOrigin: Boolean!
+  expectedSha: String
 }
 
 
@@ -5232,7 +5274,7 @@ type ExecutionConfiguration {
   computerUseModelId: String
   inferenceProviders: InferenceProviderClientConfigs
   repositories: [ExecutionRepository!]!
-  deferredRepositories: [SourceRepo!]!
+  deferredRepositories: [ExecutionRepository!]!
   setupCommands: [String!]!
   providers: CloudProviderClientConfigs
   sessionSharingAcls: [SessionSharingAclSpec!]!

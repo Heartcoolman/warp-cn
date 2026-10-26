@@ -788,6 +788,7 @@ impl TuiOrchestrationModel {
             &request.name,
             &request.prompt,
             request.parent_run_id.as_deref(),
+            &request.metadata,
             request_team_scope,
             ctx,
         );
@@ -1075,6 +1076,7 @@ impl TuiOrchestrationModel {
                 harness @ (Harness::Claude
                 | Harness::OpenCode
                 | Harness::Gemini
+                | Harness::Pi
                 | Harness::Codex
                 | Harness::Unknown),
             ) => {

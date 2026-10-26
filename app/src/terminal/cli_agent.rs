@@ -228,7 +228,7 @@ impl CLIAgent {
             CLIAgent::Goose => &["goose"],
             CLIAgent::Hermes => &["hermes"],
             CLIAgent::Vibe => &["vibe", "vibe-acp"],
-            CLIAgent::Antigravity => &["agy"],
+            CLIAgent::Antigravity => &["agy", "antigravity"],
             CLIAgent::WarpTui => &[
                 "warp",
                 "warp-preview",
@@ -274,7 +274,7 @@ impl CLIAgent {
             Harness::Gemini => Some(CLIAgent::Gemini),
             Harness::OpenCode => Some(CLIAgent::OpenCode),
             Harness::Codex => Some(CLIAgent::Codex),
-            Harness::Unknown => Some(CLIAgent::Unknown),
+            Harness::Pi | Harness::Unknown => Some(CLIAgent::Unknown),
         }
     }
 

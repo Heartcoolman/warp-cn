@@ -59,6 +59,7 @@ fn record_message(request_id: &str, with_charges: bool) -> api::Message {
                         web_search_count: 1,
                         web_search_cost_in_cents: 0.5,
                         web_search_cost_in_credits: 0.5,
+                        ..Default::default()
                     },
                 )]),
                 byok_inference_usage: HashMap::new(),
@@ -635,7 +636,7 @@ fn live_request_input(
 ) -> RequestInput {
     RequestInput {
         conversation_id,
-        input_messages: HashMap::from([(task_id, vec![input])]),
+        input_messages: Vec::from([(task_id, vec![input])]),
         working_directory: None,
         model_id: LLMId::from("test-model"),
         coding_model_id: LLMId::from("test-coding-model"),
