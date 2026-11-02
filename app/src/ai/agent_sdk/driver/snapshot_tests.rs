@@ -8,6 +8,7 @@ use command::blocking::Command as BlockingCommand;
 use mockito::{Matcher, Server, ServerGuard};
 use tempfile::{Builder as TempDirBuilder, TempDir};
 use tokio::runtime::Runtime;
+use warp_cli::agent::Harness;
 
 use super::*;
 use crate::ai::agent::api::ServerConversationToken;
@@ -118,7 +119,19 @@ impl TestClient {
 
 #[async_trait]
 impl HarnessSupportClient for TestClient {
-    async fn create_external_conversation(&self, _format: &str) -> Result<ServerConversationToken> {
+    async fn create_external_conversation(
+        &self,
+        _format: &str,
+        _harness: Harness,
+    ) -> Result<ServerConversationToken> {
+        unimplemented!("not used by upload_snapshot_from_declarations_file")
+    }
+
+    async fn upload_conversation_data(
+        &self,
+        _conversation_id: &ServerConversationToken,
+        _conversation_data: &[u8],
+    ) -> Result<()> {
         unimplemented!("not used by upload_snapshot_from_declarations_file")
     }
 
@@ -222,7 +235,7 @@ impl HarnessSupportClient for TestClient {
         })
     }
 
-    fn http_client(&self) -> &http_client::Client {
+    fn external_http_client(&self) -> &http_client::Client {
         &self.http
     }
 }

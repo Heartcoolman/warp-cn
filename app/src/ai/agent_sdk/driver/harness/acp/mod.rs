@@ -17,93 +17,144 @@
 //! `PATH` that runs `node app/src/ai/agent_sdk/driver/harness/acp/testdata/fake_agent.mjs`.
 mod attachments;
 mod bridge;
+mod cli_transcript;
 mod connection;
 mod launch;
+mod manifest;
 mod mapping;
+mod model_config;
 mod policy;
 mod protocol;
+mod turn_driver;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use anyhow::{Context as _, Result, anyhow};
 use async_trait::async_trait;
 pub(crate) use bridge::run_bridge;
 use futures::{FutureExt, future, pin_mut, select};
-pub(crate) use launch::AcpLaunchSpec;
 use parking_lot::Mutex;
+use prost::Message as _;
 use serde_json::Value;
+use session_sharing_protocol::common::ParticipantId;
 use uuid::Uuid;
-use warp_cli::agent::{Harness, HarnessTransport};
+use warp_cli::agent::Harness;
 use warp_core::channel::ChannelState;
 use warp_core::safe_warn;
+use warp_errors::report_error;
 use warp_managed_secrets::ManagedSecretValue;
-use warp_multi_agent_api::response_event::{StreamFinished, stream_finished};
-use warp_multi_agent_api::{ClientAction, ResponseEvent, response_event};
+use warp_multi_agent_api::response_event::StreamFinished;
+use warp_multi_agent_api::{ClientAction, McpServerIdentity, ResponseEvent, response_event};
 use warp_util::path::{EscapeChar, ShellFamily};
 use warpui::r#async::Timer;
 use warpui::r#async::executor::Background;
-use warpui::{ModelContext, ModelHandle, ModelSpawner};
+use warpui::{ModelContext, ModelHandle, ModelSpawner, SingletonEntity};
 
 use self::attachments::AttachmentResolver;
 use self::bridge::{BridgeListener, bridge_command};
-use self::connection::{AcpConnection, InboundNotification, RpcError};
-use self::mapping::{AcpTurnMapper, TurnEvent};
+use self::cli_transcript::CliTranscriptKind;
+use self::connection::{AcpConnection, RpcError};
+use self::launch::AcpLaunchSpec;
+use self::manifest::HarnessManifest;
+use self::mapping::AcpTurnMapper;
+use self::model_config::configure_model_and_thinking_through_acp;
 use self::policy::{PolicyDecision, PolicyRequest};
 use self::protocol::{
-    CancelParams, ClientCapabilities, ClientInfo, ContentBlock, FsCapabilities, InitializeParams,
+    CancelParams, ClientCapabilities, ClientInfo, FsCapabilities, InitializeParams,
     InitializeResponse, McpServer, NewSessionParams, NewSessionResponse, PROTOCOL_VERSION,
-    PermissionOptionKind, PermissionOutcome, PromptParams, PromptResponse, ReadTextFileParams,
-    ReadTextFileResponse, RequestPermissionParams, RequestPermissionResponse, SessionUpdateParams,
-    StopReason, WriteTextFileParams,
+    PermissionOptionKind, PermissionOutcome, ReadTextFileParams, ReadTextFileResponse,
+    RequestPermissionParams, RequestPermissionResponse, WriteTextFileParams,
+};
+use self::turn_driver::{
+    EXIT_CANCEL_DEADLINE, STEER_CANCEL_DEADLINE, TurnCancellation, TurnDriver, TurnHost, TurnState,
+    cancel_deadline,
 };
 use super::super::terminal::{CommandHandle, TerminalDriver};
 use super::super::{AgentDriver, AgentDriverError};
 use super::claude_code::prepare_claude_environment_config;
 use super::codex::{prepare_codex_environment_config, publish_skills_for_codex};
 use super::gemini::{prepare_gemini_environment_config, publish_skills_for_gemini};
-use super::harness_persistence::{HarnessPersistence, PersistenceOutcome};
-use super::{
-    HarnessCleanupDisposition, HarnessKind, HarnessRunner, JSONMCPServer, ResumePayload, SavePoint,
-    ThirdPartyHarness, harness_kind, validate_cli_installed,
+use super::harness_persistence::{
+    HarnessPersistence, PersistenceOutcome, save_transcript_and_conversation_data,
 };
-use crate::ai::agent_sdk::setup_observability::SetupClientEventReporter;
+use super::pi::{self, prepare_pi_environment_config, publish_skills_for_pi};
+use super::skill_dirs_publish::HarnessSupportSkills;
+use super::transcript_persistence::{
+    UploadedTranscriptUsage, capture_transcript_with_retry, upload_captured_transcript,
+};
+use super::{
+    HarnessCleanupDisposition, HarnessRunner, JSONMCPServer, ResolvedMCPServers, ResumePayload,
+    SavePoint, ThirdPartyHarness, install_docs_url, validate_cli_installed,
+};
+use crate::ai::agent::CancellationReason;
+use crate::ai::agent::api::{ServerConversationToken, mcp_server_identity};
+use crate::ai::agent::conversation::{AIConversation, AIConversationId};
+use crate::ai::agent_sdk::setup_observability::{SetupClientEventReporter, SetupStep};
 use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::ambient_agents::task::HarnessModelConfig;
-use crate::ai::attachment_utils::attachments_download_dir;
+use crate::ai::attachment_utils::{DownloadedAttachment, attachments_download_dir};
 use crate::ai::blocklist::{
-    BlocklistAIController, ExternalHarnessPrompt, ExternalHarnessTurn, ResponseStreamId,
+    BlocklistAIController, BlocklistAIHistoryModel, ExternalHarnessCancel, ExternalHarnessPrompt,
+    ExternalHarnessTurn, QueuedQueryId, ResponseStreamId,
 };
 use crate::ai::mcp::JSONTransportType;
 use crate::server::server_api::ServerApi;
+use crate::server::server_api::harness_support::HarnessSupportClient;
 use crate::terminal::CLIAgent;
+
+/// Format slug sent to the server when creating the conversation: its history is stored as
+/// native MAA `ConversationData`, which the driver uploads itself.
+const MAA_FORMAT: &str = "maa";
 
 /// Bound on the agent connecting back through the bridge plus its `initialize` and
 /// `session/new` handshakes.
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(60);
 
-/// A third-party harness driven over ACP. `harness` is the harness identity (which decides
-/// bootstrap, auth checks, and server-side bookkeeping); `launch` is the ACP adapter process.
-pub(crate) struct AcpHarness {
+/// A third-party harness driven over ACP with manifest-defined launch and setup metadata.
+pub(super) struct AcpHarness {
     harness: Harness,
-    launch: AcpLaunchSpec,
+    manifest: HarnessManifest,
+    initial_attachments: Vec<DownloadedAttachment>,
 }
 
 impl AcpHarness {
-    pub(crate) fn new(harness: Harness, launch: AcpLaunchSpec) -> Self {
-        Self { harness, launch }
+    pub(super) fn new(harness: Harness) -> Result<Self, AgentDriverError> {
+        Ok(Self {
+            harness,
+            manifest: manifest::resolve(harness)?,
+            initial_attachments: Vec::new(),
+        })
     }
 
-    /// The terminal-based harness with the same identity, whose per-harness knowledge (install
-    /// docs, auth checks) applies regardless of transport.
-    fn pty_harness(&self) -> Option<Box<dyn ThirdPartyHarness>> {
-        match harness_kind(self.harness, HarnessTransport::Pty) {
-            Ok(HarnessKind::ThirdParty(harness)) => Some(harness),
-            Ok(HarnessKind::Oz | HarnessKind::Unsupported(_)) | Err(_) => None,
-        }
+    /// The text of the initial prompt. ACP has no system-prompt channel of its own, so every
+    /// server-composed block that the harness bootstrap did not already place is folded into
+    /// the user turn ahead of the prompt itself.
+    fn initial_prompt_text(
+        &self,
+        prompt: &str,
+        system_prompt: Option<&str>,
+        resumption_prompt: Option<&str>,
+        context: Option<&str>,
+    ) -> String {
+        let system_prompt_in_turn = match self.harness {
+            Harness::Claude | Harness::Oz | Harness::OpenCode | Harness::Unknown => system_prompt,
+            Harness::Codex | Harness::Gemini | Harness::Pi => None,
+        };
+        [
+            resumption_prompt,
+            context,
+            system_prompt_in_turn,
+            Some(prompt),
+        ]
+        .into_iter()
+        .flatten()
+        .filter(|part| !part.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("\n\n")
     }
 
     /// Writes the harness's own config files (trust, auth, system prompt) the way the terminal
@@ -116,8 +167,9 @@ impl AcpHarness {
         harness_working_dir: &Path,
         resolved_env_vars: &HashMap<OsString, OsString>,
         skill_dirs: &[PathBuf],
-        has_deferred_repositories: bool,
+        factory_repository_contract: bool,
         resolved_secrets: &HashMap<String, ManagedSecretValue>,
+        resolved_mcp_servers: &HashMap<String, JSONMCPServer>,
         third_party_harness_model_config: Option<&HarnessModelConfig>,
     ) -> Result<()> {
         match self.harness {
@@ -126,10 +178,11 @@ impl AcpHarness {
                 harness_working_dir,
                 resolved_env_vars,
                 skill_dirs,
-                has_deferred_repositories,
+                factory_repository_contract,
+                HarnessSupportSkills::Bundled,
             ),
-            // MCP servers are handed to the agent in `session/new` rather than written into
-            // `config.toml`, so they are not registered twice.
+            // MCP servers are handed to the agent in `session/new` and the model is selected
+            // through the session's config options, so neither is written into `config.toml`.
             Harness::Codex => {
                 prepare_codex_environment_config(
                     harness_working_dir,
@@ -137,13 +190,14 @@ impl AcpHarness {
                     resolved_env_vars,
                     resolved_secrets,
                     &HashMap::new(),
-                    third_party_harness_model_config,
+                    None,
                 )?;
                 publish_skills_for_codex(
                     workspace_root,
                     harness_working_dir,
                     skill_dirs,
-                    has_deferred_repositories,
+                    factory_repository_contract,
+                    HarnessSupportSkills::Bundled,
                 )
             }
             Harness::Gemini => {
@@ -152,7 +206,24 @@ impl AcpHarness {
                     workspace_root,
                     harness_working_dir,
                     skill_dirs,
-                    has_deferred_repositories,
+                    factory_repository_contract,
+                    HarnessSupportSkills::Bundled,
+                )
+            }
+            Harness::Pi => {
+                let agent_dir = prepare_pi_environment_config(
+                    harness_working_dir,
+                    system_prompt,
+                    resolved_env_vars,
+                    resolved_mcp_servers,
+                    resolved_secrets,
+                    third_party_harness_model_config,
+                )?;
+                publish_skills_for_pi(
+                    workspace_root,
+                    &agent_dir,
+                    skill_dirs,
+                    factory_repository_contract,
                 )
             }
             Harness::Oz | Harness::OpenCode | Harness::Unknown => Ok(()),
@@ -172,33 +243,36 @@ impl ThirdPartyHarness for AcpHarness {
             Harness::Claude => CLIAgent::Claude,
             Harness::Codex => CLIAgent::Codex,
             Harness::Gemini => CLIAgent::Gemini,
-            Harness::Oz | Harness::OpenCode | Harness::Unknown => CLIAgent::Unknown,
+            Harness::Pi | Harness::Oz | Harness::OpenCode | Harness::Unknown => CLIAgent::Unknown,
         }
     }
 
     fn install_docs_url(&self) -> Option<&'static str> {
-        self.pty_harness()
-            .and_then(|harness| harness.install_docs_url())
+        install_docs_url(self.harness)
     }
 
     fn validate(&self) -> Result<(), AgentDriverError> {
-        validate_cli_installed(&self.launch.program, self.install_docs_url())
+        if self.manifest.is_sidecar {
+            Ok(())
+        } else {
+            validate_cli_installed(&self.manifest.launch.program, self.install_docs_url())
+        }
     }
 
     fn auth_check_command(&self) -> Option<String> {
-        self.pty_harness()
-            .and_then(|harness| harness.auth_check_command())
+        self.manifest.auth_check_command.clone()
     }
 
-    /// The agent's stderr lands in its terminal block, so the CLI's failure signatures apply.
-    fn runtime_error_patterns(&self) -> &'static [&'static str] {
-        self.pty_harness()
-            .map(|harness| harness.runtime_error_patterns())
-            .unwrap_or(&[])
+    fn runtime_error_patterns_for_run(&self) -> Vec<String> {
+        self.manifest.runtime_error_patterns.clone()
     }
 
     fn drives_cli_agent_session(&self) -> bool {
         false
+    }
+
+    fn set_initial_attachments(&mut self, downloaded: Vec<DownloadedAttachment>) {
+        self.initial_attachments = downloaded;
     }
 
     fn build_runner(
@@ -212,12 +286,12 @@ impl ThirdPartyHarness for AcpHarness {
         task_id: Option<AmbientAgentTaskId>,
         server_api: Arc<ServerApi>,
         terminal_driver: ModelHandle<TerminalDriver>,
-        _resume: Option<ResumePayload>,
+        resume: Option<ResumePayload>,
         resolved_env_vars: &HashMap<OsString, OsString>,
         skill_dirs: &[PathBuf],
-        has_deferred_repositories: bool,
+        factory_repository_contract: bool,
         resolved_secrets: &HashMap<String, ManagedSecretValue>,
-        resolved_mcp_servers: &HashMap<String, JSONMCPServer>,
+        resolved_mcp_servers: &ResolvedMCPServers,
         third_party_harness_model_config: Option<&HarnessModelConfig>,
     ) -> Result<Box<dyn HarnessRunner>, AgentDriverError> {
         self.prepare_harness_environment(
@@ -226,8 +300,9 @@ impl ThirdPartyHarness for AcpHarness {
             harness_working_dir,
             resolved_env_vars,
             skill_dirs,
-            has_deferred_repositories,
+            factory_repository_contract,
             resolved_secrets,
+            &resolved_mcp_servers.configs,
             third_party_harness_model_config,
         )
         .map_err(|error| AgentDriverError::HarnessConfigSetupFailed {
@@ -235,45 +310,70 @@ impl ThirdPartyHarness for AcpHarness {
             error,
         })?;
 
-        // ACP has no system-prompt channel of its own, so every server-composed block that the
-        // harness bootstrap did not already place is folded into the user turn ahead of the
-        // prompt itself.
-        let system_prompt_in_turn = match self.harness {
-            Harness::Claude | Harness::Oz | Harness::OpenCode | Harness::Unknown => system_prompt,
-            Harness::Codex | Harness::Gemini => None,
-        };
-        let prompt_text = [
-            resumption_prompt,
-            context,
-            system_prompt_in_turn,
-            Some(prompt),
-        ]
-        .into_iter()
-        .flatten()
-        .filter(|part| !part.trim().is_empty())
-        .collect::<Vec<_>>()
-        .join("\n\n");
+        let prompt_text =
+            self.initial_prompt_text(prompt, system_prompt, resumption_prompt, context);
         let attachments = AttachmentResolver::new(
             server_api.clone(),
             server_api.owned_http_client(),
             task_id,
             attachments_download_dir(harness_working_dir),
         );
+        // ACP runs resume by restoring the native conversation, never through a harness payload.
+        if resume.is_some() {
+            log::error!("ACP harness given a resume payload for a terminal-driven harness");
+            return Err(AgentDriverError::InvalidRuntimeState);
+        }
+        let (save_request_tx, save_request_rx) = async_channel::unbounded();
+        let cli_session = CliTranscriptKind::for_harness(self.harness).and_then(|kind| match kind
+            .root(resolved_env_vars)
+        {
+            Ok(root) => Some(CliSession {
+                kind,
+                session_id: OnceLock::new(),
+                root,
+                transcript_path: OnceLock::new(),
+            }),
+            Err(error) => {
+                log::warn!("Cannot locate {kind:?} transcripts: {error:#}");
+                None
+            }
+        });
         Ok(Box::new(AcpHarnessRunner {
             harness: self.harness,
-            launch: self.launch.clone(),
+            launch: self.manifest.launch.clone(),
             user_prompt: prompt.to_owned(),
             prompt_text,
+            initial_attachments: self.initial_attachments.clone(),
             harness_working_dir: harness_working_dir.to_path_buf(),
+            model_config: third_party_harness_model_config.cloned(),
             task_id,
+            client: server_api,
             terminal_driver,
             attachments: Arc::new(attachments),
             mcp_servers: resolved_mcp_servers
+                .configs
                 .iter()
+                .filter(|_| self.harness != Harness::Pi)
                 .map(|(name, server)| mcp_server_for_acp(name, server))
                 .collect(),
-            persistence: HarnessPersistence::default(),
+            mcp_server_identities: resolved_mcp_servers
+                .configs
+                .keys()
+                .map(|name| {
+                    let warp_id = resolved_mcp_servers.warp_ids.get(name).map(String::as_str);
+                    (name.clone(), tool_call_server_identity(name, warp_id))
+                })
+                .collect(),
+            conversation: OnceLock::new(),
+            boundary_snapshot: Arc::default(),
+            cli_session,
+            // Save points are raised at request-stream boundaries, which is the cadence the
+            // server persists its own conversations at, so they are uploaded as they come.
+            persistence: HarnessPersistence::default().with_save_debounce(Duration::ZERO),
+            save_request_tx,
+            save_request_rx,
             agent: Mutex::new(None),
+            turn_state: Arc::default(),
         }))
     }
 }
@@ -284,6 +384,27 @@ struct RunningAgent {
     session_id: Option<String>,
 }
 
+/// The conversation for this run.
+#[derive(Clone)]
+struct RunConversation {
+    local_id: AIConversationId,
+    server_id: ServerConversationToken,
+    /// Set when the conversation was restored from the server; the run then continues this
+    /// root task instead of creating one.
+    restored_root_task_id: Option<String>,
+}
+
+/// The CLI session behind the ACP session, whose own transcript is uploaded for the run.
+struct CliSession {
+    kind: CliTranscriptKind,
+    /// The CLI's own session id, which names its transcript on disk.
+    session_id: OnceLock<Uuid>,
+    /// The directory the CLI keeps its transcripts under.
+    root: PathBuf,
+    /// Cached once the CLI has written the transcript.
+    transcript_path: OnceLock<PathBuf>,
+}
+
 pub(crate) struct AcpHarnessRunner {
     harness: Harness,
     launch: AcpLaunchSpec,
@@ -291,13 +412,32 @@ pub(crate) struct AcpHarnessRunner {
     user_prompt: String,
     /// The full text sent to the agent, including server-composed context.
     prompt_text: String,
+    /// Task attachments downloaded before the run started. They are shaped for the agent only
+    /// once the handshake has revealed what it accepts inline.
+    initial_attachments: Vec<DownloadedAttachment>,
     harness_working_dir: PathBuf,
+    model_config: Option<HarnessModelConfig>,
     task_id: Option<AmbientAgentTaskId>,
+    client: Arc<dyn HarnessSupportClient>,
     terminal_driver: ModelHandle<TerminalDriver>,
     attachments: Arc<AttachmentResolver>,
     mcp_servers: Vec<McpServer>,
+    /// Stamped on the agent's MCP tool calls, keyed by server name.
+    mcp_server_identities: HashMap<String, McpServerIdentity>,
+    /// Set before the first turn.
+    conversation: OnceLock<RunConversation>,
+    /// The encoded conversation as captured at the most recent request-stream boundary and not
+    /// yet uploaded. Captured by the turn driver when it finishes a stream, so the upload never
+    /// sees a stream that a later turn has since opened.
+    boundary_snapshot: Arc<Mutex<Option<Vec<u8>>>>,
+    cli_session: Option<CliSession>,
     persistence: HarnessPersistence,
+    /// Save points raised by the turn driver at request-stream and turn boundaries.
+    save_request_tx: async_channel::Sender<SavePoint>,
+    save_request_rx: async_channel::Receiver<SavePoint>,
     agent: Mutex<Option<RunningAgent>>,
+    /// Turn activity reported by the turn driver.
+    turn_state: Arc<TurnState>,
 }
 
 impl AcpHarnessRunner {
@@ -325,6 +465,144 @@ impl AcpHarnessRunner {
             })
             .await;
     }
+
+    fn record_cli_session(&self, acp_session_id: &str) {
+        let Some(cli) = &self.cli_session else {
+            return;
+        };
+        let kind = cli.kind;
+        let Some(session_id) = kind.cli_session_id(acp_session_id) else {
+            log::warn!(
+                "ACP session id {acp_session_id} does not identify a {kind:?} session, so its \
+                 transcript will not be uploaded"
+            );
+            return;
+        };
+        let _ = cli.session_id.set(session_id);
+    }
+
+    async fn cli_transcript_path(
+        &self,
+        cli: &CliSession,
+        session_id: Uuid,
+    ) -> Result<Option<PathBuf>> {
+        if let Some(path) = cli.transcript_path.get() {
+            return Ok(Some(path.clone()));
+        }
+        let (kind, root, cwd) = (cli.kind, cli.root.clone(), self.harness_working_dir.clone());
+        let path = tokio::task::spawn_blocking(move || kind.locate(&root, &cwd, session_id))
+            .await
+            .context("CLI transcript discovery task failed")?;
+        if let Some(path) = &path {
+            let _ = cli.transcript_path.set(path.clone());
+        }
+        Ok(path)
+    }
+
+    /// Captures and uploads the CLI's own session transcript, as its terminal runner does,
+    /// including the usage derived from it.
+    async fn upload_cli_transcript(
+        &self,
+        server_id: &ServerConversationToken,
+        is_final: bool,
+    ) -> Result<UploadedTranscriptUsage> {
+        let Some(cli) = &self.cli_session else {
+            return Ok(UploadedTranscriptUsage::empty());
+        };
+        let Some(&session_id) = cli.session_id.get() else {
+            return Ok(UploadedTranscriptUsage::empty());
+        };
+        let capture =
+            capture_transcript_with_retry(self.persistence.is_reporting_enabled(), || async {
+                let Some(path) = self.cli_transcript_path(cli, session_id).await? else {
+                    return Ok(None);
+                };
+                let identity = self.persistence.begin_capture();
+                let (kind, root, cwd) =
+                    (cli.kind, cli.root.clone(), self.harness_working_dir.clone());
+                tokio::task::spawn_blocking(move || {
+                    kind.capture(session_id, &path, &root, &cwd, is_final, identity)
+                })
+                .await
+                .context("CLI transcript capture task failed")?
+                .map(Some)
+            })
+            .await?;
+        match capture {
+            Some(capture) => {
+                log::info!(
+                    "Uploading {:?} transcript to conversation {server_id}",
+                    cli.kind
+                );
+                upload_captured_transcript(self.client.as_ref(), server_id, capture).await
+            }
+            None => Ok(cli.kind.missing_transcript(is_final)),
+        }
+    }
+
+    /// Binds the native conversation the run drives and gives it a server identity before the
+    /// first turn, so every request stream carries the server-known id. A conversation restored
+    /// from the server already has one; otherwise a new server conversation is created.
+    async fn bind_server_conversation(
+        &self,
+        restored_conversation_id: Option<AIConversationId>,
+        foreground: &ModelSpawner<AgentDriver>,
+        setup_events: &SetupClientEventReporter,
+    ) -> Result<RunConversation, AgentDriverError> {
+        let (local_id, restored) =
+            with_ai_controller(foreground, &self.terminal_driver, move |controller, ctx| {
+                let local_id = controller
+                    .native_prompt_conversation_id()
+                    .unwrap_or_else(|| {
+                        controller.bind_native_prompt_conversation(restored_conversation_id, ctx)
+                    });
+                let restored = BlocklistAIHistoryModel::as_ref(ctx)
+                    .conversation(&local_id)
+                    .and_then(|conversation| {
+                        let server_id = conversation.server_conversation_token()?.clone();
+                        Some((server_id, conversation.get_root_task_id().to_string()))
+                    });
+                (local_id, restored)
+            })
+            .await?;
+        if let Some((server_id, root_task_id)) = restored {
+            log::info!("Continuing restored ACP conversation {server_id}");
+            return Ok(RunConversation {
+                local_id,
+                server_id,
+                restored_root_task_id: Some(root_task_id),
+            });
+        }
+
+        let server_id = setup_events
+            .record_result(SetupStep::ThirdPartyHarnessExternalConversation, async {
+                self.client
+                    .create_external_conversation(MAA_FORMAT, self.harness)
+                    .await
+                    .map_err(|error| {
+                        report_error!(&error);
+                        AgentDriverError::ConfigBuildFailed(error)
+                    })
+            })
+            .await?;
+        log::info!("Created ACP conversation {server_id}");
+        let token = server_id.as_str().to_owned();
+        foreground
+            .spawn(move |_, ctx| {
+                BlocklistAIHistoryModel::handle(ctx).update(ctx, |history, ctx| {
+                    history.set_server_conversation_token_for_conversation_and_persist(
+                        local_id, token, ctx,
+                    );
+                });
+            })
+            .await
+            .map_err(|_| AgentDriverError::InvalidRuntimeState)?;
+        Ok(RunConversation {
+            local_id,
+            server_id,
+            restored_root_task_id: None,
+        })
+    }
 }
 
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
@@ -333,17 +611,29 @@ impl HarnessRunner for AcpHarnessRunner {
     fn harness_name(&self) -> &str {
         &self.launch.program
     }
+    #[cfg(test)]
+    fn prompt_text_for_test(&self) -> Option<&str> {
+        Some(&self.prompt_text)
+    }
 
     fn persistence(&self) -> &HarnessPersistence {
         &self.persistence
     }
 
+    fn save_requests(&self) -> Option<async_channel::Receiver<SavePoint>> {
+        Some(self.save_request_rx.clone())
+    }
+
     async fn start(
         &self,
         foreground: &ModelSpawner<AgentDriver>,
-        _setup_events: &SetupClientEventReporter,
+        setup_events: &SetupClientEventReporter,
     ) -> Result<CommandHandle, AgentDriverError> {
-        let (background, shell_family): (Arc<Background>, ShellFamily) = foreground
+        let (background, shell_family, restored_conversation_id): (
+            Arc<Background>,
+            ShellFamily,
+            Option<AIConversationId>,
+        ) = foreground
             .spawn(|me, ctx| {
                 let shell_family = me
                     .terminal_driver
@@ -351,7 +641,11 @@ impl HarnessRunner for AcpHarnessRunner {
                     .active_session_shell_type(ctx)
                     .map(ShellFamily::from)
                     .unwrap_or(ShellFamily::Posix);
-                (ctx.background_executor(), shell_family)
+                (
+                    ctx.background_executor(),
+                    shell_family,
+                    me.restored_conversation_id,
+                )
             })
             .await
             .map_err(|_| AgentDriverError::InvalidRuntimeState)?;
@@ -433,12 +727,19 @@ impl HarnessRunner for AcpHarnessRunner {
                     initialize.protocol_version
                 );
             }
+            let capabilities = &initialize.agent_capabilities;
+            let extra_capabilities = capabilities.extra.keys().cloned().collect::<Vec<_>>();
             log::info!(
-                "ACP agent initialized: protocol v{} agent={agent_description} auth_methods={}",
+                "ACP agent initialized: protocol v{} agent={agent_description} auth_methods={} \
+                 load_session={} prompt_capabilities={:?} other_capabilities={extra_capabilities:?}",
                 initialize.protocol_version,
                 initialize.auth_methods.len(),
+                capabilities.load_session,
+                capabilities.prompt_capabilities,
             );
-            let session: NewSessionResponse = connection
+            self.attachments
+                .set_prompt_capabilities(capabilities.prompt_capabilities);
+            let mut session: NewSessionResponse = connection
                 .request(
                     protocol::METHOD_SESSION_NEW,
                     NewSessionParams {
@@ -448,7 +749,22 @@ impl HarnessRunner for AcpHarnessRunner {
                 )
                 .await
                 .context("session/new failed")?;
-            Ok::<_, anyhow::Error>(session.session_id)
+            configure_model_and_thinking_through_acp(
+                &connection,
+                &mut session,
+                self.model_config.as_ref(),
+            )
+            .await?;
+            let suppressed_startup_message = match self.harness {
+                Harness::Pi => pi::startup_message(&session.meta),
+                Harness::Claude
+                | Harness::Codex
+                | Harness::Gemini
+                | Harness::Oz
+                | Harness::OpenCode
+                | Harness::Unknown => None,
+            };
+            Ok::<_, anyhow::Error>((session.session_id, suppressed_startup_message))
         }
         .fuse();
         pin_mut!(handshake);
@@ -459,47 +775,123 @@ impl HarnessRunner for AcpHarnessRunner {
                 Err(anyhow!("the agent did not complete its handshake within {HANDSHAKE_TIMEOUT:?}"))
             }
         };
-        let session_id = match session_id {
-            Ok(session_id) => session_id,
+        let (session_id, suppressed_startup_message) = match session_id {
+            Ok(session) => session,
             Err(error) => {
                 connection.close().await;
                 self.interrupt_terminal(foreground).await;
-                return Err(self.setup_failed(format!("{error:#}")));
+                // Code -32000 is the agent refusing the session for lack of credentials, which
+                // is the run's configuration rather than a defect worth paging on.
+                if let Some(rpc_error) = error
+                    .downcast_ref::<RpcError>()
+                    .filter(|error| error.code == -32000)
+                {
+                    return Err(AgentDriverError::HarnessAuthCheckFailed {
+                        harness: self.harness.to_string(),
+                        detail: rpc_error.message.clone(),
+                    });
+                }
+                let reason = format!("{error:#}");
+                report_error!(
+                    error.context("ACP handshake failed"),
+                    extra: { "harness" => %self.harness }
+                );
+                return Err(self.setup_failed(reason));
             }
         };
         log::info!("ACP session {session_id} created");
         if let Some(agent) = self.agent.lock().as_mut() {
             agent.session_id = Some(session_id.clone());
         }
+        self.record_cli_session(&session_id);
+
+        let conversation = match self
+            .bind_server_conversation(restored_conversation_id, foreground, setup_events)
+            .await
+        {
+            Ok(conversation) => conversation,
+            Err(error) => {
+                connection.close().await;
+                self.interrupt_terminal(foreground).await;
+                return Err(error);
+            }
+        };
+        let restored_root_task_id = conversation.restored_root_task_id.clone();
+        let local_conversation_id = conversation.local_id;
+        let _ = self.conversation.set(conversation);
 
         let run_id = self.task_id.map(|id| id.to_string());
-        let turn = begin_turn(foreground, &self.terminal_driver, run_id.clone()).await?;
+        let host = Arc::new(DriverTurnHost {
+            foreground: foreground.clone(),
+            terminal_driver: self.terminal_driver.clone(),
+            run_id,
+            conversation_id: local_conversation_id,
+        });
+        let turn = match host.begin_turn(None).await {
+            Ok(turn) => turn,
+            Err(error) => {
+                connection.close().await;
+                self.interrupt_terminal(foreground).await;
+                return Err(AgentDriverError::HarnessSetupFailed {
+                    harness: "acp".to_owned(),
+                    reason: format!("{error:#}"),
+                });
+            }
+        };
         let (follow_up_tx, follow_up_rx) = async_channel::unbounded::<ExternalHarnessPrompt>();
-        with_ai_controller(foreground, &self.terminal_driver, move |controller, _| {
-            controller.set_external_harness_prompt_sink(follow_up_tx);
+        let (cancel_tx, cancel_rx) = async_channel::unbounded::<ExternalHarnessCancel>();
+        with_ai_controller(foreground, &self.terminal_driver, move |controller, ctx| {
+            controller.set_external_harness_prompt_sink(follow_up_tx, ctx);
+            controller.set_external_harness_cancel_sink(cancel_tx);
         })
         .await?;
 
-        let mut mapper = AcpTurnMapper::new(Uuid::new_v4().to_string(), turn.request_id.clone());
+        let (mut mapper, opening_actions) = match restored_root_task_id {
+            Some(root_task_id) => {
+                let mapper = AcpTurnMapper::new(
+                    root_task_id,
+                    turn.request_id.clone(),
+                    self.mcp_server_identities.clone(),
+                );
+                let actions = vec![mapper.user_query_action(&self.user_prompt, None)];
+                (mapper, actions)
+            }
+            None => {
+                let mapper = AcpTurnMapper::new(
+                    Uuid::new_v4().to_string(),
+                    turn.request_id.clone(),
+                    self.mcp_server_identities.clone(),
+                );
+                let actions = mapper.initial_actions(&self.user_prompt);
+                (mapper, actions)
+            }
+        };
         apply_actions(
             foreground,
             &self.terminal_driver,
             &turn.stream_id,
-            mapper.initial_actions(&self.user_prompt),
+            opening_actions,
         )
         .await?;
 
         let turn_driver = TurnDriver {
             connection,
             notifications,
-            follow_ups: follow_up_rx,
-            foreground: foreground.clone(),
-            terminal_driver: self.terminal_driver.clone(),
-            run_id,
-            turn: Mutex::new(turn),
+            follow_ups: Some(follow_up_rx),
+            cancels: Some(cancel_rx),
+            host,
+            state: self.turn_state.clone(),
+            turn,
             session_id,
+            suppressed_startup_message,
             prompt_text: self.prompt_text.clone(),
+            initial_attachments: self.initial_attachments.clone(),
             attachments: self.attachments.clone(),
+            boundary_snapshot: self.boundary_snapshot.clone(),
+            save_requests: self.save_request_tx.clone(),
+            queued: VecDeque::new(),
+            cancel_deadline: STEER_CANCEL_DEADLINE,
+            timer_factory: Arc::new(cancel_deadline),
         };
         background
             .spawn(async move { turn_driver.run(&mut mapper).await })
@@ -513,25 +905,85 @@ impl HarnessRunner for AcpHarnessRunner {
 
     async fn save_conversation(
         &self,
-        _save_point: SavePoint,
-        _foreground: &ModelSpawner<AgentDriver>,
+        save_point: SavePoint,
+        foreground: &ModelSpawner<AgentDriver>,
     ) -> PersistenceOutcome {
-        // The native conversation is streamed live to viewers; server-side persistence of ACP
-        // runs is handled separately from the harness transcript upload path.
-        PersistenceOutcome::skipped()
+        let Some(conversation) = self.conversation.get().cloned() else {
+            return match save_point {
+                SavePoint::Final => PersistenceOutcome::failed(anyhow!(
+                    "Cannot finalize ACP persistence before the conversation is bound"
+                )),
+                SavePoint::PostTurn | SavePoint::Periodic => PersistenceOutcome::skipped(),
+            };
+        };
+        let conversation_data = async {
+            let snapshot = match save_point {
+                // Mid-stream the conversation holds a request that has not finished; the
+                // boundary that closes it raises the save that captures it.
+                SavePoint::Periodic => return Ok(()),
+                // Coalesced save points share one snapshot: the newest boundary. A request whose
+                // snapshot a previous save already took has nothing left to upload.
+                SavePoint::PostTurn => match self.boundary_snapshot.lock().take() {
+                    Some(snapshot) => snapshot,
+                    None => return Ok(()),
+                },
+                // Nothing streams after the harness exits, so the live conversation is boundary
+                // state, including a turn that the exit cut short.
+                SavePoint::Final => {
+                    match capture_conversation_snapshot(conversation.local_id, foreground).await? {
+                        Some(snapshot) => snapshot,
+                        None => return Ok(()),
+                    }
+                }
+            };
+            upload_conversation_snapshot(self.client.as_ref(), &conversation.server_id, &snapshot)
+                .await
+        };
+        save_transcript_and_conversation_data(
+            self.upload_cli_transcript(
+                &conversation.server_id,
+                matches!(save_point, SavePoint::Final),
+            ),
+            conversation_data,
+        )
+        .await
     }
 
+    /// Cancels any turn in flight and waits up to [`EXIT_CANCEL_DEADLINE`] for the agent to
+    /// answer it before closing the connection, so an agent that persists its session at the end
+    /// of a turn gets to. The driver's exit ladder only starts once this returns.
     async fn exit(&self, _foreground: &ModelSpawner<AgentDriver>) -> Result<()> {
         let Some((connection, session_id)) = self.running_agent() else {
             return Ok(());
         };
         if let Some(session_id) = session_id {
             connection
-                .notify(protocol::METHOD_SESSION_CANCEL, CancelParams { session_id })
+                .notify(
+                    protocol::METHOD_SESSION_CANCEL,
+                    CancelParams {
+                        session_id: session_id.clone(),
+                    },
+                )
                 .await?;
+            connection
+                .cancel_pending_permission_requests(&session_id)
+                .await;
+            let idle = self.turn_state.wait_until_idle().fuse();
+            pin_mut!(idle);
+            select! {
+                _ = idle => {}
+                _ = Timer::after(EXIT_CANCEL_DEADLINE).fuse() => log::warn!(
+                    "ACP agent did not answer session/cancel within {EXIT_CANCEL_DEADLINE:?} \
+                     on exit; closing anyway"
+                ),
+            }
         }
         connection.close().await;
         Ok(())
+    }
+
+    fn is_settling_turn(&self) -> bool {
+        self.turn_state.is_settling()
     }
 
     /// Interrupts the agent's block; the driver's exit ladder force-kills the process group if
@@ -549,212 +1001,6 @@ impl HarnessRunner for AcpHarnessRunner {
         _foreground: &ModelSpawner<AgentDriver>,
     ) -> Result<()> {
         self.agent.lock().take();
-        Ok(())
-    }
-}
-
-/// Runs the initial prompt turn, then any follow-up prompts that arrive while the session is
-/// open. The session ends when the driver closes the connection (its idle window elapsed or it
-/// is shutting down), when the controller unbinds the conversation, or when the agent leaves.
-///
-/// A prompt turn spans one or more MAA request streams: every time the agent reports results
-/// for tool calls announced in the current stream, that stream is finished and a new one is
-/// opened, as the MAA server does for its own tool round trips.
-struct TurnDriver {
-    connection: Arc<AcpConnection>,
-    notifications: async_channel::Receiver<InboundNotification>,
-    /// Follow-up prompts injected into the conversation (e.g. by shared-session viewers).
-    follow_ups: async_channel::Receiver<ExternalHarnessPrompt>,
-    foreground: ModelSpawner<AgentDriver>,
-    terminal_driver: ModelHandle<TerminalDriver>,
-    run_id: Option<String>,
-    /// The currently open request stream.
-    turn: Mutex<ExternalHarnessTurn>,
-    session_id: String,
-    prompt_text: String,
-    attachments: Arc<AttachmentResolver>,
-}
-
-impl TurnDriver {
-    /// A failed turn is already reflected in the conversation status (the stream finishes with
-    /// an internal error), which is what the task status follows; the block's exit code remains
-    /// the agent's own.
-    async fn run(self, mapper: &mut AcpTurnMapper) {
-        let initial = vec![ContentBlock::Text {
-            text: self.prompt_text.clone(),
-        }];
-        let mut turn_result = self.run_turn(mapper, initial).await;
-
-        log::info!("ACP turn finished; accepting follow-ups until the driver ends the run");
-        loop {
-            select! {
-                prompt = self.follow_ups.recv().fuse() => match prompt {
-                    Ok(prompt) => {
-                        log::info!("Running ACP follow-up turn");
-                        turn_result = self.run_follow_up(mapper, prompt).await;
-                    }
-                    // The controller unbound the conversation; nothing more can be routed here.
-                    Err(_) => break,
-                },
-                notification = self.notifications.recv().fuse() => match notification {
-                    Ok(notification) => log::debug!(
-                        "Ignoring ACP notification {} received between turns",
-                        notification.method
-                    ),
-                    // The agent closed its side, typically because the driver closed ours.
-                    Err(_) => break,
-                },
-            }
-        }
-        self.connection.close().await;
-        match turn_result {
-            Ok(stop_reason) => log::info!("ACP turns finished (last stop reason {stop_reason:?})"),
-            Err(error) => log::warn!("ACP turns finished with an error: {error:#}"),
-        }
-    }
-
-    /// Opens a new request stream for a follow-up prompt, echoes it, and runs the turn. The
-    /// echo shows the text only; attachments reach the agent but are not yet rendered on the
-    /// user-query entry.
-    async fn run_follow_up(
-        &self,
-        mapper: &mut AcpTurnMapper,
-        prompt: ExternalHarnessPrompt,
-    ) -> Result<StopReason> {
-        let next = begin_turn(&self.foreground, &self.terminal_driver, self.run_id.clone())
-            .await
-            .map_err(|error| anyhow!("{error}"))?;
-        mapper.start_segment(next.request_id.clone());
-        *self.turn.lock() = next;
-        let echo = vec![mapper.user_query_action(&prompt.text)];
-        self.apply_events(mapper, vec![TurnEvent::Actions(echo)])
-            .await?;
-        let content = self
-            .attachments
-            .prompt_content(prompt.text, prompt.attachments)
-            .await;
-        self.run_turn(mapper, content).await
-    }
-
-    /// Runs one prompt turn to completion and finishes its last request stream.
-    async fn run_turn(
-        &self,
-        mapper: &mut AcpTurnMapper,
-        prompt: Vec<ContentBlock>,
-    ) -> Result<StopReason> {
-        let turn_result = self.prompt(mapper, prompt).await;
-        let finished = match &turn_result {
-            Ok(stop_reason) => stream_finished_for(*stop_reason),
-            Err(error) => {
-                log::error!("ACP turn failed: {error:#}");
-                StreamFinished {
-                    reason: Some(stream_finished::Reason::InternalError(
-                        stream_finished::InternalError {
-                            message: format!("{error:#}"),
-                        },
-                    )),
-                    ..Default::default()
-                }
-            }
-        };
-        let finish_events = mapper.finish_events();
-        if let Err(error) = self.apply_events(mapper, finish_events).await {
-            log::warn!("Failed to settle ACP tool calls: {error}");
-        }
-        let stream_id = self.turn.lock().stream_id.clone();
-        if finish_turn(&self.foreground, &self.terminal_driver, stream_id, finished)
-            .await
-            .is_err()
-        {
-            log::warn!("Agent driver dropped before the ACP turn could be finished");
-        }
-        turn_result
-    }
-
-    /// Sends the prompt and applies every update the agent streams before responding.
-    async fn prompt(
-        &self,
-        mapper: &mut AcpTurnMapper,
-        prompt: Vec<ContentBlock>,
-    ) -> Result<StopReason> {
-        let prompt_fut = self
-            .connection
-            .request::<_, PromptResponse>(
-                protocol::METHOD_SESSION_PROMPT,
-                PromptParams {
-                    session_id: self.session_id.clone(),
-                    prompt,
-                },
-            )
-            .fuse();
-        pin_mut!(prompt_fut);
-        loop {
-            select! {
-                notification = self.notifications.recv().fuse() => match notification {
-                    Ok(notification) => self.handle_notification(mapper, notification).await?,
-                    // The agent closed its stdout; the pending prompt resolves with the error.
-                    Err(_) => break,
-                },
-                response = prompt_fut => {
-                    let response = response?;
-                    while let Ok(notification) = self.notifications.try_recv() {
-                        self.handle_notification(mapper, notification).await?;
-                    }
-                    return Ok(response.stop_reason);
-                }
-            }
-        }
-        prompt_fut.await.map(|response| response.stop_reason)
-    }
-
-    async fn handle_notification(
-        &self,
-        mapper: &mut AcpTurnMapper,
-        notification: InboundNotification,
-    ) -> Result<()> {
-        if notification.method != protocol::METHOD_SESSION_UPDATE {
-            log::debug!("Ignoring ACP notification {}", notification.method);
-            return Ok(());
-        }
-        let params: SessionUpdateParams = match serde_json::from_value(notification.params) {
-            Ok(params) => params,
-            Err(error) => {
-                log::warn!("Ignoring unparseable ACP session/update: {error}");
-                return Ok(());
-            }
-        };
-        let events = mapper.map_update(params.update);
-        self.apply_events(mapper, events).await
-    }
-
-    async fn apply_events(&self, mapper: &mut AcpTurnMapper, events: Vec<TurnEvent>) -> Result<()> {
-        for event in events {
-            match event {
-                TurnEvent::Actions(actions) => {
-                    let stream_id = self.turn.lock().stream_id.clone();
-                    apply_actions(&self.foreground, &self.terminal_driver, &stream_id, actions)
-                        .await
-                        .map_err(|error| anyhow!("{error}"))?;
-                }
-                TurnEvent::SegmentBoundary => {
-                    let stream_id = self.turn.lock().stream_id.clone();
-                    finish_turn(
-                        &self.foreground,
-                        &self.terminal_driver,
-                        stream_id,
-                        stream_finished_for(StopReason::EndTurn),
-                    )
-                    .await
-                    .map_err(|error| anyhow!("{error}"))?;
-                    let next =
-                        begin_turn(&self.foreground, &self.terminal_driver, self.run_id.clone())
-                            .await
-                            .map_err(|error| anyhow!("{error}"))?;
-                    mapper.start_segment(next.request_id.clone());
-                    *self.turn.lock() = next;
-                }
-            }
-        }
         Ok(())
     }
 }
@@ -780,38 +1026,181 @@ async fn with_ai_controller<T: Send + 'static>(
         .map_err(|_| AgentDriverError::InvalidRuntimeState)
 }
 
-/// Opens a request stream on the driver's bound native conversation.
-async fn begin_turn(
+/// Captures the native conversation on the foreground thread as encoded `ConversationData`.
+/// Returns `None` when the conversation has no tasks (its only task was torn down by a failed
+/// turn): there is nothing to upload, and the server rejects an empty snapshot.
+async fn capture_conversation_snapshot(
+    local_id: AIConversationId,
     foreground: &ModelSpawner<AgentDriver>,
-    terminal_driver: &ModelHandle<TerminalDriver>,
-    run_id: Option<String>,
-) -> Result<ExternalHarnessTurn, AgentDriverError> {
-    with_ai_controller(foreground, terminal_driver, move |controller, ctx| {
-        let conversation_id = controller
-            .native_prompt_conversation_id()
-            .unwrap_or_else(|| controller.bind_native_prompt_conversation(None, ctx));
-        controller.begin_external_harness_turn(conversation_id, run_id, ctx)
-    })
-    .await?
-    .map_err(|error| AgentDriverError::HarnessSetupFailed {
-        harness: "acp".to_owned(),
-        reason: format!("could not open conversation turn: {error}"),
-    })
+) -> Result<Option<Vec<u8>>> {
+    foreground
+        .spawn(move |_, ctx| {
+            let data = BlocklistAIHistoryModel::as_ref(ctx)
+                .conversation(&local_id)
+                .map(AIConversation::to_conversation_data)?;
+            Some((!data.tasks.is_empty()).then(|| data.encode_to_vec()))
+        })
+        .await
+        .map_err(|_| anyhow!("Agent driver dropped before the ACP conversation was captured"))?
+        .ok_or_else(|| anyhow!("ACP conversation {local_id:?} is no longer loaded"))
 }
 
-async fn finish_turn(
-    foreground: &ModelSpawner<AgentDriver>,
-    terminal_driver: &ModelHandle<TerminalDriver>,
-    stream_id: ResponseStreamId,
-    finished: StreamFinished,
-) -> Result<(), AgentDriverError> {
-    apply_event(
-        foreground,
-        terminal_driver,
-        stream_id,
-        response_event::Type::Finished(finished),
-    )
-    .await
+/// Replaces the server's copy of the conversation with the encoded `snapshot`.
+async fn upload_conversation_snapshot(
+    client: &dyn HarnessSupportClient,
+    server_conversation_id: &ServerConversationToken,
+    snapshot: &[u8],
+) -> Result<()> {
+    client
+        .upload_conversation_data(server_conversation_id, snapshot)
+        .await
+        .with_context(|| {
+            format!("Failed to upload ACP conversation data to {server_conversation_id}")
+        })
+}
+
+/// The turn driver's view of the driver: the bound native conversation, reached on the
+/// foreground thread, and the terminal the agent runs in.
+struct DriverTurnHost {
+    foreground: ModelSpawner<AgentDriver>,
+    terminal_driver: ModelHandle<TerminalDriver>,
+    run_id: Option<String>,
+    conversation_id: AIConversationId,
+}
+
+#[async_trait]
+impl TurnHost for DriverTurnHost {
+    /// `initiator` names the shared-session participant whose prompt opens the stream; `None`
+    /// keeps the previous one, as the streams a tool round trip chains together all answer the
+    /// same prompt.
+    async fn begin_turn(&self, initiator: Option<ParticipantId>) -> Result<ExternalHarnessTurn> {
+        let run_id = self.run_id.clone();
+        with_ai_controller(
+            &self.foreground,
+            &self.terminal_driver,
+            move |controller, ctx| {
+                let conversation_id = controller
+                    .native_prompt_conversation_id()
+                    .unwrap_or_else(|| controller.bind_native_prompt_conversation(None, ctx));
+                if let Some(initiator) = initiator {
+                    controller.set_current_response_initiator(initiator);
+                }
+                controller.begin_external_harness_turn(conversation_id, run_id, ctx)
+            },
+        )
+        .await
+        .map_err(|error| anyhow!("{error}"))?
+        .map_err(|error| anyhow!("could not open conversation turn: {error}"))
+    }
+
+    async fn apply_actions(
+        &self,
+        stream_id: &ResponseStreamId,
+        actions: Vec<ClientAction>,
+    ) -> Result<()> {
+        apply_actions(&self.foreground, &self.terminal_driver, stream_id, actions)
+            .await
+            .map_err(|error| anyhow!("{error}"))
+    }
+
+    async fn finish_turn(
+        &self,
+        stream_id: ResponseStreamId,
+        finished: StreamFinished,
+    ) -> Result<()> {
+        apply_event(
+            &self.foreground,
+            &self.terminal_driver,
+            stream_id,
+            response_event::Type::Finished(finished),
+        )
+        .await
+        .map_err(|error| anyhow!("{error}"))
+    }
+
+    async fn cancel_turn(&self, stream_id: ResponseStreamId, by: TurnCancellation) {
+        let reason = match by {
+            TurnCancellation::FollowUp => CancellationReason::FollowUpSubmitted {
+                is_for_same_conversation: true,
+            },
+            TurnCancellation::Interrupt => CancellationReason::ManuallyCancelled,
+        };
+        let cancelled = with_ai_controller(
+            &self.foreground,
+            &self.terminal_driver,
+            move |controller, ctx| {
+                controller.cancel_external_harness_turn(&stream_id, reason, ctx);
+            },
+        )
+        .await;
+        if cancelled.is_err() {
+            log::warn!("Agent driver dropped before the cancelled ACP turn could be finished");
+        }
+    }
+
+    async fn mark_conversation_cancelled(&self) {
+        let conversation_id = self.conversation_id;
+        let marked = with_ai_controller(
+            &self.foreground,
+            &self.terminal_driver,
+            move |controller, ctx| {
+                controller.mark_external_harness_conversation_cancelled(conversation_id, ctx);
+            },
+        )
+        .await;
+        if marked.is_err() {
+            log::warn!(
+                "Agent driver dropped before the ACP conversation could be marked cancelled"
+            );
+        }
+    }
+
+    async fn capture_snapshot(&self) -> Result<Option<Vec<u8>>> {
+        capture_conversation_snapshot(self.conversation_id, &self.foreground).await
+    }
+
+    async fn interrupt_terminal(&self) {
+        let terminal_driver = self.terminal_driver.clone();
+        let _ = self
+            .foreground
+            .spawn(move |_, ctx| {
+                terminal_driver.update(ctx, |driver, ctx| driver.send_interrupt_to_pty(ctx));
+            })
+            .await;
+    }
+
+    async fn show_queued_prompt(&self, prompt: &ExternalHarnessPrompt) -> Option<QueuedQueryId> {
+        let conversation_id = self.conversation_id;
+        let prompt = prompt.clone();
+        with_ai_controller(
+            &self.foreground,
+            &self.terminal_driver,
+            move |controller, ctx| {
+                controller.show_external_harness_prompt_queued(conversation_id, &prompt, ctx)
+            },
+        )
+        .await
+        .ok()
+    }
+
+    async fn hide_queued_prompt(&self, query_id: QueuedQueryId) {
+        let conversation_id = self.conversation_id;
+        let _ = with_ai_controller(
+            &self.foreground,
+            &self.terminal_driver,
+            move |controller, ctx| {
+                controller.hide_external_harness_prompt_queued(conversation_id, query_id, ctx);
+            },
+        )
+        .await;
+    }
+
+    async fn turn_driver_stopped(&self) {
+        let _ = with_ai_controller(&self.foreground, &self.terminal_driver, |controller, _| {
+            controller.release_external_harness_sinks();
+        })
+        .await;
+    }
 }
 
 async fn apply_actions(
@@ -848,26 +1237,6 @@ async fn apply_event(
         );
     })
     .await
-}
-
-fn stream_finished_for(stop_reason: StopReason) -> StreamFinished {
-    let reason = match stop_reason {
-        StopReason::EndTurn | StopReason::Cancelled => {
-            stream_finished::Reason::Done(stream_finished::Done {})
-        }
-        StopReason::MaxTokens => {
-            stream_finished::Reason::MaxTokenLimit(stream_finished::ReachedMaxTokenLimit {})
-        }
-        StopReason::MaxTurnRequests | StopReason::Refusal | StopReason::Unknown => {
-            stream_finished::Reason::InternalError(stream_finished::InternalError {
-                message: format!("ACP agent stopped: {stop_reason:?}"),
-            })
-        }
-    };
-    StreamFinished {
-        reason: Some(reason),
-        ..Default::default()
-    }
 }
 
 /// What answering the agent's requests needs from the driver: a way onto the foreground thread
@@ -1027,6 +1396,15 @@ async fn write_text_file(context: &AgentRequestContext, params: Value) -> Result
     .await
 }
 
+/// The identity of an MCP server as its tool calls carry it. No server request sees these calls,
+/// so the display name warp-server would otherwise fill in is set here.
+fn tool_call_server_identity(name: &str, warp_id: Option<&str>) -> McpServerIdentity {
+    McpServerIdentity {
+        display_name: name.to_owned(),
+        ..warp_id.and_then(mcp_server_identity).unwrap_or_default()
+    }
+}
+
 fn mcp_server_for_acp(name: &str, server: &JSONMCPServer) -> McpServer {
     match &server.transport_type {
         JSONTransportType::CLIServer {
@@ -1057,3 +1435,7 @@ fn mcp_server_for_acp(name: &str, server: &JSONMCPServer) -> McpServer {
         },
     }
 }
+
+#[cfg(test)]
+#[path = "mod_tests.rs"]
+mod tests;
