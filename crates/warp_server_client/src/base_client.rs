@@ -23,6 +23,9 @@ pub const AMBIENT_WORKLOAD_TOKEN_HEADER: &str = "X-Warp-Ambient-Workload-Token";
 /// Header key for the cloud agent task ID attached to ambient-agent requests.
 pub const CLOUD_AGENT_ID_HEADER: &str = "X-Warp-Cloud-Agent-ID";
 
+pub const PREWARMED_SANDBOX_ID_HEADER: &str = "X-Warp-Prewarmed-Sandbox-ID";
+pub const PREWARMED_SANDBOX_WORKLOAD_TOKEN_HEADER: &str = "X-Warp-Prewarmed-Sandbox-Workload-Token";
+
 /// Header used to communicate the source of an agent run.
 pub const AGENT_SOURCE_HEADER: &str = "X-Oz-Api-Source";
 
@@ -119,15 +122,22 @@ pub struct AuthenticatedGraphqlConfig {
     pub headers: HashMap<String, String>,
 }
 
+#[derive(Clone)]
+enum AmbientIdentity {
+    Run(String),
+    Standby(String),
+}
+
 /// Owns shared transport, authentication, and authenticated request decoration.
 pub struct BaseClient {
     client: Arc<http_client::Client>,
+    external_client: Arc<http_client::Client>,
     auth_state: Arc<AuthState>,
     event_sender: async_channel::Sender<AuthEvent>,
     auth_session: Arc<AuthSession>,
     ambient_workload_token: Arc<Mutex<Option<WorkloadToken>>>,
     ambient_workload_token_refresh: AsyncMutex<()>,
-    ambient_agent_task_id: Arc<RwLock<Option<String>>>,
+    ambient_identity: RwLock<Option<AmbientIdentity>>,
     agent_source: Option<String>,
     graphql_routing: GraphqlRoutingConfig,
     authenticated_graphql: AuthenticatedGraphqlConfig,
@@ -135,8 +145,10 @@ pub struct BaseClient {
 }
 
 impl BaseClient {
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         client: Arc<http_client::Client>,
+        external_client: Arc<http_client::Client>,
         auth_state: Arc<AuthState>,
         event_sender: async_channel::Sender<AuthEvent>,
         agent_source: Option<String>,
@@ -179,12 +191,13 @@ impl BaseClient {
         ));
         Self {
             client,
+            external_client,
             auth_state,
             event_sender,
             auth_session,
             ambient_workload_token: Arc::new(Mutex::new(None)),
             ambient_workload_token_refresh: AsyncMutex::new(()),
-            ambient_agent_task_id: Arc::new(RwLock::new(None)),
+            ambient_identity: RwLock::new(None),
             agent_source,
             graphql_routing,
             authenticated_graphql,
@@ -199,8 +212,11 @@ impl BaseClient {
             http::header::CONTENT_TYPE.as_str(),
             http::header::CONTENT_LENGTH.as_str(),
             http_client::iap::IAP_PROXY_AUTH_HEADER,
+            http_client::iap::IAP_OPT_IN_HEADER,
             AMBIENT_WORKLOAD_TOKEN_HEADER,
             CLOUD_AGENT_ID_HEADER,
+            PREWARMED_SANDBOX_ID_HEADER,
+            PREWARMED_SANDBOX_WORKLOAD_TOKEN_HEADER,
             AGENT_SOURCE_HEADER,
             TEAM_UID_HEADER,
         ]
@@ -211,6 +227,11 @@ impl BaseClient {
     /// Returns the shared HTTP client for request construction.
     pub fn http_client(&self) -> &http_client::Client {
         self.client.as_ref()
+    }
+
+    /// Returns the pooled external HTTP client.
+    pub fn external_http_client(&self) -> &http_client::Client {
+        self.external_client.as_ref()
     }
 
     /// Returns an owned handle to the shared HTTP client for GraphQL operations.
@@ -265,7 +286,12 @@ impl BaseClient {
 
     /// Sets the default cloud-agent identifier inherited by subsequent requests.
     pub fn set_ambient_agent_task_id(&self, task_id: Option<String>) {
-        *self.ambient_agent_task_id.write() = task_id;
+        *self.ambient_identity.write() = task_id.map(AmbientIdentity::Run);
+    }
+
+    /// Selects standby identity for subsequent authenticated GraphQL requests.
+    pub fn set_prewarmed_sandbox_id(&self, sandbox_id: String) {
+        *self.ambient_identity.write() = Some(AmbientIdentity::Standby(sandbox_id));
     }
     #[cfg(any(test, feature = "test-util"))]
     pub fn set_ambient_workload_token_for_test(
@@ -397,7 +423,10 @@ impl BaseClient {
             HeaderOverride::Omit => None,
         };
         let cloud_agent_id = match policy.cloud_agent_id {
-            HeaderOverride::Inherit => self.ambient_agent_task_id.read().clone(),
+            HeaderOverride::Inherit => match self.ambient_identity.read().as_ref() {
+                Some(AmbientIdentity::Run(task_id)) => Some(task_id.clone()),
+                Some(AmbientIdentity::Standby(_)) | None => None,
+            },
             HeaderOverride::Set(task_id) => Some(task_id),
             HeaderOverride::Omit => None,
         };
@@ -436,10 +465,33 @@ impl BaseClient {
         let mut options = self.graphql_request_options_with_token(auth_token.bearer_token());
         options.timeout = timeout;
         options.headers = self.authenticated_graphql.headers.clone();
-        options.headers.extend(
-            self.ambient_headers(AmbientHeaderPolicy::inherit_all())
-                .await?,
-        );
+        let identity = self.ambient_identity.read().clone();
+        match identity {
+            Some(AmbientIdentity::Standby(sandbox_id)) => {
+                let token = self
+                    .get_or_create_ambient_workload_token()
+                    .await?
+                    .context("A standby GraphQL request requires a workload token")?;
+                options
+                    .headers
+                    .insert(PREWARMED_SANDBOX_ID_HEADER.to_string(), sandbox_id);
+                options
+                    .headers
+                    .insert(PREWARMED_SANDBOX_WORKLOAD_TOKEN_HEADER.to_string(), token);
+            }
+            Some(AmbientIdentity::Run(task_id)) => {
+                options.headers.extend(
+                    self.ambient_headers(AmbientHeaderPolicy::for_task(task_id))
+                        .await?,
+                );
+            }
+            None => {
+                options.headers.extend(
+                    self.ambient_headers(AmbientHeaderPolicy::inherit_all())
+                        .await?,
+                );
+            }
+        }
         Ok(options)
     }
 
@@ -509,12 +561,12 @@ impl BaseClient {
     #[cfg(target_family = "wasm")]
     pub fn report_ws_iap_challenge(&self, _error: &anyhow::Error) {}
 
-    /// Returns the current IAP proxy authorization header for transports outside the HTTP client.
-    pub fn iap_proxy_auth_header(&self) -> Option<(&'static str, String)> {
-        self.iap_token_provider
-            .as_ref()?
-            .cached_token()
-            .map(|token| http_client::iap::proxy_auth_header(&token))
+    /// Returns IAP headers for transports outside the HTTP client.
+    pub fn iap_headers(&self) -> Vec<(&'static str, String)> {
+        let Some(provider) = self.iap_token_provider.as_ref() else {
+            return Vec::new();
+        };
+        http_client::iap::headers(provider.cached_token(), provider.routing_opt_in_enabled())
     }
 }
 

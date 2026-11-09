@@ -198,6 +198,22 @@ impl TerminalPane {
         self.view.as_ref(ctx).child_data(ctx).clone()
     }
 
+    /// The terminal manager for `terminal_view`, which need not be the active view in the stack.
+    fn terminal_manager_for_view(
+        &self,
+        terminal_view: &WeakViewHandle<TerminalView>,
+        ctx: &AppContext,
+    ) -> Option<ModelHandle<Box<dyn TerminalManager>>> {
+        self.view
+            .as_ref(ctx)
+            .pane_stack()
+            .as_ref(ctx)
+            .entries()
+            .iter()
+            .find(|(_, view)| view.id() == terminal_view.id())
+            .map(|(manager, _)| manager.clone())
+    }
+
     /// Instructs the SQLite thread to delete blocks for this session.
     pub(in crate::pane_group) fn delete_blocks(&self, ctx: &AppContext) {
         if !AppExecutionMode::as_ref(ctx).can_save_session() {
@@ -348,10 +364,9 @@ impl PaneContent for TerminalPane {
             } = event
                 && display_mode.is_fullscreen()
             {
-                group.restore_missing_child_agent_panes_for_parent(
+                group.restore_child_agents_for_parent(
                     *conversation_id,
                     terminal_pane_id.into(),
-                    true,
                     ctx,
                 );
             }
@@ -922,17 +937,28 @@ fn handle_terminal_view_event(
             Event::ExecuteCommand(event) => {
                 ctx.emit(pane_group::Event::ExecuteCommand(event.clone()));
             }
+            Event::ReplaceShell(request) => {
+                let result = group
+                    .terminal_session_by_id(pane_id)
+                    .and_then(|pane| pane.terminal_manager_for_view(terminal_view, ctx))
+                    .ok_or_else(|| anyhow::anyhow!("terminal manager is unavailable"))
+                    .and_then(|manager| {
+                        manager.update(ctx, |manager, ctx| {
+                            manager.replace_shell(request.clone(), ctx)
+                        })
+                    });
+                if let Err(error) = result
+                    && let Some(terminal_view) = terminal_view.upgrade(ctx)
+                {
+                    terminal_view.update(ctx, |view, ctx| {
+                        view.complete_shell_replacement(request.id, Err(error), ctx);
+                    });
+                }
+            }
             Event::RecoverCloudShell(request) => {
-                let terminal_manager = group.terminal_session_by_id(pane_id).and_then(|pane| {
-                    pane.view
-                        .as_ref(ctx)
-                        .pane_stack()
-                        .as_ref(ctx)
-                        .entries()
-                        .iter()
-                        .find(|(_, view)| view.id() == terminal_view.id())
-                        .map(|(manager, _)| manager.clone())
-                });
+                let terminal_manager = group
+                    .terminal_session_by_id(pane_id)
+                    .and_then(|pane| pane.terminal_manager_for_view(terminal_view, ctx));
                 let accepted = terminal_manager.is_some_and(|manager| {
                     manager.update(ctx, |manager, ctx| {
                         manager.recover_cloud_shell(request.clone(), ctx)
@@ -1382,16 +1408,6 @@ fn handle_terminal_view_event(
                     );
                 }
             }
-            Event::EnsureUnifiedViewerChildPane {
-                conversation_id,
-                task,
-            } => {
-                group.materialize_viewer_child_pane_from_task(
-                    *conversation_id,
-                    task.as_ref().clone(),
-                    ctx,
-                );
-            }
             Event::OrchestrationChildSharedSessionJoinFailed {
                 conversation_id,
                 session_id,
@@ -1692,6 +1708,7 @@ fn launch_local_no_harness_child(
         &request.name,
         &request.prompt,
         request.parent_run_id.as_deref(),
+        &request.metadata,
         request_team_scope,
         ctx,
     );
@@ -1829,6 +1846,7 @@ fn launch_local_harness_child(
     let model_id_for_harness_env = model_id.clone();
     let agent_name_for_task = agent_name.clone();
     let request_team_scope = request.request_team_scope;
+    let metadata = request.metadata.clone();
     let _ = ctx.spawn(
         async move {
             prepare_local_harness_child_launch(
@@ -1837,6 +1855,7 @@ fn launch_local_harness_child(
                 model_id_for_harness_env,
                 parent_run_id,
                 agent_name_for_task,
+                metadata,
                 shell_type,
                 startup_directory,
                 ai_client,

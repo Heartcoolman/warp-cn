@@ -30,14 +30,17 @@ use super::harness_persistence::{
     HarnessPersistence, PersistenceOutcome, save_transcript_and_block,
 };
 use super::json_utils::read_json_file_or_default;
+use super::skill_dirs_publish::HarnessSupportSkills;
 use super::transcript_persistence::{
     CapturedTranscript, UploadedTranscriptUsage, capture_transcript_with_retry,
     needs_capture_retry, read_jsonl_capture, upload_captured_transcript,
 };
 use super::usage_reporting::CaptureIdentity;
 use super::{
-    HarnessRunner, JSONMCPServer, ResumePayload, SavePoint, ThirdPartyHarness, write_temp_file,
+    HarnessRunner, JSONMCPServer, ResolvedMCPServers, ResumePayload, SavePoint, ThirdPartyHarness,
+    install_docs_url, write_temp_file,
 };
+use crate::ai::agent::BaseUserQuery;
 use crate::ai::agent::api::ServerConversationToken;
 use crate::ai::agent_sdk::setup_observability::{SetupClientEventReporter, SetupStep};
 use crate::ai::ambient_agents::AmbientAgentTaskId;
@@ -71,7 +74,7 @@ impl ThirdPartyHarness for CodexHarness {
     }
 
     fn install_docs_url(&self) -> Option<&'static str> {
-        Some("https://developers.openai.com/codex/cli")
+        install_docs_url(self.harness())
     }
 
     fn auth_check_command(&self) -> Option<String> {
@@ -129,6 +132,7 @@ impl ThirdPartyHarness for CodexHarness {
         system_prompt: Option<&str>,
         resumption_prompt: Option<&str>,
         context: Option<&str>,
+        _prompt_attribution: Option<&BaseUserQuery>,
         workspace_root: &Path,
         harness_working_dir: &Path,
         _task_id: Option<AmbientAgentTaskId>,
@@ -137,9 +141,9 @@ impl ThirdPartyHarness for CodexHarness {
         resume: Option<ResumePayload>,
         resolved_env_vars: &HashMap<OsString, OsString>,
         skill_dirs: &[PathBuf],
-        has_deferred_repositories: bool,
+        factory_repository_contract: bool,
         resolved_secrets: &HashMap<String, ManagedSecretValue>,
-        resolved_mcp_servers: &HashMap<String, JSONMCPServer>,
+        resolved_mcp_servers: &ResolvedMCPServers,
         third_party_harness_model_config: Option<&HarnessModelConfig>,
     ) -> Result<Box<dyn HarnessRunner>, AgentDriverError> {
         // Prepare the environment config files.
@@ -148,7 +152,7 @@ impl ThirdPartyHarness for CodexHarness {
             system_prompt,
             resolved_env_vars,
             resolved_secrets,
-            resolved_mcp_servers,
+            &resolved_mcp_servers.configs,
             third_party_harness_model_config,
         )
         .map_err(|error| AgentDriverError::HarnessConfigSetupFailed {
@@ -159,7 +163,8 @@ impl ThirdPartyHarness for CodexHarness {
             workspace_root,
             harness_working_dir,
             skill_dirs,
-            has_deferred_repositories,
+            factory_repository_contract,
+            HarnessSupportSkills::Plugin,
         )
         .map_err(|error| AgentDriverError::HarnessConfigSetupFailed {
             harness: self.cli_agent().command_prefix().to_owned(),
@@ -387,7 +392,7 @@ impl HarnessRunner for CodexHarnessRunner {
                 let id = setup_events
                     .record_result(SetupStep::ThirdPartyHarnessExternalConversation, async {
                         self.client
-                            .create_external_conversation(CODEX_CLI_FORMAT)
+                            .create_external_conversation(CODEX_CLI_FORMAT, Harness::Codex)
                             .await
                             .map_err(|e| {
                                 report_error!(&e);
@@ -530,7 +535,7 @@ impl HarnessRunner for CodexHarnessRunner {
     }
 }
 
-fn capture_transcript_with_usage(
+pub(super) fn capture_transcript_with_usage(
     session_id: Uuid,
     transcript_path: &Path,
     is_final: bool,
@@ -644,7 +649,8 @@ pub(super) fn publish_skills_for_codex(
     workspace_root: &Path,
     harness_working_dir: &Path,
     skill_dirs: &[PathBuf],
-    has_deferred_repositories: bool,
+    factory_repository_contract: bool,
+    harness_support_skills: HarnessSupportSkills,
 ) -> Result<()> {
     let skill_root = harness_working_dir.join(".agents").join("skills");
     let is_sandbox = warp_isolation_platform::detect().is_some();
@@ -653,7 +659,8 @@ pub(super) fn publish_skills_for_codex(
         workspace_root,
         is_sandbox,
         skill_dirs,
-        has_deferred_repositories,
+        factory_repository_contract,
+        harness_support_skills,
     )?;
     super::skill_dirs_publish::exclude_published_skill_paths_from_git(
         harness_working_dir,
@@ -805,6 +812,14 @@ fn resolve_openai_base_url_from_secret(
 
     secrets.values().find_map(|secret| match secret {
         ManagedSecretValue::OpenaiApiKey { base_url, .. } => base_url
+            .as_ref()
+            .map(|s| s.trim().to_owned())
+            .filter(|s| !s.is_empty()),
+        ManagedSecretValue::LlmProviderApiKey {
+            provider_id,
+            base_url,
+            ..
+        } if provider_id == "openai" => base_url
             .as_ref()
             .map(|s| s.trim().to_owned())
             .filter(|s| !s.is_empty()),

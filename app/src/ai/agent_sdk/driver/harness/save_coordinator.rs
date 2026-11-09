@@ -53,7 +53,10 @@ impl Drop for ActiveSave {
     }
 }
 
-/// Debounces ordinary saves, retaining at most one pending request.
+/// Serializes saves, retaining at most one pending request while one is running.
+///
+/// Each request pushes the next save out by the debounce interval, so a burst of requests
+/// produces one save once the burst ends; a zero interval saves as soon as the worker is free.
 ///
 /// Closing rejects new requests and retains the final deadline and outcome across calls.
 pub(crate) struct SaveCoordinator {
@@ -69,13 +72,14 @@ impl Default for SaveCoordinator {
 }
 
 impl SaveCoordinator {
-    fn new(debounce_interval: Duration) -> Self {
+    pub(super) fn new(debounce_interval: Duration) -> Self {
         Self {
             state: Arc::default(),
             worker_operation: OnceLock::new(),
             debounce_interval,
         }
     }
+
     pub(super) fn set_worker_operation(&self, worker_operation: SaveOperation) {
         let _ = self.worker_operation.set(worker_operation);
     }

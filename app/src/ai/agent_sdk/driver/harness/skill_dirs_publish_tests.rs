@@ -19,6 +19,19 @@ fn write_skill(dir: &Path, name: &str) -> PathBuf {
 }
 
 #[test]
+fn bundled_child_coordination_is_published_to_harness_skill_roots() {
+    let workspace = TempDir::new().unwrap();
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../resources/bundled/harness_skills");
+    let bundled = skill_dirs_from_source_dirs([source]);
+    let skill_root = workspace.path().join("agent/skills");
+    let published = publish_skill_sources(&skill_root, &[], &bundled, None, false).unwrap();
+    let coordination = skill_root.join("oz-child-agent-orchestration");
+    assert!(published.contains(&coordination));
+    assert!(coordination.join("SKILL.md").is_file());
+    assert!(skill_root.join("oz-finish-task/SKILL.md").is_file());
+}
+
+#[test]
 fn required_deferred_skill_reserves_canonical_name_for_claude_codex_and_gemini() {
     let root = TempDir::new().unwrap();
     let configured_root = root.path().join("configured");
@@ -87,9 +100,16 @@ fn empty_configured_skill_dirs_suppress_ambient_sources() {
 
     let published_root = workspace.path().join("harness/skills");
     assert!(
-        publish_skills_for_harness(&published_root, workspace.path(), false, &[], false,)
-            .unwrap()
-            .is_empty()
+        publish_skills_for_harness(
+            &published_root,
+            workspace.path(),
+            false,
+            &[],
+            false,
+            HarnessSupportSkills::Plugin,
+        )
+        .unwrap()
+        .is_empty()
     );
     assert!(!published_root.exists());
 }
@@ -118,11 +138,47 @@ fn resolved_skill_dirs_are_published_relative_to_workspace_root() {
         false,
         &source_dirs,
         false,
+        HarnessSupportSkills::Plugin,
     )
     .unwrap();
     let link = published_root.join("factory-skill");
     assert!(published.contains(&link));
     assert_eq!(fs::read_link(&link).unwrap(), skill);
+}
+
+#[cfg(unix)]
+#[test]
+fn generated_skill_reference_folders_publish_for_claude_code_and_codex() {
+    let root = TempDir::new().unwrap();
+    let referenced = write_skill(
+        &root
+            .path()
+            .join("sources/acme-shared-skills/.agents/skills"),
+        "safe-secrets",
+    );
+    let generated = root.path().join("generated/1");
+    fs::create_dir_all(&generated).unwrap();
+    std::os::unix::fs::symlink(&referenced, generated.join("safe-secrets")).unwrap();
+    let source_dirs = vec![generated.clone()];
+
+    for relative_root in [".claude/skills", ".agents/skills"] {
+        let skill_root = root.path().join("harness").join(relative_root);
+        let published = publish_skills_for_harness(
+            &skill_root,
+            root.path(),
+            false,
+            &source_dirs,
+            false,
+            HarnessSupportSkills::Plugin,
+        )
+        .unwrap();
+        let link = skill_root.join("safe-secrets");
+        assert!(published.contains(&link));
+        assert_eq!(
+            link.canonicalize().unwrap(),
+            referenced.canonicalize().unwrap()
+        );
+    }
 }
 
 fn publish_source_dirs(

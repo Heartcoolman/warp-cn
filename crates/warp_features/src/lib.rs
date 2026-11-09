@@ -975,6 +975,10 @@ pub enum FeatureFlag {
     /// setup or API key required.
     FactoryMcp,
 
+    /// Attaches the Warp-hosted preview URLs MCP server (`/api/v1/mcp/preview-urls`)
+    /// to agent runs, so a cloud run can expose a sandbox port as a preview URL.
+    PreviewUrlsMcp,
+
     /// Enables periodic workspace-handoff checkpoints during a cloud agent run,
     /// rather than only uploading a workspace snapshot once at end-of-run.
     /// Requires `OzHandoff` to also be enabled; a no-op for local runs and when
@@ -1013,6 +1017,11 @@ pub enum FeatureFlag {
     /// mirrors kept in the persistent build cache instead of cloning each one
     /// from the remote. Disabling it restores direct, network-only checkouts.
     GitMirrorCache,
+    AgentPromptSteering,
+
+    /// Resolves skill reference files in a Factory definition's skill folders during cloud runs,
+    /// loading the selected skills from other repositories.
+    FactorySkillReferences,
 }
 
 static FLAG_STATES: [AtomicBool; cardinality::<FeatureFlag>()] =
@@ -1032,10 +1041,7 @@ static FEATURES_INITIALIZED: AtomicBool = AtomicBool::new(false);
 /// Features used in debugging.
 pub const DEBUG_FLAGS: &[FeatureFlag] = &[FeatureFlag::DebugMode, FeatureFlag::RuntimeFeatureFlags];
 /// Features enabled only for the WarpLocal developer build.
-pub const LOCAL_FLAGS: &[FeatureFlag] = &[
-    FeatureFlag::LocalClaudeCodexChildHarnesses,
-    FeatureFlag::AcpHarness,
-];
+pub const LOCAL_FLAGS: &[FeatureFlag] = &[FeatureFlag::LocalClaudeCodexChildHarnesses];
 
 /// Features enabled for the development team.  The expectation is that, over
 /// time, these will move on to PREVIEW_FLAGS before being launched.
@@ -1092,9 +1098,11 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::WarpingModelName,
     FeatureFlag::LrcActivitySignal,
     FeatureFlag::StoredScreenshots,
+    FeatureFlag::PreviewUrlsMcp,
     FeatureFlag::GitMirrorCache,
-    FeatureFlag::CloudAgentExecutionConfig,
     FeatureFlag::FactoryDeferredRepositories,
+    FeatureFlag::AgentPromptSteering,
+    FeatureFlag::FactorySkillReferences,
 ];
 
 /// Features enabled for feature preview build users (e.g.: Friends of Warp).
